@@ -1,0 +1,33 @@
+{
+  "services": [
+    {
+      "name": "tcp-forward-test",
+      "addr": ":6443",
+      "handler": {
+        "type": "tcp",
+        "chain": "tcp-forward-chain"
+      },
+      "listener": {
+        "type": "tcp"
+      }
+    }
+  ],
+  "chains": [
+    {
+      "name": "tcp-forward-chain",
+      "hops": [
+        {
+          "name": "hop-0",
+          "nodes": [
+            {
+              "addr": "127.0.0.1:3000",
+              "connector": {
+                "type": "tcp"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

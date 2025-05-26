@@ -1,0 +1,35 @@
+{
+  "name": "gost-management-backend",
+  "version": "1.0.0",
+  "description": "GOST Management System Backend",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon --ignore config/gost-config.json --ignore bin/ app.js",
+    "init-db": "node scripts/init-db.js",
+    "check-db": "node scripts/check-db.js",
+    "migrate": "sequelize-cli db:migrate",
+    "migrate:undo": "sequelize-cli db:migrate:undo",
+    "migrate:undo:all": "sequelize-cli db:migrate:undo:all",
+    "update": "npm install && sequelize-cli db:migrate",
+    "install-gost": "node scripts/install-gost.js",
+    "test-gost": "node scripts/test-gost.js",
+    "forward": "node scripts/port-forward-test.js",
+    "debug-forward": "node scripts/debug-port-forward.js",
+    "reset-port": "node scripts/reset-port.js"
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.0",
+    "morgan": "^1.10.0",
+    "sequelize": "^6.37.7",
+    "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.22",
+    "sequelize-cli": "^6.6.2"
+  }
+}

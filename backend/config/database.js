@@ -1,19 +1,19 @@
-const config = require('./config');
+﻿const config = require('./config');
 
 module.exports = {
   development: {
     ...config.database,
     dialect: 'sqlite',
-    storage: './database.sqlite'
+    storage: './database/database.sqlite'
   },
   test: {
     ...config.database,
     dialect: 'sqlite',
-    storage: './database.test.sqlite'
+    storage: './database/database.test.sqlite'
   },
   production: {
     ...config.database,
     dialect: 'sqlite',
-    storage: './database.sqlite'
+    storage: './database/database.sqlite'
   }
 }; 

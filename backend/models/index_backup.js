@@ -16,7 +16,6 @@ const sequelize = new Sequelize(config.database);
 const User = require('./User')(sequelize);
 const Rule = require('./Rule')(sequelize);
 const ForwardRule = require('./ForwardRule')(sequelize);
-const UserForwardRule = require('./UserForwardRule')(sequelize);
 const TrafficLog = require('./TrafficLog')(sequelize);
 
 // 定义模型关联
@@ -24,7 +23,6 @@ const models = {
   User,
   Rule,
   ForwardRule,
-  UserForwardRule,
   TrafficLog
 };
 
@@ -38,4 +36,4 @@ Object.values(models).forEach(model => {
 module.exports = {
   sequelize,
   ...models
-};
+}; 

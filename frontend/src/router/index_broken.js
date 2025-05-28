@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router';
+﻿import { createRouter, createWebHistory } from 'vue-router';
 import store from '@/store';
 
 // 布局组件
@@ -8,9 +8,9 @@ import Layout from '@/components/layout/Layout.vue';
 const Login = () => import('@/views/Login.vue');
 const Dashboard = () => import('@/views/Dashboard.vue');
 const UserManagement = () => import('@/views/UserManagement.vue');
+
 const UserForwardRules = () => import('@/views/UserForwardRules.vue');
 const TrafficStats = () => import('@/views/TrafficStats.vue');
-const GostConfig = () => import('@/views/GostConfig.vue');
 
 const routes = [
   {
@@ -46,7 +46,7 @@ const routes = [
       {
         path: '/rules',
         name: 'Rules',
-        component: UserForwardRules,
+        component: RuleManagement,
         meta: {
           requiresAuth: true,
           title: '规则管理'
@@ -68,16 +68,6 @@ const routes = [
         meta: {
           requiresAuth: true,
           title: '流量统计'
-        }
-      },
-      {
-        path: '/gost-config',
-        name: 'GostConfig',
-        component: GostConfig,
-        meta: {
-          requiresAuth: true,
-          requiresAdmin: true,
-          title: 'Gost 配置'
         }
       }
     ]

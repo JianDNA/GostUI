@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router';
+﻿import { createRouter, createWebHistory } from 'vue-router';
 import store from '@/store';
 
 // 布局组件
@@ -8,9 +8,9 @@ import Layout from '@/components/layout/Layout.vue';
 const Login = () => import('@/views/Login.vue');
 const Dashboard = () => import('@/views/Dashboard.vue');
 const UserManagement = () => import('@/views/UserManagement.vue');
+const RuleManagement = () => import('@/views/RuleManagement.vue');
 const UserForwardRules = () => import('@/views/UserForwardRules.vue');
 const TrafficStats = () => import('@/views/TrafficStats.vue');
-const GostConfig = () => import('@/views/GostConfig.vue');
 
 const routes = [
   {
@@ -37,7 +37,7 @@ const routes = [
         path: '/admin',
         name: 'Admin',
         component: UserManagement,
-        meta: {
+        meta: { 
           requiresAuth: true,
           requiresAdmin: true,
           title: '用户管理'
@@ -46,38 +46,19 @@ const routes = [
       {
         path: '/rules',
         name: 'Rules',
-        component: UserForwardRules,
-        meta: {
+        component: RuleManagement,
+        meta: { 
           requiresAuth: true,
           title: '规则管理'
-        }
-      },
-      {
-        path: '/user-forward-rules',
-        name: 'UserForwardRules',
-        component: UserForwardRules,
-        meta: {
-          requiresAuth: true,
-          title: '转发规则'
         }
       },
       {
         path: '/stats',
         name: 'Stats',
         component: TrafficStats,
-        meta: {
+        meta: { 
           requiresAuth: true,
           title: '流量统计'
-        }
-      },
-      {
-        path: '/gost-config',
-        name: 'GostConfig',
-        component: GostConfig,
-        meta: {
-          requiresAuth: true,
-          requiresAdmin: true,
-          title: 'Gost 配置'
         }
       }
     ]
@@ -102,7 +83,7 @@ router.beforeEach(async (to, from, next) => {
   // 需要认证的路由
   if (to.matched.some(record => record.meta.requiresAuth)) {
     if (!isAuthenticated) {
-      next({
+      next({ 
         name: 'Login',
         query: { redirect: to.fullPath }
       });

@@ -1,4 +1,4 @@
-<template>
+﻿﻿﻿﻿<template>
   <el-menu
     class="sidebar-menu"
     :default-active="activeMenu"
@@ -24,6 +24,11 @@
       <el-icon><User /></el-icon>
       <template #title>用户管理</template>
     </el-menu-item>
+
+    <el-menu-item v-if="isAdmin" index="/gost-config">
+      <el-icon><Setting /></el-icon>
+      <template #title>Gost 配置</template>
+    </el-menu-item>
   </el-menu>
 </template>
 
@@ -31,7 +36,7 @@
 import { computed } from 'vue';
 import { useRoute } from 'vue-router';
 import { useStore } from 'vuex';
-import { Monitor, Connection, TrendCharts, User } from '@element-plus/icons-vue';
+import { Monitor, Connection, Switch, TrendCharts, User, Setting } from '@element-plus/icons-vue';
 
 export default {
   name: 'Sidebar',
@@ -39,7 +44,8 @@ export default {
     Monitor,
     Connection,
     TrendCharts,
-    User
+    User,
+    Setting
   },
   props: {
     isCollapse: {

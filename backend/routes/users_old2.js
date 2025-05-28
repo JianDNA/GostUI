@@ -1,4 +1,4 @@
-﻿﻿﻿const express = require('express');
+const express = require('express');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
 const { User, UserForwardRule } = require('../models');
@@ -27,7 +27,7 @@ router.get('/me', auth, async (req, res) => {
   }
 });
 
-// 获取用户列表（增强权限控制）
+// 获取用户列表（仅管理员可用）
 router.get('/', auth, async (req, res) => {
   try {
     if (req.user.role !== 'admin') {
@@ -65,36 +65,13 @@ router.post('/', auth, async (req, res) => {
       return res.status(403).json({ message: '没有权限访问' });
     }
 
+    // 从请求中获取用户数据
     const userData = req.body;
     console.log('Creating user with data:', userData);
 
     // 确保必要字段存在
     if (!userData.username || !userData.password) {
       return res.status(400).json({ message: '用户名和密码是必需的' });
-    }
-
-    // 普通用户必须设置端口范围和流量限额
-    if (userData.role === 'user' || !userData.role) {
-      if (!userData.portRangeStart || !userData.portRangeEnd) {
-        return res.status(400).json({ message: '普通用户必须设置端口范围' });
-      }
-      if (!userData.trafficQuota) {
-        return res.status(400).json({ message: '普通用户必须设置流量限额' });
-      }
-    }
-
-    // 确保只有admin用户名可以是管理员
-    if (userData.role === 'admin' && userData.username !== 'admin') {
-      return res.status(400).json({ message: '只有用户名为admin的用户才能设置为管理员角色' });
-    }
-
-    // 检查是否已存在admin用户（创建新admin时）
-    if (userData.username === 'admin') {
-      const existingAdmin = await User.findOne({ where: { username: 'admin' } });
-      if (existingAdmin) {
-        return res.status(400).json({ message: 'admin用户已存在，不能创建重复的管理员账户' });
-      }
-      userData.role = 'admin';
     }
 
     // 验证端口范围
@@ -113,11 +90,6 @@ router.post('/', auth, async (req, res) => {
       const oneMonthLater = new Date();
       oneMonthLater.setMonth(oneMonthLater.getMonth() + 1);
       expiryDate = oneMonthLater;
-    }
-
-    // 设置默认流量限额
-    if (!userData.trafficQuota && userData.role === 'user') {
-      userData.trafficQuota = 100;
     }
 
     const user = await User.create({
@@ -143,9 +115,9 @@ router.post('/', auth, async (req, res) => {
   } catch (error) {
     console.error('Create user error:', error);
     if (error.name === 'SequelizeValidationError') {
-      return res.status(400).json({
-        message: '数据验证失败',
-        errors: error.errors.map(e => e.message)
+      return res.status(400).json({ 
+        message: '数据验证失败', 
+        errors: error.errors.map(e => e.message) 
       });
     }
     if (error.name === 'SequelizeUniqueConstraintError') {
@@ -167,40 +139,18 @@ router.put('/:id', auth, async (req, res) => {
       return res.status(404).json({ message: '用户不存在' });
     }
 
+    // 从请求中获取更新数据
     const updateData = req.body;
     console.log('Updating user with data:', updateData);
 
     // 如果是管理员账户，强制保持原用户名不变
-    if (user.username === 'admin') {
-      delete updateData.username;
-      updateData.role = 'admin';
-      updateData.isActive = true;
+    if (user.role === 'admin') {
+      delete updateData.username; // 删除用户名字段，确保不会被更新
     }
 
-    // 不允许修改用户名（除了admin的特殊处理）
-    if (updateData.username && updateData.username !== user.username) {
-      return res.status(400).json({ message: '用户名不能修改' });
-    }
-
-    // 不允许修改角色
-    if (updateData.role && updateData.role !== user.role) {
-      return res.status(400).json({ message: '用户角色不能修改' });
-    }
-
-    // 普通用户必须设置端口范围和流量限额
-    if (user.role === 'user') {
-      if (updateData.portRangeStart !== undefined || updateData.portRangeEnd !== undefined) {
-        const newStart = updateData.portRangeStart || user.portRangeStart;
-        const newEnd = updateData.portRangeEnd || user.portRangeEnd;
-
-        if (!newStart || !newEnd) {
-          return res.status(400).json({ message: '普通用户必须设置完整的端口范围' });
-        }
-      }
-
-      if (updateData.trafficQuota !== undefined && !updateData.trafficQuota) {
-        return res.status(400).json({ message: '普通用户必须设置流量限额' });
-      }
+    // 不允许修改管理员的角色
+    if (user.role === 'admin' && updateData.role && updateData.role !== 'admin') {
+      return res.status(403).json({ message: '不能修改管理员的角色' });
     }
 
     // 验证端口范围
@@ -213,12 +163,6 @@ router.put('/:id', auth, async (req, res) => {
       }
     }
 
-    // 处理admin用户密码修改
-    if (user.username === 'admin' && updateData.newPassword) {
-      updateData.password = updateData.newPassword;
-      delete updateData.newPassword;
-    }
-
     // 检查端口范围是否变动，如果变动需要清理不在范围内的转发规则
     const oldPortRangeStart = user.portRangeStart;
     const oldPortRangeEnd = user.portRangeEnd;
@@ -226,9 +170,10 @@ router.put('/:id', auth, async (req, res) => {
     const newPortRangeEnd = updateData.portRangeEnd;
 
     let cleanedRulesCount = 0;
-    if ((newPortRangeStart && newPortRangeStart !== oldPortRangeStart) ||
+    if ((newPortRangeStart && newPortRangeStart !== oldPortRangeStart) || 
         (newPortRangeEnd && newPortRangeEnd !== oldPortRangeEnd)) {
-
+      
+      // 删除不在新端口范围内的转发规则
       const rulesToDelete = await UserForwardRule.findAll({
         where: {
           userId: user.id,
@@ -253,18 +198,6 @@ router.put('/:id', auth, async (req, res) => {
     // 更新用户信息
     await user.update(updateData);
 
-    // 触发 Gost 配置同步（如果端口范围变化或清理了规则）
-    if (cleanedRulesCount > 0 || newPortRangeStart || newPortRangeEnd) {
-      try {
-        const gostConfigService = require('../services/gostConfigService');
-        gostConfigService.triggerSync().catch(error => {
-          console.error('更新用户后同步配置失败:', error);
-        });
-      } catch (error) {
-        console.error('触发配置同步失败:', error);
-      }
-    }
-
     // 返回更新后的用户信息
     const { password, token, ...userResponse } = user.toJSON();
     res.json({
@@ -276,9 +209,9 @@ router.put('/:id', auth, async (req, res) => {
   } catch (error) {
     console.error('Update user error:', error);
     if (error.name === 'SequelizeValidationError') {
-      return res.status(400).json({
-        message: '数据验证失败',
-        errors: error.errors.map(e => e.message)
+      return res.status(400).json({ 
+        message: '数据验证失败', 
+        errors: error.errors.map(e => e.message) 
       });
     }
     if (error.name === 'SequelizeUniqueConstraintError') {
@@ -301,23 +234,12 @@ router.delete('/:id', auth, async (req, res) => {
     }
 
     // 不允许删除管理员
-    if (user.username === 'admin') {
-      return res.status(403).json({ message: '不能删除admin管理员账户' });
+    if (user.role === 'admin') {
+      return res.status(403).json({ message: '不能删除管理员账户' });
     }
 
     // 删除用户（关联的转发规则会自动删除）
     await user.destroy();
-
-    // 触发 Gost 配置同步
-    try {
-      const gostConfigService = require('../services/gostConfigService');
-      gostConfigService.triggerSync().catch(error => {
-        console.error('删除用户后同步配置失败:', error);
-      });
-    } catch (error) {
-      console.error('触发配置同步失败:', error);
-    }
-
     res.status(204).send();
   } catch (error) {
     console.error('Delete user error:', error);
@@ -334,7 +256,7 @@ router.post('/:id/extend-expiry', auth, async (req, res) => {
 
     const { months = 1 } = req.body;
     const user = await User.findByPk(req.params.id);
-
+    
     if (!user) {
       return res.status(404).json({ message: '用户不存在' });
     }
@@ -358,116 +280,39 @@ router.post('/:id/extend-expiry', auth, async (req, res) => {
   }
 });
 
-// 检查端口冲突
-router.post('/check-port-conflicts', auth, async (req, res) => {
+// 获取用户的转发规则统计（仅管理员可用）
+router.get('/:id/forward-rules-stats', auth, async (req, res) => {
   try {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ message: '没有权限访问' });
     }
 
-    const { portRangeStart, portRangeEnd, excludeUserId } = req.body;
-
-    if (!portRangeStart || !portRangeEnd) {
-      return res.status(400).json({ message: '请提供端口范围' });
+    const user = await User.findByPk(req.params.id);
+    if (!user) {
+      return res.status(404).json({ message: '用户不存在' });
     }
 
-    if (portRangeStart >= portRangeEnd) {
-      return res.status(400).json({ message: '起始端口必须小于结束端口' });
-    }
-
-    const conflicts = [];
-
-    // 检查与其他用户端口范围的重叠
-    const whereCondition = excludeUserId
-      ? { id: { [Op.ne]: excludeUserId }, role: 'user' }
-      : { role: 'user' };
-
-    const users = await User.findAll({
-      where: whereCondition,
-      attributes: ['id', 'username', 'portRangeStart', 'portRangeEnd']
+    const rules = await UserForwardRule.findAll({
+      where: { userId: user.id }
     });
 
-    for (const user of users) {
-      if (user.portRangeStart && user.portRangeEnd) {
-        // 检查端口范围重叠
-        const hasOverlap = !(portRangeEnd < user.portRangeStart || portRangeStart > user.portRangeEnd);
-        if (hasOverlap) {
-          conflicts.push({
-            type: 'user_range',
-            username: user.username,
-            portRange: `${user.portRangeStart}-${user.portRangeEnd}`,
-            message: `与用户 "${user.username}" 的端口范围重叠`
-          });
-        }
-      }
-    }
+    const stats = {
+      totalRules: rules.length,
+      activeRules: rules.filter(rule => rule.isActive).length,
+      inactiveRules: rules.filter(rule => !rule.isActive).length,
+      usedPorts: rules.map(rule => rule.sourcePort).sort((a, b) => a - b),
+      availablePortRange: user.portRangeStart && user.portRangeEnd 
+        ? `${user.portRangeStart}-${user.portRangeEnd}` 
+        : null,
+      availablePortCount: user.portRangeStart && user.portRangeEnd 
+        ? user.portRangeEnd - user.portRangeStart + 1 
+        : 0
+    };
 
-    // 检查端口是否被现有规则占用
-    const usedPorts = await UserForwardRule.findAll({
-      where: {
-        sourcePort: {
-          [Op.between]: [portRangeStart, portRangeEnd]
-        }
-      },
-      include: [{
-        model: User,
-        as: 'user',
-        attributes: ['id', 'username'],
-        where: excludeUserId ? { id: { [Op.ne]: excludeUserId } } : {}
-      }]
-    });
-
-    for (const rule of usedPorts) {
-      conflicts.push({
-        type: 'used_port',
-        port: rule.sourcePort,
-        username: rule.user.username,
-        message: `端口 ${rule.sourcePort} 已被用户 "${rule.user.username}" 占用`
-      });
-    }
-
-    res.json({
-      hasConflict: conflicts.length > 0,
-      conflicts
-    });
+    res.json(stats);
   } catch (error) {
-    console.error('检查端口冲突失败:', error);
-    res.status(500).json({ message: '检查端口冲突失败' });
-  }
-});
-
-router.get('/', auth, async (req, res) => {
-  try {
-    const isAdmin = req.user.role === 'admin';
-
-    let whereCondition = {};
-    if (!isAdmin) {
-      // 普通用户只能查看自己
-      whereCondition = { id: req.user.id };
-    }
-
-    const users = await User.findAll({
-      where: whereCondition,
-      attributes: { exclude: ['password', 'token'] },
-      include: [{
-        model: UserForwardRule,
-        as: 'forwardRules',
-        attributes: ['id', 'name', 'sourcePort', 'isActive']
-      }]
-    });
-
-    // 添加计算字段
-    const usersWithStatus = users.map(user => ({
-      ...user.toJSON(),
-      isExpired: user.isExpired(),
-      forwardRuleCount: user.forwardRules ? user.forwardRules.length : 0,
-      activeRuleCount: user.forwardRules ? user.forwardRules.filter(rule => rule.isActive).length : 0
-    }));
-
-    res.json(usersWithStatus);
-  } catch (error) {
-    console.error('Get users error:', error);
-    res.status(500).json({ message: '获取用户列表失败' });
+    console.error('Get user forward rules stats error:', error);
+    res.status(500).json({ message: '获取用户转发规则统计失败' });
   }
 });
 

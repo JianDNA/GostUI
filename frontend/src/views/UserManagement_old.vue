@@ -2,7 +2,7 @@
   <div class="user-management">
     <div class="page-header">
       <h2>用户管理</h2>
-      <el-button type="primary" @click="handleAdd" v-if="isAdmin">
+      <el-button type="primary" @click="handleAdd">
         <el-icon><Plus /></el-icon>
         添加用户
       </el-button>
@@ -10,7 +10,7 @@
 
     <el-table
       v-loading="loading"
-      :data="displayUsers"
+      :data="users"
       border
       style="width: 100%"
     >
@@ -22,12 +22,6 @@
           <span v-if="row.portRangeStart && row.portRangeEnd">
             {{ row.portRangeStart }}-{{ row.portRangeEnd }}
           </span>
-          <span v-else class="text-muted">未设置</span>
-        </template>
-      </el-table-column>
-      <el-table-column label="流量限额" width="100">
-        <template #default="{ row }">
-          <span v-if="row.trafficQuota">{{ row.trafficQuota }}GB</span>
           <span v-else class="text-muted">未设置</span>
         </template>
       </el-table-column>
@@ -68,12 +62,11 @@
               type="primary"
               size="small"
               @click="handleEdit(row)"
-              v-if="canEditUser(row)"
             >
               编辑
             </el-button>
             <el-button
-              v-if="row.role !== 'admin' && isAdmin"
+              v-if="row.role !== 'admin'"
               type="warning"
               size="small"
               @click="handleExtendExpiry(row)"
@@ -88,11 +81,10 @@
               规则
             </el-button>
             <el-button
-              v-if="row.username !== 'admin' && isAdmin"
+              v-if="row.role !== 'admin'"
               type="danger"
               size="small"
               @click="handleDelete(row)"
-              :disabled="row.username === 'admin'"
             >
               删除
             </el-button>
@@ -118,17 +110,14 @@
           <el-input
             v-model="form.username"
             placeholder="请输入用户名"
-            :disabled="isEdit"
+            :disabled="isEdit && form.role === 'admin'"
           />
-          <div class="form-tip" v-if="isEdit">
-            用户名创建后不可修改
-          </div>
         </el-form-item>
-
+        
         <el-form-item label="邮箱" prop="email">
           <el-input v-model="form.email" placeholder="请输入邮箱" />
         </el-form-item>
-
+        
         <el-form-item v-if="!isEdit" label="密码" prop="password">
           <el-input
             v-model="form.password"
@@ -137,31 +126,15 @@
             show-password
           />
         </el-form-item>
-
-        <el-form-item v-if="isEdit && form.username === 'admin'" label="新密码" prop="newPassword">
-          <el-input
-            v-model="form.newPassword"
-            type="password"
-            placeholder="留空表示不修改密码"
-            show-password
-          />
-        </el-form-item>
-
+        
         <el-form-item label="角色" prop="role">
-          <el-select
-            v-model="form.role"
-            style="width: 100%"
-            :disabled="isEdit"
-          >
+          <el-select v-model="form.role" style="width: 100%">
             <el-option label="普通用户" value="user" />
             <el-option label="管理员" value="admin" />
           </el-select>
-          <div class="form-tip">
-            角色创建后不可修改，确保只有admin用户为管理员
-          </div>
         </el-form-item>
-
-        <el-form-item label="端口范围" prop="portRange" v-if="form.role === 'user'">
+        
+        <el-form-item label="端口范围" v-if="form.role === 'user'">
           <div style="display: flex; gap: 10px; align-items: center;">
             <el-input-number
               v-model="form.portRangeStart"
@@ -169,7 +142,6 @@
               :max="65535"
               placeholder="起始端口"
               style="width: 150px"
-              @change="checkPortConflictsDebounced"
             />
             <span>-</span>
             <el-input-number
@@ -178,17 +150,13 @@
               :max="65535"
               placeholder="结束端口"
               style="width: 150px"
-              @change="checkPortConflictsDebounced"
             />
           </div>
           <div class="form-tip">
-            必须设置端口范围，例如：10001-10100
-          </div>
-          <div v-if="portConflictMessage" class="conflict-message">
-            {{ portConflictMessage }}
+            设置用户可使用的端口范围，例如：10001-10100
           </div>
         </el-form-item>
-
+        
         <el-form-item label="过期时间" v-if="form.role === 'user'">
           <el-date-picker
             v-model="form.expiryDate"
@@ -202,7 +170,7 @@
             留空表示永不过期，新用户默认一个月后过期
           </div>
         </el-form-item>
-
+        
         <el-form-item label="流量限额" prop="trafficQuota" v-if="form.role === 'user'">
           <el-input-number
             v-model="form.trafficQuota"
@@ -212,29 +180,18 @@
             style="width: 100%"
           />
           <div class="form-tip">
-            必须设置流量限额，单位：GB，范围：1-10240
+            单位：GB，范围：1-10240
           </div>
         </el-form-item>
-
+        
         <el-form-item label="状态" prop="isActive">
-          <el-switch
-            v-model="form.isActive"
-            :disabled="form.username === 'admin'"
-          />
-          <div class="form-tip" v-if="form.username === 'admin'">
-            admin用户状态不可禁用
-          </div>
+          <el-switch v-model="form.isActive" />
         </el-form-item>
       </el-form>
-
+      
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button
-          type="primary"
-          @click="handleSubmit"
-          :loading="submitting"
-          :disabled="hasPortConflict"
-        >
+        <el-button type="primary" @click="handleSubmit" :loading="submitting">
           {{ isEdit ? '更新' : '创建' }}
         </el-button>
       </template>
@@ -262,7 +219,7 @@
           />
         </el-form-item>
       </el-form>
-
+      
       <template #footer>
         <el-button @click="extendDialogVisible = false">取消</el-button>
         <el-button type="primary" @click="confirmExtendExpiry" :loading="extending">
@@ -274,11 +231,10 @@
 </template>
 
 <script>
-import { ref, reactive, onMounted, computed, nextTick } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
-import { useStore } from 'vuex'
 import api from '@/utils/api'
 
 export default {
@@ -288,7 +244,6 @@ export default {
   },
   setup() {
     const router = useRouter()
-    const store = useStore()
     const loading = ref(false)
     const submitting = ref(false)
     const extending = ref(false)
@@ -299,148 +254,36 @@ export default {
     const currentUser = ref(null)
     const extendMonths = ref(1)
     const formRef = ref(null)
-    const portConflictMessage = ref('')
-    const hasPortConflict = ref(false)
-
-    // 当前登录用户信息
-    const currentLoginUser = computed(() => store.getters['user/currentUser'])
-    const isAdmin = computed(() => store.getters['user/isAdmin'])
-
-    // 显示的用户列表（普通用户只能看到自己）
-    const displayUsers = computed(() => {
-      if (isAdmin.value) {
-        return users.value
-      } else {
-        return users.value.filter(user => user.id === currentLoginUser.value?.id)
-      }
-    })
 
     const form = reactive({
       username: '',
       email: '',
       password: '',
-      newPassword: '',
       role: 'user',
       portRangeStart: null,
       portRangeEnd: null,
       expiryDate: null,
-      trafficQuota: 100,
+      trafficQuota: null,
       isActive: true
     })
 
     const dialogTitle = computed(() => isEdit.value ? '编辑用户' : '添加用户')
 
-    // 检查用户是否可以编辑
-    const canEditUser = (user) => {
-      if (isAdmin.value) {
-        return true // 管理员可以编辑所有用户
-      }
-      return user.id === currentLoginUser.value?.id // 普通用户只能编辑自己
-    }
-
-    const rules = computed(() => {
-      const baseRules = {
-        username: [
-          { required: true, message: '请输入用户名', trigger: ['blur', 'change'] },
-          { min: 3, max: 30, message: '用户名长度在 3 到 30 个字符', trigger: ['blur', 'change'] }
-        ],
-        email: [
-          { type: 'email', message: '请输入正确的邮箱地址', trigger: 'blur' }
-        ],
-        role: [
-          { required: true, message: '请选择角色', trigger: 'change' }
-        ]
-      }
-
-      // 创建用户时密码必填
-      if (!isEdit.value) {
-        baseRules.password = [
-          { required: true, message: '请输入密码', trigger: 'blur' },
-          { min: 6, message: '密码长度不能少于 6 个字符', trigger: 'blur' }
-        ]
-      }
-
-      // 普通用户必须设置端口范围和流量限额
-      if (form.role === 'user') {
-        baseRules.portRange = [
-          {
-            validator: (rule, value, callback) => {
-              if (!form.portRangeStart || !form.portRangeEnd) {
-                callback(new Error('请设置端口范围'))
-                return
-              }
-              if (form.portRangeStart >= form.portRangeEnd) {
-                callback(new Error('起始端口必须小于结束端口'))
-                return
-              }
-              callback()
-            },
-            trigger: ['blur', 'change']
-          }
-        ]
-
-        baseRules.trafficQuota = [
-          { required: true, message: '请设置流量限额', trigger: 'blur' },
-          { type: 'number', min: 1, max: 10240, message: '流量限额范围在 1-10240 GB', trigger: 'blur' }
-        ]
-      }
-
-      return baseRules
-    })
-
-    // 防抖函数
-    let debounceTimer = null
-    const checkPortConflictsDebounced = () => {
-      if (debounceTimer) {
-        clearTimeout(debounceTimer)
-      }
-      debounceTimer = setTimeout(() => {
-        checkPortConflicts()
-      }, 500)
-    }
-
-    const checkPortConflicts = async () => {
-      if (!form.portRangeStart || !form.portRangeEnd || form.role !== 'user') {
-        portConflictMessage.value = ''
-        hasPortConflict.value = false
-        return
-      }
-
-      if (form.portRangeStart >= form.portRangeEnd) {
-        portConflictMessage.value = '起始端口必须小于结束端口'
-        hasPortConflict.value = true
-        return
-      }
-
-      try {
-        const excludeUserId = isEdit.value ? currentUser.value.id : null
-        const response = await api.post('/users/check-port-conflicts', {
-          portRangeStart: form.portRangeStart,
-          portRangeEnd: form.portRangeEnd,
-          excludeUserId
-        })
-
-        if (response.data.hasConflict) {
-          const conflictMessages = response.data.conflicts.map(conflict => {
-            if (conflict.type === 'user_range') {
-              return `与用户 "${conflict.username}" 的端口范围 ${conflict.portRange} 重叠`
-            } else if (conflict.type === 'used_port') {
-              return `端口 ${conflict.port} 已被用户 "${conflict.username}" 的规则占用`
-            }
-            return conflict.message
-          })
-
-          portConflictMessage.value = `端口配置冲突：${conflictMessages.join('；')}`
-          hasPortConflict.value = true
-        } else {
-          portConflictMessage.value = ''
-          hasPortConflict.value = false
-        }
-      } catch (error) {
-        console.error('检查端口冲突失败:', error)
-        portConflictMessage.value = ''
-        hasPortConflict.value = false
-      }
+    const rules = {
+      username: [
+        { required: true, message: '请输入用户名', trigger: 'blur' },
+        { min: 3, max: 30, message: '用户名长度在 3 到 30 个字符', trigger: 'blur' }
+      ],
+      email: [
+        { type: 'email', message: '请输入正确的邮箱地址', trigger: 'blur' }
+      ],
+      password: [
+        { required: true, message: '请输入密码', trigger: 'blur' },
+        { min: 6, message: '密码长度不能少于 6 个字符', trigger: 'blur' }
+      ],
+      role: [
+        { required: true, message: '请选择角色', trigger: 'change' }
+      ]
     }
 
     const loadUsers = async () => {
@@ -456,98 +299,56 @@ export default {
     }
 
     const handleAdd = () => {
-      if (!isAdmin.value) {
-        ElMessage.error('没有权限添加用户')
-        return
-      }
       isEdit.value = false
       dialogVisible.value = true
     }
 
     const handleEdit = (user) => {
-      if (!canEditUser(user)) {
-        ElMessage.error('没有权限编辑此用户')
-        return
-      }
-
       isEdit.value = true
       currentUser.value = user
       Object.assign(form, {
         username: user.username,
         email: user.email,
         password: '',
-        newPassword: '',
         role: user.role,
         portRangeStart: user.portRangeStart,
         portRangeEnd: user.portRangeEnd,
         expiryDate: user.expiryDate,
-        trafficQuota: user.trafficQuota || 100,
+        trafficQuota: user.trafficQuota,
         isActive: user.isActive
       })
-
-      // 清除之前的校验状态
-      portConflictMessage.value = ''
-      hasPortConflict.value = false
-
       dialogVisible.value = true
-
-      // 在下一个tick中清除表单校验状态，确保表单已经渲染完成
-      nextTick(() => {
-        if (formRef.value) {
-          formRef.value.clearValidate()
-
-          // 延迟一点时间再进行校验，确保数据已经完全绑定
-          setTimeout(() => {
-            // 手动触发必填字段的校验，确保有数据的字段不会显示错误
-            if (form.username) {
-              formRef.value.validateField('username')
-            }
-            if (form.role === 'user' && form.portRangeStart && form.portRangeEnd) {
-              formRef.value.validateField('portRange')
-              checkPortConflictsDebounced()
-            }
-            if (form.role === 'user' && form.trafficQuota) {
-              formRef.value.validateField('trafficQuota')
-            }
-          }, 100)
-        }
-      })
     }
 
     const handleSubmit = async () => {
       if (!formRef.value) return
-
+      
       try {
         await formRef.value.validate()
       } catch {
         return
       }
 
-      if (hasPortConflict.value) {
-        ElMessage.error('存在端口冲突，请修改端口范围')
-        return
+      // 验证端口范围
+      if (form.role === 'user' && form.portRangeStart && form.portRangeEnd) {
+        if (form.portRangeStart >= form.portRangeEnd) {
+          ElMessage.error('起始端口必须小于结束端口')
+          return
+        }
       }
 
       submitting.value = true
       try {
         const data = { ...form }
-
         if (isEdit.value) {
-          // 编辑时处理密码
-          if (form.username === 'admin' && form.newPassword) {
-            data.password = form.newPassword
-          } else {
-            delete data.password
-            delete data.newPassword
-          }
-
+          delete data.password // 编辑时不传密码
           await api.users.updateUser(currentUser.value.id, data)
           ElMessage.success('用户更新成功')
         } else {
           await api.users.createUser(data)
           ElMessage.success('用户创建成功')
         }
-
+        
         dialogVisible.value = false
         await loadUsers()
       } catch (error) {
@@ -558,16 +359,6 @@ export default {
     }
 
     const handleDelete = async (user) => {
-      if (!isAdmin.value) {
-        ElMessage.error('没有权限删除用户')
-        return
-      }
-
-      if (user.username === 'admin') {
-        ElMessage.error('不能删除admin用户')
-        return
-      }
-
       try {
         await ElMessageBox.confirm(
           `确定要删除用户 "${user.username}" 吗？此操作将同时删除该用户的所有转发规则。`,
@@ -578,7 +369,7 @@ export default {
             type: 'warning'
           }
         )
-
+        
         await api.users.deleteUser(user.id)
         ElMessage.success('用户删除成功')
         await loadUsers()
@@ -590,11 +381,6 @@ export default {
     }
 
     const handleExtendExpiry = (user) => {
-      if (!isAdmin.value) {
-        ElMessage.error('没有权限延长用户过期时间')
-        return
-      }
-
       currentUser.value = user
       extendMonths.value = 1
       extendDialogVisible.value = true
@@ -626,16 +412,13 @@ export default {
         username: '',
         email: '',
         password: '',
-        newPassword: '',
         role: 'user',
         portRangeStart: null,
         portRangeEnd: null,
         expiryDate: null,
-        trafficQuota: 100,
+        trafficQuota: null,
         isActive: true
       })
-      portConflictMessage.value = ''
-      hasPortConflict.value = false
       if (formRef.value) {
         formRef.value.clearValidate()
       }
@@ -650,20 +433,15 @@ export default {
       submitting,
       extending,
       users,
-      displayUsers,
       dialogVisible,
       extendDialogVisible,
       isEdit,
-      isAdmin,
       currentUser,
       extendMonths,
       form,
       rules,
       formRef,
       dialogTitle,
-      portConflictMessage,
-      hasPortConflict,
-      canEditUser,
       loadUsers,
       handleAdd,
       handleEdit,
@@ -672,8 +450,7 @@ export default {
       handleExtendExpiry,
       confirmExtendExpiry,
       viewUserRules,
-      resetForm,
-      checkPortConflictsDebounced
+      resetForm
     }
   }
 }
@@ -708,15 +485,5 @@ export default {
   font-size: 12px;
   color: #909399;
   margin-top: 4px;
-}
-
-.conflict-message {
-  font-size: 12px;
-  color: #F56C6C;
-  margin-top: 4px;
-  padding: 4px 8px;
-  background: #FEF0F0;
-  border: 1px solid #FBC4C4;
-  border-radius: 4px;
 }
 </style>

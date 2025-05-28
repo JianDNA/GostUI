@@ -3,8 +3,6 @@ const cors = require('cors');
 const morgan = require('morgan');
 const { sequelize, initDb, models } = require('./services/dbService');
 const initGost = require('./scripts/init-gost');
-const { quickCheck } = require('./scripts/check-environment');
-const { platformUtils } = require('./utils/platform');
 
 // 创建 Express 应用
 const app = express();
@@ -26,9 +24,7 @@ app.use((err, req, res, next) => {
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/rules', require('./routes/rules'));
-app.use('/api/user-forward-rules', require('./routes/userForwardRules'));
 app.use('/api/gost', require('./routes/gost'));
-app.use('/api/gost-config', require('./routes/gostConfig'));
 app.use('/api/traffic', require('./routes/traffic'));
 
 // 添加简单的健康检查接口
@@ -48,24 +44,6 @@ app.get('/api/test-forward', (req, res) => {
 // 启动服务器并初始化
 (async function startServer() {
   try {
-    // 0. 快速环境检查
-    console.log('🔍 检查运行环境...');
-    platformUtils.printEnvironmentInfo();
-
-    const envCheck = quickCheck();
-    if (!envCheck.platformSupported) {
-      console.error('❌ 不支持的操作系统平台');
-      process.exit(1);
-    }
-    if (!envCheck.nodeOk) {
-      console.error('❌ Node.js 版本过低，需要 14+ 版本');
-      process.exit(1);
-    }
-    if (!envCheck.gostOk) {
-      console.warn('⚠️ Gost 二进制文件不存在，请运行 npm run install-gost');
-    }
-    console.log('✅ 环境检查通过\n');
-
     // 1. 先初始化数据库
     console.log('正在初始化数据库...');
     const dbSuccess = await initDb();
@@ -74,48 +52,36 @@ app.get('/api/test-forward', (req, res) => {
     } else {
       console.log('数据库初始化成功');
     }
-
+    
     // 2. 启动Web服务器
     const server = app.listen(PORT, () => {
       console.log(`服务器已启动在 http://localhost:${PORT}`);
       console.log(`测试端口转发: http://localhost:6443/api/test-forward`);
-
+      
       // 3. Web服务启动成功后，再启动gost服务
       console.log('正在初始化 Go-Gost 服务...');
       initGost()
         .then(() => {
           console.log('Go-Gost 服务启动成功');
-
-          // 4. 启动 Gost 配置自动同步服务
-          setTimeout(() => {
-            console.log('启动 Gost 配置自动同步服务...');
-            const gostConfigService = require('./services/gostConfigService');
-            gostConfigService.startAutoSync();
-          }, 2000);
         })
         .catch(error => {
           console.error('Go-Gost 服务启动失败:', error.message);
         });
     });
-
+    
     // 处理服务器关闭
     server.on('close', () => {
-      console.log('服务器正在关闭，停止相关服务...');
+      console.log('服务器正在关闭，停止 Go-Gost 服务...');
       try {
-        // 停止 Gost 配置同步服务
-        const gostConfigService = require('./services/gostConfigService');
-        gostConfigService.stopAutoSync();
-
-        // 停止 Gost 服务
         const gostService = require('./services/gostService');
         gostService.stop();
       } catch (error) {
-        console.error('停止服务失败:', error);
+        console.error('停止 Go-Gost 服务失败:', error);
       }
     });
-
+    
   } catch (error) {
     console.error('服务器启动失败:', error);
     process.exit(1);
   }
-})();
+})(); 

@@ -1,4 +1,4 @@
-const { Model, DataTypes } = require('sequelize');
+﻿const { Model, DataTypes } = require('sequelize');
 const bcrypt = require('bcryptjs');
 
 module.exports = (sequelize) => {
@@ -8,13 +8,6 @@ module.exports = (sequelize) => {
       User.hasMany(models.Rule, {
         foreignKey: 'userId',
         as: 'rules',
-        onDelete: 'CASCADE'
-      });
-      
-      // 添加用户转发规则关联
-      User.hasMany(models.UserForwardRule, {
-        foreignKey: 'userId',
-        as: 'forwardRules',
         onDelete: 'CASCADE'
       });
     }
@@ -48,28 +41,6 @@ module.exports = (sequelize) => {
         console.error('Password hashing error:', error);
         throw error;
       }
-    }
-
-    // 检查用户是否过期
-    isExpired() {
-      if (!this.expiryDate) return false;
-      return new Date() > new Date(this.expiryDate);
-    }
-
-    // 检查端口是否在用户允许的范围内
-    isPortInRange(port) {
-      if (!this.portRangeStart || !this.portRangeEnd) return false;
-      return port >= this.portRangeStart && port <= this.portRangeEnd;
-    }
-
-    // 获取用户可用的端口列表
-    getAvailablePorts() {
-      if (!this.portRangeStart || !this.portRangeEnd) return [];
-      const ports = [];
-      for (let i = this.portRangeStart; i <= this.portRangeEnd; i++) {
-        ports.push(i);
-      }
-      return ports;
     }
   }
 
@@ -153,54 +124,13 @@ module.exports = (sequelize) => {
           }
         }
       }
-    },
-    portRangeStart: {
-      type: DataTypes.INTEGER,
-      allowNull: true,
-      validate: {
-        min: 1,
-        max: 65535
-      },
-      comment: '用户端口范围起始端口'
-    },
-    portRangeEnd: {
-      type: DataTypes.INTEGER,
-      allowNull: true,
-      validate: {
-        min: 1,
-        max: 65535
-      },
-      comment: '用户端口范围结束端口'
-    },
-    expiryDate: {
-      type: DataTypes.DATE,
-      allowNull: true,
-      comment: '用户转发服务过期时间'
     }
   }, {
     sequelize,
     modelName: 'User',
     tableName: 'Users',
-    timestamps: true,
-    hooks: {
-      beforeValidate: (user) => {
-        // 验证端口范围
-        if (user.portRangeStart && user.portRangeEnd) {
-          if (user.portRangeStart >= user.portRangeEnd) {
-            throw new Error('起始端口必须小于结束端口');
-          }
-        }
-      },
-      beforeSave: (user) => {
-        // 如果设置了新用户且没有过期时间，默认给一个月
-        if (user.isNewRecord && !user.expiryDate && user.role === 'user') {
-          const oneMonthLater = new Date();
-          oneMonthLater.setMonth(oneMonthLater.getMonth() + 1);
-          user.expiryDate = oneMonthLater;
-        }
-      }
-    }
+    timestamps: true
   });
 
   return User;
-};
+}; 

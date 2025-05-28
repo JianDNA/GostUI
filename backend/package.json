@@ -16,7 +16,8 @@
     "test-gost": "node scripts/test-gost.js",
     "forward": "node scripts/port-forward-test.js",
     "debug-forward": "node scripts/debug-port-forward.js",
-    "reset-port": "node scripts/reset-port.js"
+    "reset-port": "node scripts/reset-port.js",
+    "check-env": "node scripts/check-environment.js"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

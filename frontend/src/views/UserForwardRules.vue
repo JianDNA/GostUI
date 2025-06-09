@@ -99,6 +99,26 @@
               />
             </template>
           </el-table-column>
+          <el-table-column label="流量统计 (双向)" width="140">
+            <template #default="{ row }">
+              <div v-if="row.trafficStats" class="traffic-stats">
+                <div class="traffic-value">
+                  <el-tooltip content="上行+下行总流量" placement="top">
+                    <span>{{ formatTraffic(row.trafficStats.totalBytes || 0) }}</span>
+                  </el-tooltip>
+                </div>
+                <div class="traffic-detail">
+                  <el-tooltip content="上行流量 (客户端→服务器)" placement="top">
+                    <span class="upload">↑{{ formatTraffic(row.trafficStats.inputBytes || 0) }}</span>
+                  </el-tooltip>
+                  <el-tooltip content="下行流量 (服务器→客户端)" placement="top">
+                    <span class="download">↓{{ formatTraffic(row.trafficStats.outputBytes || 0) }}</span>
+                  </el-tooltip>
+                </div>
+              </div>
+              <span v-else class="text-muted">无数据</span>
+            </template>
+          </el-table-column>
           <el-table-column prop="createdAt" label="创建时间" width="160">
             <template #default="{ row }">
               {{ new Date(row.createdAt).toLocaleString() }}
@@ -151,6 +171,26 @@
               @change="toggleRule(row)"
               :disabled="userExpired"
             />
+          </template>
+        </el-table-column>
+        <el-table-column label="流量统计 (双向)" width="140">
+          <template #default="{ row }">
+            <div v-if="row.trafficStats" class="traffic-stats">
+              <div class="traffic-value">
+                <el-tooltip content="上行+下行总流量" placement="top">
+                  <span>{{ formatTraffic(row.trafficStats.totalBytes || 0) }}</span>
+                </el-tooltip>
+              </div>
+              <div class="traffic-detail">
+                <el-tooltip content="上行流量 (客户端→服务器)" placement="top">
+                  <span class="upload">↑{{ formatTraffic(row.trafficStats.inputBytes || 0) }}</span>
+                </el-tooltip>
+                <el-tooltip content="下行流量 (服务器→客户端)" placement="top">
+                  <span class="download">↓{{ formatTraffic(row.trafficStats.outputBytes || 0) }}</span>
+                </el-tooltip>
+              </div>
+            </div>
+            <span v-else class="text-muted">无数据</span>
           </template>
         </el-table-column>
         <el-table-column prop="createdAt" label="创建时间" width="160">
@@ -583,6 +623,22 @@ export default {
       return types[protocol] || 'info'
     }
 
+    // 格式化流量显示
+    const formatTraffic = (bytes) => {
+      if (!bytes || bytes === 0) return '0B'
+
+      const units = ['B', 'KB', 'MB', 'GB', 'TB']
+      let size = bytes
+      let unitIndex = 0
+
+      while (size >= 1024 && unitIndex < units.length - 1) {
+        size /= 1024
+        unitIndex++
+      }
+
+      return `${size.toFixed(unitIndex === 0 ? 0 : 1)}${units[unitIndex]}`
+    }
+
     // 监听路由变化
     watch(() => route.query.userId, () => {
       loadRules()
@@ -619,7 +675,8 @@ export default {
       handleGroupSelectionChange,
       resetForm,
       getProtocolType,
-      validateTargetAddress
+      validateTargetAddress,
+      formatTraffic
     }
   }
 }
@@ -715,5 +772,42 @@ export default {
   font-size: 12px;
   color: #909399;
   margin-top: 4px;
+}
+
+.traffic-stats {
+  text-align: center;
+}
+
+.traffic-value {
+  font-weight: bold;
+  color: #409eff;
+  font-size: 13px;
+}
+
+.traffic-detail {
+  font-size: 11px;
+  color: #909399;
+  margin-top: 2px;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.traffic-detail .upload {
+  color: #f56c6c;
+}
+
+.traffic-detail .download {
+  color: #67c23a;
+}
+
+.text-muted {
+  color: #909399;
+  font-size: 12px;
+}
+
+.traffic-type {
+  margin-top: 4px;
+  text-align: center;
 }
 </style>

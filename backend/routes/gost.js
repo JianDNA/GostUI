@@ -7,9 +7,9 @@ const path = require('path');
 /**
  * 获取 Go-Gost 运行状态，包含详细信息
  */
-router.get('/status', (req, res) => {
+router.get('/status', async (req, res) => {
   try {
-    const status = gostService.getStatus();
+    const status = await gostService.getStatus();
     const configPath = path.join(__dirname, '../config/gost-config.json');
     let configExists = false;
     let config = null;
@@ -138,7 +138,7 @@ router.post('/start', async (req, res) => {
     const result = await gostService.startWithConfig();
 
     if (result) {
-      const status = gostService.getStatus();
+      const status = await gostService.getStatus();
       console.log('Go-Gost 服务启动成功', status);
 
       // 重新读取当前使用的端口
@@ -216,7 +216,7 @@ router.post('/restart', async (req, res) => {
     // 重新启动服务
     await gostService.startWithConfig();
 
-    const status = gostService.getStatus();
+    const status = await gostService.getStatus();
     console.log('Go-Gost 服务已重启', status);
 
     res.json({

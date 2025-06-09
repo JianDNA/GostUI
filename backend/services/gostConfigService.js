@@ -87,10 +87,88 @@ class GostConfigService {
         return a.sourcePort - b.sourcePort;
       });
 
-      // 生成 Gost 配置
+      // 输出详细的规则统计信息
+      console.log(`📊 配置生成统计:`);
+      console.log(`   - 有效用户数: ${validUsers.length}`);
+      console.log(`   - 有效规则数: ${allRules.length}`);
+
+      // 按用户分组统计
+      const userStats = {};
+      allRules.forEach(rule => {
+        if (!userStats[rule.username]) {
+          userStats[rule.username] = { count: 0, ports: [] };
+        }
+        userStats[rule.username].count++;
+        userStats[rule.username].ports.push(rule.sourcePort);
+      });
+
+      Object.entries(userStats).forEach(([username, stats]) => {
+        console.log(`   - 用户 ${username}: ${stats.count} 个规则, 端口: ${stats.ports.sort((a,b) => a-b).join(', ')}`);
+      });
+
+      // 检测端口冲突
+      const portMap = new Map();
+      const conflicts = [];
+
+      allRules.forEach(rule => {
+        const key = `${rule.protocol}-${rule.sourcePort}`;
+        if (portMap.has(key)) {
+          const existing = portMap.get(key);
+          conflicts.push({
+            port: rule.sourcePort,
+            protocol: rule.protocol,
+            users: [existing.username, rule.username],
+            rules: [existing.name, rule.name]
+          });
+        } else {
+          portMap.set(key, rule);
+        }
+      });
+
+      if (conflicts.length > 0) {
+        console.warn(`⚠️ 检测到 ${conflicts.length} 个端口冲突:`);
+        conflicts.forEach(conflict => {
+          console.warn(`   - 端口 ${conflict.port} (${conflict.protocol}): 用户 ${conflict.users.join(' vs ')}`);
+        });
+      }
+
+      // 生成 Gost 配置，包含插件支持
       const gostConfig = {
         services: [],
-        chains: []
+        chains: [],
+        // 添加认证器插件
+        authers: [
+          {
+            name: "auther-0",
+            plugin: {
+              type: "http",
+              addr: "http://localhost:3000/api/gost-plugin/auth",
+              timeout: "5s"
+            }
+          }
+        ],
+        // 添加观测器插件
+        observers: [
+          {
+            name: "observer-0",
+            plugin: {
+              type: "http",
+              addr: "http://localhost:3000/api/gost-plugin/observer",
+              timeout: "10s"
+            }
+          }
+        ],
+        // 添加限制器插件 (用于流量限制，不限制网速)
+        limiters: [
+          {
+            name: "limiter-0",
+            plugin: {
+              type: "http",
+              addr: "http://localhost:3000/api/gost-plugin/limiter",
+              timeout: "5s"
+            }
+          }
+        ]
       };
 
       // 为每个转发规则创建服务和链
@@ -98,18 +176,36 @@ class GostConfigService {
         const serviceName = `forward-${rule.protocol}-${rule.sourcePort}`;
         const chainName = `chain-${rule.protocol}-${rule.sourcePort}`;
 
-        // 创建服务
+        console.log(`🔧 创建服务: ${serviceName} (用户: ${rule.username}, 端口: ${rule.sourcePort} -> ${rule.targetAddress})`);
+
+        // 创建服务，包含插件支持
         const service = {
           name: serviceName,
           addr: `:${rule.sourcePort}`,
+          observer: "observer-0",  // 服务级别的观察器
           handler: {
             type: rule.protocol,
-            chain: chainName
+            chain: chainName,
+            // 添加认证器、观测器和限制器插件 (限制器用于流量控制)
+            auther: "auther-0",
+            observer: "observer-0",
+            limiter: "limiter-0",
+            metadata: {
+              // Handler 级别的观察器配置
+              "observer.period": "5s",
+              "observer.resetTraffic": true  // 🔧 关键修复：启用增量流量模式
+            }
           },
           listener: {
             type: rule.protocol
           },
           metadata: {
+            // 启用统计功能
+            enableStats: true,
+            // 观测器配置 - 优化为5秒周期
+            "observer.period": "5s",
+            "observer.resetTraffic": true,  // 🔧 关键修复：启用增量流量模式
+            // 用户和规则信息
             userId: rule.userId,
             username: rule.username,
             ruleId: rule.ruleId,

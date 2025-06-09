@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿const express = require('express');
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿const express = require('express');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
 const { UserForwardRule, User } = require('../models');
@@ -198,18 +198,98 @@ router.get('/', auth, async (req, res) => {
         order: [['username', 'ASC'], ['forwardRules', 'createdAt', 'DESC']]
       });
 
-      const groupedRules = users.map(user => ({
-        userId: user.id,
-        username: user.username,
-        portRange: user.portRangeStart && user.portRangeEnd
-          ? `${user.portRangeStart}-${user.portRangeEnd}`
-          : '未设置',
-        isExpired: user.isExpired(),
-        rules: user.forwardRules || []
-      })).filter(group => group.rules.length > 0); // 只显示有规则的用户
+      // 为每个用户的规则添加流量统计
+      const { TrafficHourly } = require('../services/dbService').models;
+      const groupedRules = await Promise.all(users.map(async (user) => {
+        if (!user.forwardRules || user.forwardRules.length === 0) {
+          return null; // 过滤掉没有规则的用户
+        }
+
+        // 为每个规则添加流量统计
+        const rulesWithStats = await Promise.all(user.forwardRules.map(async (rule) => {
+          const ruleData = rule.toJSON();
+
+          // 获取最近7天的流量统计
+          const last7Days = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+          const trafficStats = await TrafficHourly.findOne({
+            where: {
+              userId: rule.userId,
+              port: rule.sourcePort,
+              recordTime: {
+                [Op.gte]: last7Days
+              }
+            },
+            attributes: [
+              [require('../services/dbService').models.sequelize.fn('SUM', require('../services/dbService').models.sequelize.col('totalBytes')), 'totalBytes'],
+              [require('../services/dbService').models.sequelize.fn('SUM', require('../services/dbService').models.sequelize.col('inputBytes')), 'inputBytes'],
+              [require('../services/dbService').models.sequelize.fn('SUM', require('../services/dbService').models.sequelize.col('outputBytes')), 'outputBytes']
+            ]
+          });
+
+          // 获取总流量统计 (所有时间)
+          const totalStats = await TrafficHourly.findOne({
+            where: {
+              userId: rule.userId,
+              port: rule.sourcePort
+            },
+            attributes: [
+              [require('../services/dbService').models.sequelize.fn('SUM', require('../services/dbService').models.sequelize.col('totalBytes')), 'totalBytes'],
+              [require('../services/dbService').models.sequelize.fn('SUM', require('../services/dbService').models.sequelize.col('inputBytes')), 'inputBytes'],
+              [require('../services/dbService').models.sequelize.fn('SUM', require('../services/dbService').models.sequelize.col('outputBytes')), 'outputBytes']
+            ]
+          });
+
+          // 计算流量数据
+          const recent7DaysBytes = parseInt(trafficStats?.dataValues?.totalBytes) || 0;
+          const allTimeBytes = parseInt(totalStats?.dataValues?.totalBytes) || 0;
+          const ruleUsedTraffic = ruleData.usedTraffic || 0;
+
+          // 使用规则自身的 usedTraffic 字段作为主要数据源
+          const totalBytes = Math.max(ruleUsedTraffic, allTimeBytes);
+
+          // 添加流量统计信息
+          ruleData.trafficStats = {
+            // 前端期望的顶级字段
+            totalBytes: totalBytes,
+            inputBytes: parseInt(totalStats?.dataValues?.inputBytes) || 0,
+            outputBytes: parseInt(totalStats?.dataValues?.outputBytes) || 0,
+            totalGB: (totalBytes / (1024 * 1024 * 1024)).toFixed(2),
+
+            // 详细统计
+            recent7Days: {
+              totalBytes: recent7DaysBytes,
+              inputBytes: parseInt(trafficStats?.dataValues?.inputBytes) || 0,
+              outputBytes: parseInt(trafficStats?.dataValues?.outputBytes) || 0,
+              totalGB: (recent7DaysBytes / (1024 * 1024 * 1024)).toFixed(2)
+            },
+            allTime: {
+              totalBytes: allTimeBytes,
+              inputBytes: parseInt(totalStats?.dataValues?.inputBytes) || 0,
+              outputBytes: parseInt(totalStats?.dataValues?.outputBytes) || 0,
+              totalGB: (allTimeBytes / (1024 * 1024 * 1024)).toFixed(2)
+            }
+          };
+
+          return ruleData;
+        }));
+
+        return {
+          userId: user.id,
+          username: user.username,
+          portRange: user.portRangeStart && user.portRangeEnd
+            ? `${user.portRangeStart}-${user.portRangeEnd}`
+            : '未设置',
+          isExpired: user.isExpired(),
+          rules: rulesWithStats
+        };
+      }));
+
+      // 过滤掉 null 值（没有规则的用户）
+      const filteredGroupedRules = groupedRules.filter(group => group !== null);
 
       return res.json({
-        groupedRules,
+        groupedRules: filteredGroupedRules,
         cleanedCount: 0
       });
     } else {
@@ -236,8 +316,78 @@ router.get('/', auth, async (req, res) => {
         order: [['createdAt', 'DESC']]
       });
 
+      // 为每个规则添加流量统计
+      const { TrafficHourly } = require('../services/dbService').models;
+      const rulesWithStats = await Promise.all(rules.map(async (rule) => {
+        const ruleData = rule.toJSON();
+
+        // 获取最近7天的流量统计
+        const last7Days = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+        const trafficStats = await TrafficHourly.findOne({
+          where: {
+            userId: rule.userId,
+            port: rule.sourcePort,
+            recordTime: {
+              [Op.gte]: last7Days
+            }
+          },
+          attributes: [
+            [require('../services/dbService').models.sequelize.fn('SUM', require('../services/dbService').models.sequelize.col('totalBytes')), 'totalBytes'],
+            [require('../services/dbService').models.sequelize.fn('SUM', require('../services/dbService').models.sequelize.col('inputBytes')), 'inputBytes'],
+            [require('../services/dbService').models.sequelize.fn('SUM', require('../services/dbService').models.sequelize.col('outputBytes')), 'outputBytes']
+          ]
+        });
+
+        // 获取总流量统计 (所有时间)
+        const totalStats = await TrafficHourly.findOne({
+          where: {
+            userId: rule.userId,
+            port: rule.sourcePort
+          },
+          attributes: [
+            [require('../services/dbService').models.sequelize.fn('SUM', require('../services/dbService').models.sequelize.col('totalBytes')), 'totalBytes'],
+            [require('../services/dbService').models.sequelize.fn('SUM', require('../services/dbService').models.sequelize.col('inputBytes')), 'inputBytes'],
+            [require('../services/dbService').models.sequelize.fn('SUM', require('../services/dbService').models.sequelize.col('outputBytes')), 'outputBytes']
+          ]
+        });
+
+        // 计算流量数据
+        const recent7DaysBytes = parseInt(trafficStats?.dataValues?.totalBytes) || 0;
+        const allTimeBytes = parseInt(totalStats?.dataValues?.totalBytes) || 0;
+        const ruleUsedTraffic = ruleData.usedTraffic || 0;
+
+        // 使用规则自身的 usedTraffic 字段作为主要数据源
+        const totalBytes = Math.max(ruleUsedTraffic, allTimeBytes);
+
+        // 添加流量统计信息
+        ruleData.trafficStats = {
+          // 前端期望的顶级字段
+          totalBytes: totalBytes,
+          inputBytes: parseInt(totalStats?.dataValues?.inputBytes) || 0,
+          outputBytes: parseInt(totalStats?.dataValues?.outputBytes) || 0,
+          totalGB: (totalBytes / (1024 * 1024 * 1024)).toFixed(2),
+
+          // 详细统计
+          recent7Days: {
+            totalBytes: recent7DaysBytes,
+            inputBytes: parseInt(trafficStats?.dataValues?.inputBytes) || 0,
+            outputBytes: parseInt(trafficStats?.dataValues?.outputBytes) || 0,
+            totalGB: (recent7DaysBytes / (1024 * 1024 * 1024)).toFixed(2)
+          },
+          allTime: {
+            totalBytes: allTimeBytes,
+            inputBytes: parseInt(totalStats?.dataValues?.inputBytes) || 0,
+            outputBytes: parseInt(totalStats?.dataValues?.outputBytes) || 0,
+            totalGB: (allTimeBytes / (1024 * 1024 * 1024)).toFixed(2)
+          }
+        };
+
+        return ruleData;
+      }));
+
       return res.json({
-        rules,
+        rules: rulesWithStats,
         user: {
           id: user.id,
           username: user.username,
@@ -284,8 +434,8 @@ router.post('/', auth, async (req, res) => {
       return res.status(403).json({ message: '用户已过期，无法创建转发规则' });
     }
 
-    // 检查端口范围（非管理员）
-    if (req.user.role !== 'admin' && !user.isPortInRange(sourcePort)) {
+    // 检查端口范围（只对非管理员用户进行限制）
+    if (user.role !== 'admin' && !user.isPortInRange(sourcePort)) {
       return res.status(400).json({
         message: `端口 ${sourcePort} 不在允许的端口范围内 (${user.portRangeStart}-${user.portRangeEnd})`
       });
@@ -388,8 +538,8 @@ router.put('/:id', auth, async (req, res) => {
       return res.status(403).json({ message: '用户已过期，无法修改转发规则' });
     }
 
-    // 检查端口范围（如果修改了端口且非管理员）
-    if (sourcePort && req.user.role !== 'admin' && !rule.user.isPortInRange(sourcePort)) {
+    // 检查端口范围（如果修改了端口且目标用户非管理员）
+    if (sourcePort && rule.user.role !== 'admin' && !rule.user.isPortInRange(sourcePort)) {
       return res.status(400).json({
         message: `端口 ${sourcePort} 不在允许的端口范围内 (${rule.user.portRangeStart}-${rule.user.portRangeEnd})`
       });

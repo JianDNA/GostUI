@@ -1,0 +1,51 @@
+{
+  "users": {
+    "1": {
+      "id": 1,
+      "username": "admin",
+      "expiryDate": null,
+      "trafficQuota": null,
+      "usedTraffic": 828270689160,
+      "portRanges": [],
+      "isActive": true,
+      "lastUpdate": 1749445802234
+    },
+    "2": {
+      "id": 2,
+      "username": "test",
+      "expiryDate": "2025-07-09T04:05:45.828Z",
+      "trafficQuota": 100,
+      "usedTraffic": 479703937913,
+      "portRanges": [
+        {
+          "start": 2000,
+          "end": 3000
+        }
+      ],
+      "isActive": true,
+      "lastUpdate": 1749445802234
+    }
+  },
+  "portMapping": {
+    "2999": {
+      "userId": 2,
+      "username": "test",
+      "ruleId": 3,
+      "ruleName": "Test HTTPS Proxy"
+    },
+    "6443": {
+      "userId": 1,
+      "username": "admin",
+      "ruleId": 1,
+      "ruleName": "Admin HTTPS Proxy"
+    },
+    "8080": {
+      "userId": 1,
+      "username": "admin",
+      "ruleId": 2,
+      "ruleName": "Admin HTTP Proxy"
+    }
+  },
+  "lastUpdate": 1749445802234,
+  "updatedBy": "0"
+}

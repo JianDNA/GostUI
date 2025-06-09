@@ -42,11 +42,15 @@ const actions = {
     }
   },
 
-  async logout({ commit }) {
+  async logout({ commit }, skipRequest = false) {
     try {
-      await request.post('/auth/logout');
+      // 如果不跳过请求且有token，则发送logout请求
+      if (!skipRequest && commit.state?.token) {
+        await request.post('/auth/logout');
+      }
     } catch (error) {
       console.error('Logout error:', error);
+      // 即使logout请求失败，也要清理本地状态
     } finally {
       commit('CLEAR_USER_STATE');
     }

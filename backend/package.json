@@ -5,7 +5,8 @@
   "main": "app.js",
   "scripts": {
     "start": "node app.js",
-    "dev": "nodemon --ignore config/gost-config.json --ignore bin/ app.js",
+    "dev": "nodemon app.js",
+    "dev:smart": "node scripts/start-dev.js",
     "init-db": "node scripts/init-db.js",
     "check-db": "node scripts/check-db.js",
     "migrate": "sequelize-cli db:migrate",
@@ -17,7 +18,11 @@
     "forward": "node scripts/port-forward-test.js",
     "debug-forward": "node scripts/debug-port-forward.js",
     "reset-port": "node scripts/reset-port.js",
-    "check-env": "node scripts/check-environment.js"
+    "check-env": "node scripts/check-environment.js",
+    "db:migrate": "npx sequelize-cli db:migrate",
+    "db:migrate:undo": "npx sequelize-cli db:migrate:undo",
+    "init-time-series": "node scripts/init-time-series.js",
+    "fix-startup": "node scripts/fix-startup-issues.js"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
@@ -27,7 +32,10 @@
     "jsonwebtoken": "^9.0.0",
     "morgan": "^1.10.0",
     "sequelize": "^6.37.7",
-    "sqlite3": "^5.1.7"
+    "sqlite3": "^5.1.7",
+    "@influxdata/influxdb-client": "^1.33.2",
+    "node-cron": "^3.0.3",
+    "dotenv": "^16.3.1"
   },
   "devDependencies": {
     "nodemon": "^2.0.22",

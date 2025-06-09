@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import store from '@/store';
+import { isApiTestEnabled } from '@/utils/env';
 
 // 布局组件
 import Layout from '@/components/layout/Layout.vue';
@@ -11,6 +12,7 @@ const UserManagement = () => import('@/views/UserManagement.vue');
 const UserForwardRules = () => import('@/views/UserForwardRules.vue');
 const TrafficStats = () => import('@/views/TrafficStats.vue');
 const GostConfig = () => import('@/views/GostConfig.vue');
+const SimpleTestPanel = () => import('@/views/SimpleTestPanel.vue');
 
 const routes = [
   {
@@ -79,6 +81,16 @@ const routes = [
           requiresAdmin: true,
           title: 'Gost 配置'
         }
+      },
+      {
+        path: '/simple/test',
+        name: 'SimpleTestPanel',
+        component: SimpleTestPanel,
+        meta: {
+          requiresAuth: true,
+          requiresAdmin: true,
+          title: 'API 测试面板'
+        }
       }
     ]
   }
@@ -113,6 +125,15 @@ router.beforeEach(async (to, from, next) => {
     if (to.matched.some(record => record.meta.requiresAdmin) && !isAdmin) {
       next({ name: 'Dashboard' });
       return;
+    }
+
+    // 测试面板需要特殊权限检查
+    if (to.name === 'AdminTestPanel') {
+      const currentUser = store.getters['user/currentUser'];
+      if (!isApiTestEnabled(currentUser)) {
+        next({ name: 'Dashboard' });
+        return;
+      }
     }
   }
 

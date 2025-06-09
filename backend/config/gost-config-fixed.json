@@ -1,0 +1,174 @@
+{
+  "services": [
+    {
+      "name": "forward-tcp-6443",
+      "addr": ":6443",
+      "observer": "observer-0",
+      "handler": {
+        "type": "tcp",
+        "chain": "chain-tcp-6443",
+        "auther": "auther-0",
+        "observer": "observer-0",
+        "limiter": "limiter-0",
+        "metadata": {
+          "observer.period": "5s",
+          "observer.resetTraffic": false
+        }
+      },
+      "listener": {
+        "type": "tcp"
+      },
+      "metadata": {
+        "enableStats": true,
+        "observer.period": "5s",
+        "observer.resetTraffic": false,
+        "observer.batch": true,
+        "userId": 1,
+        "username": "admin",
+        "ruleId": 2,
+        "ruleName": "node转发",
+        "description": ""
+      }
+    },
+    {
+      "name": "forward-tcp-8080",
+      "addr": ":8080",
+      "observer": "observer-0",
+      "handler": {
+        "type": "tcp",
+        "chain": "chain-tcp-8080",
+        "auther": "auther-0",
+        "observer": "observer-0",
+        "limiter": "limiter-0",
+        "metadata": {
+          "observer.period": "5s",
+          "observer.resetTraffic": false
+        }
+      },
+      "listener": {
+        "type": "tcp"
+      },
+      "metadata": {
+        "enableStats": true,
+        "observer.period": "5s",
+        "observer.resetTraffic": false,
+        "observer.batch": true,
+        "userId": 1,
+        "username": "admin",
+        "ruleId": 3,
+        "ruleName": "admin-test-rule",
+        "description": "Admin测试"
+      }
+    },
+    {
+      "name": "forward-tcp-10004",
+      "addr": ":10004",
+      "observer": "observer-0",
+      "handler": {
+        "type": "tcp",
+        "chain": "chain-tcp-10004",
+        "auther": "auther-0",
+        "observer": "observer-0",
+        "limiter": "limiter-0",
+        "metadata": {
+          "observer.period": "5s",
+          "observer.resetTraffic": false
+        }
+      },
+      "listener": {
+        "type": "tcp"
+      },
+      "metadata": {
+        "enableStats": true,
+        "observer.period": "5s",
+        "observer.resetTraffic": false,
+        "observer.batch": true,
+        "userId": 2,
+        "username": "test",
+        "ruleId": 1,
+        "ruleName": "test-rule-10004",
+        "description": "测试转发规则 10004"
+      }
+    }
+  ],
+  "chains": [
+    {
+      "name": "chain-tcp-6443",
+      "hops": [
+        {
+          "name": "hop-0",
+          "nodes": [
+            {
+              "addr": "127.0.0.1:3000",
+              "connector": {
+                "type": "tcp"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "chain-tcp-8080",
+      "hops": [
+        {
+          "name": "hop-1",
+          "nodes": [
+            {
+              "addr": "192.168.1.100:443",
+              "connector": {
+                "type": "tcp"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "chain-tcp-10004",
+      "hops": [
+        {
+          "name": "hop-2",
+          "nodes": [
+            {
+              "addr": "192.168.1.100:443",
+              "connector": {
+                "type": "tcp"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "authers": [
+    {
+      "name": "auther-0",
+      "plugin": {
+        "type": "http",
+        "addr": "http://localhost:3000/api/gost-plugin/auth",
+        "timeout": "5s"
+      }
+    }
+  ],
+  "observers": [
+    {
+      "name": "observer-0",
+      "plugin": {
+        "type": "http",
+        "addr": "http://localhost:3000/api/gost-plugin/observer",
+        "timeout": "10s"
+      }
+    }
+  ],
+  "limiters": [
+    {
+      "name": "limiter-0",
+      "plugin": {
+        "type": "http",
+        "addr": "http://localhost:3000/api/gost-plugin/limiter",
+        "timeout": "5s"
+      }
+    }
+  ]
+}

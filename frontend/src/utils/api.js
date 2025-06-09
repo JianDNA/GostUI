@@ -27,7 +27,9 @@ export const users = {
   // 延长用户过期时间
   extendUserExpiry: (id, data) => request.post(`/users/${id}/extend-expiry`, data),
   // 获取用户转发规则统计
-  getUserForwardRulesStats: (id) => request.get(`/users/${id}/forward-rules-stats`)
+  getUserForwardRulesStats: (id) => request.get(`/users/${id}/forward-rules-stats`),
+  // 重置用户流量统计 (管理员专用)
+  resetUserTraffic: (id, data) => request.post(`/users/${id}/reset-traffic`, data)
 }
 
 // 规则管理相关API

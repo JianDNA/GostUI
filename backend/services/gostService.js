@@ -17,6 +17,9 @@ class GostService {
     this.process = null;
     this.isRunning = false;
     this.startTime = null;
+
+    // 启动时加载持久化状态
+    this.initializeFromPersistedState();
     this.defaultConfig = {
       services: [
         {
@@ -50,6 +53,22 @@ class GostService {
         }
       ]
     };
+  }
+
+  // 从持久化状态初始化
+  initializeFromPersistedState() {
+    try {
+      const persistedStatus = this.loadPersistedStatus();
+      if (persistedStatus) {
+        this.isRunning = persistedStatus.isRunning;
+        if (persistedStatus.startTime) {
+          this.startTime = new Date(persistedStatus.startTime).getTime();
+        }
+        console.log(`🔄 从持久化状态初始化: 运行=${this.isRunning}, 启动时间=${persistedStatus.startTime}`);
+      }
+    } catch (error) {
+      console.error('从持久化状态初始化失败:', error);
+    }
   }
 
   async createRule(ruleData) {
@@ -714,11 +733,77 @@ class GostService {
   }
 
   // 获取运行状态
-  getStatus() {
-    // 获取基本状态
+  async getStatus() {
+    // 实际检测进程状态
+    let actuallyRunning = false;
+    let actualPid = null;
+    let statusChanged = false;
+
+    // 如果有进程对象，检查进程是否真的在运行
+    if (this.process && this.process.pid) {
+      try {
+        // 发送信号0检查进程是否存在
+        process.kill(this.process.pid, 0);
+        actuallyRunning = true;
+        actualPid = this.process.pid;
+
+        // 检查状态是否需要同步
+        if (!this.isRunning) {
+          console.log(`🔄 检测到 GOST 进程 ${this.process.pid} 正在运行，但内存状态为未运行，同步状态`);
+          this.isRunning = true;
+          if (!this.startTime) {
+            this.startTime = Date.now();
+          }
+          statusChanged = true;
+        }
+      } catch (e) {
+        // 进程不存在
+        if (this.isRunning) {
+          console.log(`❌ GOST 进程 ${this.process.pid} 已不存在，但内存状态为运行中，同步状态`);
+          statusChanged = true;
+        }
+        this.isRunning = false;
+        this.process = null;
+        this.startTime = null;
+      }
+    } else {
+      // 没有进程对象，但可能有其他 GOST 进程在运行
+      const runningProcess = await this.detectRunningGostProcess();
+      if (runningProcess) {
+        console.log(`🔍 检测到外部 GOST 进程 ${runningProcess.pid} 正在运行`);
+        actuallyRunning = true;
+        actualPid = runningProcess.pid;
+
+        if (!this.isRunning) {
+          console.log(`🔄 发现外部 GOST 进程，更新内存状态`);
+          this.isRunning = true;
+          this.startTime = Date.now();
+          statusChanged = true;
+
+          // 尝试关联到这个进程 (如果可能)
+          // 注意：这里不能直接关联，因为我们没有创建这个进程
+          console.log(`⚠️ 检测到外部 GOST 进程，建议重启服务以获得完整控制`);
+        }
+      } else {
+        // 确实没有 GOST 进程运行
+        if (this.isRunning) {
+          console.log(`🔄 没有检测到 GOST 进程，但内存状态为运行中，同步状态`);
+          statusChanged = true;
+        }
+        this.isRunning = false;
+        this.startTime = null;
+      }
+    }
+
+    // 如果状态发生变化，持久化到配置文件
+    if (statusChanged) {
+      await this.persistStatus(actuallyRunning, actualPid);
+    }
+
+    // 获取基本状态 (使用实际检测的状态)
     const baseStatus = {
-      isRunning: this.isRunning,
-      pid: this.process ? this.process.pid : null
+      isRunning: actuallyRunning,
+      pid: actualPid
     };
 
     // 获取配置信息
@@ -796,6 +881,102 @@ class GostService {
     }
 
     return baseStatus;
+  }
+
+  // 检测是否有外部 GOST 进程在运行
+  async detectRunningGostProcess() {
+    try {
+      const gostExecutableName = platformUtils.getGostExecutableName();
+
+      if (isWindows()) {
+        // Windows 系统
+        const { stdout } = await execPromise(`tasklist /fi "imagename eq ${gostExecutableName}" /fo csv /nh`);
+        if (stdout.includes(gostExecutableName)) {
+          // 解析输出获取 PID
+          const lines = stdout.trim().split('\n');
+          for (const line of lines) {
+            if (line.includes(gostExecutableName)) {
+              const parts = line.split(',');
+              if (parts.length >= 2) {
+                const pid = parseInt(parts[1].replace(/"/g, ''), 10);
+                if (!isNaN(pid)) {
+                  return { pid, name: gostExecutableName };
+                }
+              }
+            }
+          }
+        }
+      } else {
+        // Linux/Mac 系统
+        const { stdout } = await execPromise('ps -ef | grep gost | grep -v grep || echo ""');
+        if (stdout.trim()) {
+          const lines = stdout.trim().split('\n');
+          for (const line of lines) {
+            const parts = line.trim().split(/\s+/);
+            if (parts.length >= 2) {
+              const pid = parseInt(parts[1], 10);
+              if (!isNaN(pid)) {
+                return { pid, name: 'gost' };
+              }
+            }
+          }
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.log('检测外部 GOST 进程时出错:', error.message);
+      return null;
+    }
+  }
+
+  // 持久化状态到配置文件
+  async persistStatus(isRunning, pid) {
+    try {
+      const statusFile = path.join(__dirname, '../config/gost-status.json');
+      const statusData = {
+        isRunning,
+        pid,
+        lastUpdate: new Date().toISOString(),
+        startTime: this.startTime ? new Date(this.startTime).toISOString() : null
+      };
+
+      fs.writeFileSync(statusFile, JSON.stringify(statusData, null, 2));
+      console.log(`💾 GOST 状态已持久化: 运行=${isRunning}, PID=${pid}`);
+
+      return true;
+    } catch (error) {
+      console.error('持久化 GOST 状态失败:', error);
+      return false;
+    }
+  }
+
+  // 从配置文件加载状态
+  loadPersistedStatus() {
+    try {
+      const statusFile = path.join(__dirname, '../config/gost-status.json');
+      if (fs.existsSync(statusFile)) {
+        const statusData = JSON.parse(fs.readFileSync(statusFile, 'utf8'));
+        console.log(`📂 加载持久化的 GOST 状态:`, statusData);
+
+        // 验证持久化的进程是否仍在运行
+        if (statusData.isRunning && statusData.pid) {
+          try {
+            process.kill(statusData.pid, 0);
+            console.log(`✅ 持久化的进程 ${statusData.pid} 仍在运行`);
+            return statusData;
+          } catch (e) {
+            console.log(`❌ 持久化的进程 ${statusData.pid} 已不存在`);
+            // 清理过期的状态文件
+            this.persistStatus(false, null);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('加载持久化状态失败:', error);
+    }
+
+    return null;
   }
 
   // 更新配置文件

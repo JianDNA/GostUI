@@ -1,4 +1,4 @@
-﻿﻿﻿const express = require('express');
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿const express = require('express');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
 const { User, UserForwardRule } = require('../models');
@@ -43,18 +43,136 @@ router.get('/', auth, async (req, res) => {
       }]
     });
 
-    // 添加计算字段
-    const usersWithStatus = users.map(user => ({
-      ...user.toJSON(),
-      isExpired: user.isExpired(),
-      forwardRuleCount: user.forwardRules ? user.forwardRules.length : 0,
-      activeRuleCount: user.forwardRules ? user.forwardRules.filter(rule => rule.isActive).length : 0
+    // 添加计算字段和流量统计
+    const { TrafficHourly } = require('../services/dbService').models;
+    const usersWithStatus = await Promise.all(users.map(async (user) => {
+      const userData = user.toJSON();
+
+      // 计算流量使用情况
+      const trafficLimitBytes = userData.trafficQuota ? userData.trafficQuota * 1024 * 1024 * 1024 : 0;
+      const usedTrafficBytes = userData.usedTraffic || 0;
+
+      // 获取最近7天的流量统计
+      const last7Days = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+      const recentTraffic = await TrafficHourly.findOne({
+        where: {
+          userId: user.id,
+          recordTime: {
+            [Op.gte]: last7Days
+          }
+        },
+        attributes: [
+          [require('../services/dbService').models.sequelize.fn('SUM', require('../services/dbService').models.sequelize.col('totalBytes')), 'totalBytes']
+        ]
+      });
+
+      // 添加统计信息
+      return {
+        ...userData,
+        isExpired: user.isExpired(),
+        forwardRuleCount: user.forwardRules ? user.forwardRules.length : 0,
+        activeRuleCount: user.forwardRules ? user.forwardRules.filter(rule => rule.isActive).length : 0,
+        trafficStats: {
+          usedTrafficBytes,
+          trafficLimitBytes,
+          usedTrafficGB: (usedTrafficBytes / (1024 * 1024 * 1024)).toFixed(2),
+          trafficQuotaGB: userData.trafficQuota || 0,
+          usagePercent: trafficLimitBytes > 0
+            ? ((usedTrafficBytes / trafficLimitBytes) * 100).toFixed(1)
+            : 0,
+          remainingBytes: trafficLimitBytes > 0
+            ? Math.max(trafficLimitBytes - usedTrafficBytes, 0)
+            : Infinity,
+          remainingGB: trafficLimitBytes > 0
+            ? Math.max((trafficLimitBytes - usedTrafficBytes) / (1024 * 1024 * 1024), 0).toFixed(2)
+            : 'Unlimited',
+          recent7DaysBytes: parseInt(recentTraffic?.dataValues?.totalBytes) || 0,
+          recent7DaysGB: ((parseInt(recentTraffic?.dataValues?.totalBytes) || 0) / (1024 * 1024 * 1024)).toFixed(2),
+          status: userData.userStatus || 'active'
+        }
+      };
     }));
 
     res.json(usersWithStatus);
   } catch (error) {
     console.error('Get users error:', error);
     res.status(500).json({ message: '获取用户列表失败' });
+  }
+});
+
+// 获取单个用户信息（仅管理员可用）
+router.get('/:id', auth, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: '没有权限访问' });
+    }
+
+    const user = await User.findByPk(req.params.id, {
+      attributes: { exclude: ['password', 'token'] },
+      include: [{
+        model: UserForwardRule,
+        as: 'forwardRules',
+        attributes: ['id', 'name', 'sourcePort', 'isActive']
+      }]
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: '用户不存在' });
+    }
+
+    // 计算流量使用情况
+    const userData = user.toJSON();
+    const trafficLimitBytes = userData.trafficQuota ? userData.trafficQuota * 1024 * 1024 * 1024 : 0;
+    const usedTrafficBytes = userData.usedTraffic || 0;
+
+    // 获取最近7天的流量统计
+    const { TrafficHourly } = require('../services/dbService').models;
+    const last7Days = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const recentTraffic = await TrafficHourly.findOne({
+      where: {
+        userId: user.id,
+        recordTime: {
+          [Op.gte]: last7Days
+        }
+      },
+      attributes: [
+        [require('../services/dbService').models.sequelize.fn('SUM', require('../services/dbService').models.sequelize.col('totalBytes')), 'totalBytes']
+      ]
+    });
+
+    // 返回用户信息和统计数据
+    res.json({
+      success: true,
+      data: {
+        ...userData,
+        isExpired: user.isExpired(),
+        forwardRuleCount: user.forwardRules ? user.forwardRules.length : 0,
+        activeRuleCount: user.forwardRules ? user.forwardRules.filter(rule => rule.isActive).length : 0,
+        trafficStats: {
+          usedTrafficBytes,
+          trafficLimitBytes,
+          usedTrafficGB: (usedTrafficBytes / (1024 * 1024 * 1024)).toFixed(2),
+          trafficQuotaGB: userData.trafficQuota || 0,
+          usagePercent: trafficLimitBytes > 0
+            ? ((usedTrafficBytes / trafficLimitBytes) * 100).toFixed(1)
+            : 0,
+          remainingBytes: trafficLimitBytes > 0
+            ? Math.max(trafficLimitBytes - usedTrafficBytes, 0)
+            : Infinity,
+          remainingGB: trafficLimitBytes > 0
+            ? Math.max((trafficLimitBytes - usedTrafficBytes) / (1024 * 1024 * 1024), 0).toFixed(2)
+            : 'Unlimited',
+          recent7DaysBytes: parseInt(recentTraffic?.dataValues?.totalBytes) || 0,
+          recent7DaysGB: ((parseInt(recentTraffic?.dataValues?.totalBytes) || 0) / (1024 * 1024 * 1024)).toFixed(2),
+          status: userData.userStatus || 'active'
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Get user by ID error:', error);
+    res.status(500).json({ message: '获取用户信息失败' });
   }
 });
 
@@ -210,6 +328,67 @@ router.put('/:id', auth, async (req, res) => {
       }
       if (updateData.portRangeStart < 1 || updateData.portRangeEnd > 65535) {
         return res.status(400).json({ message: '端口范围必须在1-65535之间' });
+      }
+
+      // 检查端口范围冲突
+      const conflicts = [];
+
+      // 检查与其他用户端口范围的重叠
+      const otherUsers = await User.findAll({
+        where: {
+          id: { [Op.ne]: user.id },
+          role: 'user'
+        },
+        attributes: ['id', 'username', 'portRangeStart', 'portRangeEnd']
+      });
+
+      for (const otherUser of otherUsers) {
+        if (otherUser.portRangeStart && otherUser.portRangeEnd) {
+          // 检查端口范围重叠
+          const hasOverlap = !(updateData.portRangeEnd < otherUser.portRangeStart || updateData.portRangeStart > otherUser.portRangeEnd);
+          if (hasOverlap) {
+            conflicts.push({
+              type: 'user_range',
+              username: otherUser.username,
+              portRange: `${otherUser.portRangeStart}-${otherUser.portRangeEnd}`,
+              message: `与用户 "${otherUser.username}" 的端口范围重叠`
+            });
+          }
+        }
+      }
+
+      // 检查端口是否被现有规则占用 (排除当前用户的规则)
+      const usedPorts = await UserForwardRule.findAll({
+        where: {
+          sourcePort: {
+            [Op.between]: [updateData.portRangeStart, updateData.portRangeEnd]
+          },
+          userId: { [Op.ne]: user.id }
+        },
+        include: [{
+          model: User,
+          as: 'user',
+          attributes: ['id', 'username']
+        }]
+      });
+
+      for (const rule of usedPorts) {
+        conflicts.push({
+          type: 'used_port',
+          port: rule.sourcePort,
+          username: rule.user.username,
+          ruleName: rule.name,
+          message: `端口 ${rule.sourcePort} 已被用户 "${rule.user.username}" 的规则 "${rule.name}" 占用`
+        });
+      }
+
+      // 如果有冲突，返回错误
+      if (conflicts.length > 0) {
+        return res.status(400).json({
+          message: `端口范围 ${updateData.portRangeStart}-${updateData.portRangeEnd} 存在冲突`,
+          conflicts,
+          conflictSummary: conflicts.map(c => c.message).join('; ')
+        });
       }
     }
 
@@ -470,5 +649,175 @@ router.get('/', auth, async (req, res) => {
     res.status(500).json({ message: '获取用户列表失败' });
   }
 });
+
+/**
+ * 重置用户流量统计 (管理员专用)
+ * POST /api/users/:id/reset-traffic
+ */
+router.post('/:id/reset-traffic', auth, async (req, res) => {
+  try {
+    // 只有管理员可以重置流量
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: '只有管理员可以重置用户流量' });
+    }
+
+    const userId = parseInt(req.params.id);
+    const { reason } = req.body; // 重置原因（可选）
+
+    // 验证用户是否存在
+    const targetUser = await User.findByPk(userId);
+    if (!targetUser) {
+      return res.status(404).json({ message: '用户不存在' });
+    }
+
+    console.log(`🔄 管理员 ${req.user.username} 开始重置用户 ${targetUser.username} (ID: ${userId}) 的流量统计...`);
+
+    // 开始事务
+    const { sequelize } = require('../services/dbService');
+    const transaction = await sequelize.transaction();
+
+    try {
+      // 1. 重置用户总流量
+      const oldUserTraffic = targetUser.usedTraffic || 0;
+      await targetUser.update({ usedTraffic: 0 }, { transaction });
+      console.log(`✅ 用户总流量已重置: ${formatBytes(oldUserTraffic)} → 0B`);
+
+      // 2. 重置用户所有规则的流量（保留规则本身）
+      const userRules = await UserForwardRule.findAll({
+        where: { userId: userId },
+        transaction
+      });
+
+      let totalRuleTrafficReset = 0;
+      for (const rule of userRules) {
+        const oldRuleTraffic = rule.usedTraffic || 0;
+        totalRuleTrafficReset += oldRuleTraffic;
+        await rule.update({ usedTraffic: 0 }, { transaction });
+        console.log(`✅ 规则 ${rule.name} (端口: ${rule.sourcePort}) 流量已重置: ${formatBytes(oldRuleTraffic)} → 0B`);
+      }
+
+      // 3. 清理历史流量数据 (traffic_hourly 表)
+      const deletedTrafficRecords = await sequelize.query(
+        'DELETE FROM traffic_hourly WHERE userId = ?',
+        {
+          replacements: [userId],
+          type: sequelize.QueryTypes.DELETE,
+          transaction
+        }
+      );
+
+      // SQLite DELETE 查询返回的是受影响的行数，不是数组
+      const deletedCount = Array.isArray(deletedTrafficRecords) ? deletedTrafficRecords[0] : deletedTrafficRecords;
+      console.log(`✅ 已清理 ${deletedCount || 0} 条历史流量记录`);
+
+      // 4. 清理用户缓存和重置流量统计 (关键步骤)
+      try {
+        const multiInstanceCacheService = require('../services/multiInstanceCacheService');
+
+        // 清理多实例缓存中的用户数据
+        multiInstanceCacheService.clearUserCache(userId);
+        console.log(`✅ 用户 ${userId} 多实例缓存已清理`);
+
+        // 重置缓存中的流量统计为 0
+        await multiInstanceCacheService.resetUserTrafficCache(userId);
+        console.log(`✅ 用户流量缓存已重置为 0`);
+
+        // 清理观察器的累积值跟踪 (防止重复计算)
+        const gostPluginService = require('../services/gostPluginService');
+        gostPluginService.clearUserCumulativeStats(userId);
+        console.log(`✅ 用户累积值跟踪已清理`);
+
+        // 🔧 关键修复：清理所有端口的累积统计
+        // 这是导致重复累积的根本原因
+        gostPluginService.clearAllCumulativeStats();
+        console.log(`✅ 所有累积统计已清理`);
+
+        // 刷新端口用户映射
+        await multiInstanceCacheService.refreshPortUserMapping();
+        console.log(`✅ 端口用户映射已刷新`);
+
+      } catch (cacheError) {
+        console.warn('⚠️ 清理用户缓存失败:', cacheError.message);
+        // 缓存清理失败不应该影响主要的重置操作
+      }
+
+      // 5. 记录操作日志
+      const logData = {
+        adminId: req.user.id,
+        adminUsername: req.user.username,
+        targetUserId: userId,
+        targetUsername: targetUser.username,
+        action: 'reset_traffic',
+        oldUserTraffic: oldUserTraffic,
+        totalRuleTrafficReset: totalRuleTrafficReset,
+        rulesCount: userRules.length,
+        deletedRecords: deletedCount || 0,
+        reason: reason || '管理员重置',
+        timestamp: new Date()
+      };
+
+      console.log('📝 操作日志:', logData);
+
+      // 提交事务
+      await transaction.commit();
+
+      // 6. 触发GOST配置同步 (更新用户状态)
+      try {
+        const gostConfigService = require('../services/gostConfigService');
+        gostConfigService.triggerSync().catch(error => {
+          console.error('重置流量后同步GOST配置失败:', error);
+        });
+      } catch (error) {
+        console.error('触发GOST配置同步失败:', error);
+      }
+
+      res.json({
+        success: true,
+        message: `成功重置用户 ${targetUser.username} 的流量统计`,
+        data: {
+          userId: userId,
+          username: targetUser.username,
+          resetSummary: {
+            userTrafficReset: formatBytes(oldUserTraffic),
+            rulesTrafficReset: formatBytes(totalRuleTrafficReset),
+            rulesCount: userRules.length,
+            rulesPreserved: userRules.length, // 强调规则被保留
+            historyRecordsDeleted: deletedCount || 0
+          },
+          operatedBy: req.user.username,
+          operatedAt: new Date()
+        }
+      });
+
+    } catch (error) {
+      // 回滚事务
+      await transaction.rollback();
+      throw error;
+    }
+
+  } catch (error) {
+    console.error('重置用户流量失败:', error);
+    res.status(500).json({
+      message: '重置用户流量失败',
+      error: error.message
+    });
+  }
+});
+
+// 格式化字节数显示的辅助函数
+function formatBytes(bytes) {
+  if (!bytes || bytes === 0) return '0B';
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let size = bytes;
+  let unitIndex = 0;
+
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex++;
+  }
+
+  return `${size.toFixed(unitIndex === 0 ? 0 : 1)}${units[unitIndex]}`;
+}
 
 module.exports = router;

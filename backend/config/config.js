@@ -18,7 +18,25 @@ const config = {
   database: {
     dialect: 'sqlite',
     storage: path.join(__dirname, '../database/database.sqlite'),
-    logging: false
+    logging: false,
+    // 🔧 SQLite优化配置，提高稳定性
+    dialectOptions: {
+      // 设置更长的超时时间
+      timeout: 30000,
+      // 启用外键约束
+      foreignKeys: true
+    },
+    pool: {
+      max: 1,        // SQLite只支持单连接
+      min: 0,
+      acquire: 30000,
+      idle: 10000
+    },
+    // 添加重试配置
+    retry: {
+      max: 3,
+      timeout: 5000
+    }
   },
 
   // GOST Configuration

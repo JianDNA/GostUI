@@ -90,6 +90,16 @@ module.exports = (sequelize) => {
       },
       comment: '用户ID'
     },
+    ruleUUID: {
+      type: DataTypes.STRING(36),
+      allowNull: false,
+      unique: true,
+      validate: {
+        isUUID: 4,
+        notEmpty: true
+      },
+      comment: '规则唯一标识符'
+    },
     name: {
       type: DataTypes.STRING(100),
       allowNull: false,
@@ -102,12 +112,13 @@ module.exports = (sequelize) => {
     sourcePort: {
       type: DataTypes.INTEGER,
       allowNull: false,
+      unique: true, // 关键: 端口全局唯一
       validate: {
         min: 1,
         max: 65535,
         isInt: true
       },
-      comment: '转发源端口'
+      comment: '转发源端口 (全局唯一)'
     },
     targetAddress: {
       type: DataTypes.STRING(255),
@@ -141,6 +152,12 @@ module.exports = (sequelize) => {
         len: [0, 500]
       },
       comment: '规则描述'
+    },
+    usedTraffic: {
+      type: DataTypes.BIGINT,
+      defaultValue: 0,
+      allowNull: false,
+      comment: '规则已使用流量 (字节)'
     }
   }, {
     sequelize,
@@ -151,16 +168,9 @@ module.exports = (sequelize) => {
       {
         fields: ['userId'],
         name: 'idx_user_forward_rules_user_id'
-      },
-      {
-        fields: ['sourcePort'],
-        name: 'idx_user_forward_rules_source_port'
-      },
-      {
-        unique: true,
-        fields: ['userId', 'sourcePort'],
-        name: 'uk_user_forward_rules_user_port'
       }
+      // 注意: sourcePort 的唯一约束通过字段定义中的 unique: true 实现
+      // 不需要复合唯一约束，因为端口是全局唯一的
     ],
     hooks: {
       beforeValidate: async (rule, options) => {
@@ -177,38 +187,41 @@ module.exports = (sequelize) => {
             throw new Error('用户已过期，无法创建或修改转发规则');
           }
 
-          // 检查端口是否在用户允许的范围内（非管理员）
-          if (user.role !== 'admin' && !user.isPortInRange(rule.sourcePort)) {
-            throw new Error(`端口 ${rule.sourcePort} 不在用户允许的端口范围内 (${user.portRangeStart}-${user.portRangeEnd})`);
+          // 检查端口是否在用户允许的范围内（Admin 用户不受限制）
+          if (!user.isPortInRange(rule.sourcePort)) {
+            if (user.role === 'admin') {
+              // Admin 用户应该总是通过，如果到这里说明有其他问题
+              throw new Error(`Admin 用户端口验证异常，请联系管理员`);
+            } else {
+              throw new Error(`端口 ${rule.sourcePort} 不在用户允许的端口范围内 (${user.portRangeStart}-${user.portRangeEnd})`);
+            }
           }
         }
       },
       beforeCreate: async (rule, options) => {
-        // 检查端口是否已被同一用户使用
+        // 检查端口是否已被任何用户使用 (全局唯一)
         const existingRule = await UserForwardRule.findOne({
           where: {
-            userId: rule.userId,
             sourcePort: rule.sourcePort
           }
         });
 
         if (existingRule) {
-          throw new Error(`端口 ${rule.sourcePort} 已被使用`);
+          throw new Error(`端口 ${rule.sourcePort} 已被用户 ${existingRule.userId} 使用`);
         }
       },
       beforeUpdate: async (rule, options) => {
-        // 如果更新了端口，检查是否冲突
+        // 如果更新了端口，检查是否冲突 (全局唯一)
         if (rule.changed('sourcePort')) {
           const existingRule = await UserForwardRule.findOne({
             where: {
-              userId: rule.userId,
               sourcePort: rule.sourcePort,
               id: { [sequelize.Sequelize.Op.ne]: rule.id }
             }
           });
 
           if (existingRule) {
-            throw new Error(`端口 ${rule.sourcePort} 已被使用`);
+            throw new Error(`端口 ${rule.sourcePort} 已被用户 ${existingRule.userId} 使用`);
           }
         }
       }

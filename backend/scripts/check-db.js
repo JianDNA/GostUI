@@ -1,51 +1,44 @@
-const { sequelize, User } = require('../models');
+/**
+ * 数据库检查脚本
+ */
+
+const { sequelize, models } = require('../services/dbService');
 
 async function checkDatabase() {
   try {
+    console.log('🔍 开始检查数据库...\n');
+    
     // 测试数据库连接
     await sequelize.authenticate();
-    console.log('数据库连接成功');
-
-    // 查询所有用户
-    const users = await User.findAll();
-    console.log('\n数据库中的用户列表:');
-    console.log('总用户数:', users.length);
+    console.log('✅ 数据库连接成功');
     
-    users.forEach(user => {
-      console.log('\n用户详情:');
-      console.log('ID:', user.id);
-      console.log('用户名:', user.username);
-      console.log('邮箱:', user.email);
-      console.log('角色:', user.role);
-      console.log('密码哈希:', user.password);
-      console.log('是否激活:', user.isActive);
-    });
-
-    // 特别检查 admin 用户
-    const adminUser = await User.findOne({ where: { username: 'admin' } });
-    if (adminUser) {
-      console.log('\n找到 admin 用户:');
-      console.log('ID:', adminUser.id);
-      console.log('密码哈希:', adminUser.password);
-      
-      // 测试密码验证
-      const testPassword = 'admin123';
-      const isValid = await adminUser.comparePassword(testPassword);
-      console.log('密码验证测试 (admin123):', isValid ? '成功' : '失败');
-    } else {
-      console.log('\n警告: 未找到 admin 用户!');
+    // 检查表结构
+    const tables = await sequelize.getQueryInterface().showAllTables();
+    console.log('📋 数据库表:', tables);
+    
+    // 检查用户表
+    if (models.User) {
+      const userCount = await models.User.count();
+      console.log(`👥 用户数量: ${userCount}`);
     }
-
-    // 检查数据库表结构
-    console.log('\n数据库表结构:');
-    const tables = await sequelize.showAllSchemas();
-    console.log('表列表:', tables);
-
-    process.exit(0);
+    
+    // 检查转发规则表
+    if (models.UserForwardRule) {
+      const ruleCount = await models.UserForwardRule.count();
+      console.log(`📋 转发规则数量: ${ruleCount}`);
+    }
+    
+    console.log('\n✅ 数据库检查完成');
+    
   } catch (error) {
-    console.error('数据库检查失败:', error);
-    process.exit(1);
+    console.error('❌ 数据库检查失败:', error);
+  } finally {
+    await sequelize.close();
   }
 }
 
-checkDatabase(); 
+if (require.main === module) {
+  checkDatabase();
+}
+
+module.exports = checkDatabase;

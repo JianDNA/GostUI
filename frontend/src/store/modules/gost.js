@@ -10,15 +10,24 @@ const state = {
 
 const mutations = {
   SET_STATUS(state, statusData) {
+    console.log('🔧 Setting GOST status data:', statusData);
     state.status = statusData;
     state.error = null;
-    
+
+    // 处理端口转发数据
     if (statusData && statusData.portForwards) {
       state.portForwards = statusData.portForwards;
+      console.log('📊 Port forwards:', statusData.portForwards);
+    } else {
+      state.portForwards = [];
     }
-    
+
+    // 处理系统信息
     if (statusData && statusData.systemInfo) {
       state.systemInfo = statusData.systemInfo;
+      console.log('💻 System info:', statusData.systemInfo);
+    } else {
+      state.systemInfo = null;
     }
   },
   SET_LOADING(state, loading) {

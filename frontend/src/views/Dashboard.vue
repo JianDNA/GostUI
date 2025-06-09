@@ -1,5 +1,7 @@
 <template>
   <div class="dashboard">
+
+
     <!-- Gost服务状态卡片 -->
     <el-card class="dashboard-card">
       <template #header>
@@ -65,6 +67,12 @@
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column prop="sourcePort" label="源端口" width="80" />
+        <el-table-column label="目标地址" width="150">
+          <template #default="scope">
+            {{ scope.row.targetHost }}:{{ scope.row.targetPort }}
+          </template>
+        </el-table-column>
       </el-table>
     </el-card>
 
@@ -92,7 +100,12 @@
         </el-col>
         <el-col :span="8">
           <div class="stat-card">
-            <div class="stat-title">总流量</div>
+            <div class="stat-title">
+              总流量
+              <el-tooltip content="包含所有用户的上行和下行流量总和" placement="top">
+                <el-tag size="small" type="info">双向</el-tag>
+              </el-tooltip>
+            </div>
             <div class="stat-value">{{ formatTraffic(stats?.totalTraffic || 0) }}</div>
           </div>
         </el-col>
@@ -124,12 +137,14 @@ import { useStore } from 'vuex';
 import { ElMessage } from 'element-plus';
 import { Refresh, Right } from '@element-plus/icons-vue';
 
+
 const store = useStore();
 const loading = ref(false);
 const stats = ref(null);
 const timeRange = ref('today');
 const gostLoading = ref(false);
 const gostStatus = ref(null);
+
 
 const gostRunning = computed(() => store.getters['gost/isRunning']);
 const gostPortForwards = computed(() => store.getters['gost/portForwards']);
@@ -139,7 +154,9 @@ const refreshStats = async () => {
   try {
     loading.value = true;
     stats.value = await store.dispatch('traffic/fetchStats');
+    console.log('📊 Stats refreshed:', stats.value);
   } catch (error) {
+    console.error('❌ Failed to refresh stats:', error);
     ElMessage.error(error.message || '获取统计数据失败');
   } finally {
     loading.value = false;
@@ -150,7 +167,11 @@ const refreshGostStatus = async () => {
   try {
     gostLoading.value = true;
     gostStatus.value = await store.dispatch('gost/fetchStatus');
+    console.log('🔧 GOST status refreshed:', gostStatus.value);
+    console.log('🔧 GOST running:', gostRunning.value);
+    console.log('🔧 Port forwards:', gostPortForwards.value);
   } catch (error) {
+    console.error('❌ Failed to refresh GOST status:', error);
     ElMessage.error(error.message || '获取Gost服务状态失败');
   } finally {
     gostLoading.value = false;
@@ -205,6 +226,8 @@ const formatUptime = (seconds) => {
   
   return result;
 };
+
+
 
 onMounted(() => {
   refreshStats();

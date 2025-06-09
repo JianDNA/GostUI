@@ -1,0 +1,25 @@
+{
+  "watch": [
+    "."
+  ],
+  "ignore": [
+    "node_modules/",
+    "config/",
+    "bin/",
+    "cache/",
+    "logs/",
+    "*.log",
+    "*.lock",
+    "*.json.tmp",
+    "database.sqlite",
+    "database.sqlite-journal",
+    "test-*.js",
+    "*.pid",
+    "*.tmp"
+  ],
+  "ext": "js,json",
+  "env": {
+    "NODE_ENV": "development"
+  },
+  "delay": 1000
+}

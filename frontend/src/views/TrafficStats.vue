@@ -1,8 +1,11 @@
 <template>
   <div class="traffic-stats">
     <div class="page-header">
-      <h2>流量统计</h2>
+      <h2>流量统计 (双向流量)</h2>
       <div class="header-actions">
+        <el-tooltip content="显示上行流量(客户端→服务器)和下行流量(服务器→客户端)的总和" placement="top">
+          <el-tag type="info" size="small">包含上行+下行</el-tag>
+        </el-tooltip>
         <el-date-picker
           v-model="dateRange"
           type="daterange"
@@ -24,11 +27,14 @@
         <el-card class="stat-card">
           <template #header>
             <div class="card-header">
-              <span>总流量</span>
+              <span>总流量 (双向)</span>
+              <el-tooltip content="上行+下行流量总和" placement="top">
+                <el-tag size="small" type="info">双向</el-tag>
+              </el-tooltip>
             </div>
           </template>
           <div class="stat-value">
-            <span class="number">{{ formatTraffic(totalTraffic) }}</span>
+            <span class="number total">{{ formatTraffic(totalTraffic) }}</span>
           </div>
         </el-card>
       </el-col>
@@ -37,10 +43,13 @@
           <template #header>
             <div class="card-header">
               <span>上行流量</span>
+              <el-tooltip content="客户端→服务器流量" placement="top">
+                <el-tag size="small" type="danger">上行</el-tag>
+              </el-tooltip>
             </div>
           </template>
           <div class="stat-value">
-            <span class="number">{{ formatTraffic(uploadTraffic) }}</span>
+            <span class="number upload">{{ formatTraffic(uploadTraffic) }}</span>
           </div>
         </el-card>
       </el-col>
@@ -49,10 +58,13 @@
           <template #header>
             <div class="card-header">
               <span>下行流量</span>
+              <el-tooltip content="服务器→客户端流量" placement="top">
+                <el-tag size="small" type="success">下行</el-tag>
+              </el-tooltip>
             </div>
           </template>
           <div class="stat-value">
-            <span class="number">{{ formatTraffic(downloadTraffic) }}</span>
+            <span class="number download">{{ formatTraffic(downloadTraffic) }}</span>
           </div>
         </el-card>
       </el-col>
@@ -80,17 +92,20 @@
           {{ formatDate(row.timestamp) }}
         </template>
       </el-table-column>
-      <el-table-column prop="ruleName" label="规则名称" width="150" />
-      <el-table-column prop="sourceIP" label="源IP" width="150" />
-      <el-table-column prop="destinationIP" label="目标IP" width="150" />
-      <el-table-column prop="upload" label="上行流量" width="120">
+      <el-table-column prop="port" label="端口" width="100" />
+      <el-table-column label="上行流量 (客户端→服务器)" width="180">
         <template #default="{ row }">
-          {{ formatTraffic(row.upload) }}
+          <span style="color: #f56c6c;">{{ row.formattedInput }}</span>
         </template>
       </el-table-column>
-      <el-table-column prop="download" label="下行流量" width="120">
+      <el-table-column label="下行流量 (服务器→客户端)" width="180">
         <template #default="{ row }">
-          {{ formatTraffic(row.download) }}
+          <span style="color: #67c23a;">{{ row.formattedOutput }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="总流量 (双向)" width="120">
+        <template #default="{ row }">
+          <span style="color: #409eff; font-weight: bold;">{{ row.formattedTotal }}</span>
         </template>
       </el-table-column>
       <el-table-column prop="protocol" label="协议" width="100">
@@ -209,63 +224,136 @@ const fetchTrafficData = async () => {
 
 // 更新图表
 const updateChart = (data) => {
-  if (!chart.value) return;
+  if (!chart.value || !data) return;
 
-  const option = {
-    tooltip: {
-      trigger: 'axis',
-      axisPointer: {
-        type: 'cross',
-        label: {
-          backgroundColor: '#6a7985'
+  try {
+    // 确保数据存在且格式正确
+    const timestamps = data.timestamps || [];
+    const uploadData = data.upload || [];
+    const downloadData = data.download || [];
+
+    if (timestamps.length === 0) {
+      console.log('📊 没有图表数据，显示空图表');
+      chart.value.setOption({
+        title: {
+          text: '暂无数据',
+          left: 'center',
+          top: 'center',
+          textStyle: {
+            color: '#999'
+          }
         }
-      }
-    },
-    legend: {
-      data: ['上行流量', '下行流量']
-    },
-    grid: {
-      left: '3%',
-      right: '4%',
-      bottom: '3%',
-      containLabel: true
-    },
-    xAxis: {
-      type: 'category',
-      boundaryGap: false,
-      data: data.timestamps.map(t => dayjs(t).format('MM-DD HH:mm'))
-    },
-    yAxis: {
-      type: 'value',
-      axisLabel: {
-        formatter: value => formatTraffic(value)
-      }
-    },
-    series: [
-      {
-        name: '上行流量',
-        type: 'line',
-        stack: 'Total',
-        areaStyle: {},
-        emphasis: {
-          focus: 'series'
-        },
-        data: data.upload
-      },
-      {
-        name: '下行流量',
-        type: 'line',
-        stack: 'Total',
-        areaStyle: {},
-        emphasis: {
-          focus: 'series'
-        },
-        data: data.download
-      }
-    ]
-  };
+      });
+      return;
+    }
 
-  chart.value.setOption(option);
+    const option = {
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: {
+          type: 'cross',
+          label: {
+            backgroundColor: '#6a7985'
+          }
+        },
+        formatter: function(params) {
+          let result = `${params[0].axisValue}<br/>`;
+          params.forEach(param => {
+            const color = param.color;
+            const value = formatTraffic(param.value || 0);
+            result += `<span style="color:${color}">●</span> ${param.seriesName}: ${value}<br/>`;
+          });
+          return result;
+        }
+      },
+      legend: {
+        data: ['上行流量', '下行流量']
+      },
+      grid: {
+        left: '3%',
+        right: '4%',
+        bottom: '3%',
+        containLabel: true
+      },
+      xAxis: {
+        type: 'category',
+        boundaryGap: false,
+        data: timestamps.map(t => {
+          try {
+            return dayjs(t).format('MM-DD HH:mm');
+          } catch (e) {
+            return t;
+          }
+        })
+      },
+      yAxis: {
+        type: 'value',
+        axisLabel: {
+          formatter: value => formatTraffic(value)
+        }
+      },
+      series: [
+        {
+          name: '上行流量',
+          type: 'line',
+          smooth: true,
+          areaStyle: {
+            color: {
+              type: 'linear',
+              x: 0,
+              y: 0,
+              x2: 0,
+              y2: 1,
+              colorStops: [{
+                offset: 0, color: 'rgba(245, 108, 108, 0.3)'
+              }, {
+                offset: 1, color: 'rgba(245, 108, 108, 0.1)'
+              }]
+            }
+          },
+          lineStyle: {
+            color: '#f56c6c'
+          },
+          emphasis: {
+            focus: 'series'
+          },
+          data: uploadData
+        },
+        {
+          name: '下行流量',
+          type: 'line',
+          smooth: true,
+          areaStyle: {
+            color: {
+              type: 'linear',
+              x: 0,
+              y: 0,
+              x2: 0,
+              y2: 1,
+              colorStops: [{
+                offset: 0, color: 'rgba(103, 194, 58, 0.3)'
+              }, {
+                offset: 1, color: 'rgba(103, 194, 58, 0.1)'
+              }]
+            }
+          },
+          lineStyle: {
+            color: '#67c23a'
+          },
+          emphasis: {
+            focus: 'series'
+          },
+          data: downloadData
+        }
+      ]
+    };
+
+    chart.value.setOption(option, true);
+    console.log('📊 图表更新成功');
+  } catch (error) {
+    console.error('❌ 更新图表失败:', error);
+    ElMessage.error('图表更新失败');
+  }
 };
 
 // 初始化图表
@@ -357,7 +445,18 @@ onUnmounted(() => {
 .stat-value .number {
   font-size: 24px;
   font-weight: bold;
+}
+
+.stat-value .number.total {
   color: #409EFF;
+}
+
+.stat-value .number.upload {
+  color: #f56c6c;
+}
+
+.stat-value .number.download {
+  color: #67c23a;
 }
 
 .chart-container {

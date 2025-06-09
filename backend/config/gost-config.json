@@ -1,87 +1,102 @@
 {
   "services": [
     {
-      "name": "forward-tcp-10004",
-      "addr": ":10004",
+      "name": "forward-tcp-2999",
+      "addr": ":2999",
+      "observer": "observer-0",
       "handler": {
         "type": "tcp",
-        "chain": "chain-tcp-10004"
+        "chain": "chain-tcp-2999",
+        "auther": "auther-0",
+        "observer": "observer-0",
+        "limiter": "limiter-0",
+        "metadata": {
+          "observer.period": "5s",
+          "observer.resetTraffic": true
+        }
       },
       "listener": {
         "type": "tcp"
       },
       "metadata": {
+        "enableStats": true,
+        "observer.period": "5s",
+        "observer.resetTraffic": true,
         "userId": 2,
         "username": "test",
         "ruleId": 3,
-        "ruleName": "test--22",
-        "description": ""
+        "ruleName": "Test HTTPS Proxy",
+        "description": "测试用户HTTPS代理规则"
       }
     },
     {
-      "name": "forward-tcp-10005",
-      "addr": ":10005",
+      "name": "forward-tcp-6443",
+      "addr": ":6443",
+      "observer": "observer-0",
       "handler": {
         "type": "tcp",
-        "chain": "chain-tcp-10005"
+        "chain": "chain-tcp-6443",
+        "auther": "auther-0",
+        "observer": "observer-0",
+        "limiter": "limiter-0",
+        "metadata": {
+          "observer.period": "5s",
+          "observer.resetTraffic": true
+        }
       },
       "listener": {
         "type": "tcp"
       },
       "metadata": {
-        "userId": 2,
-        "username": "test",
-        "ruleId": 4,
-        "ruleName": "test--11",
-        "description": ""
-      }
-    },
-    {
-      "name": "forward-tcp-15637",
-      "addr": ":15637",
-      "handler": {
-        "type": "tcp",
-        "chain": "chain-tcp-15637"
-      },
-      "listener": {
-        "type": "tcp"
-      },
-      "metadata": {
+        "enableStats": true,
+        "observer.period": "5s",
+        "observer.resetTraffic": true,
         "userId": 1,
         "username": "admin",
         "ruleId": 1,
-        "ruleName": "admin-2",
-        "description": "test"
+        "ruleName": "Admin HTTPS Proxy",
+        "description": "管理员HTTPS代理规则"
       }
     },
     {
-      "name": "forward-tcp-24753",
-      "addr": ":24753",
+      "name": "forward-tcp-8080",
+      "addr": ":8080",
+      "observer": "observer-0",
       "handler": {
         "type": "tcp",
-        "chain": "chain-tcp-24753"
+        "chain": "chain-tcp-8080",
+        "auther": "auther-0",
+        "observer": "observer-0",
+        "limiter": "limiter-0",
+        "metadata": {
+          "observer.period": "5s",
+          "observer.resetTraffic": true
+        }
       },
       "listener": {
         "type": "tcp"
       },
       "metadata": {
+        "enableStats": true,
+        "observer.period": "5s",
+        "observer.resetTraffic": true,
         "userId": 1,
         "username": "admin",
         "ruleId": 2,
-        "ruleName": "admin-1",
-        "description": ""
+        "ruleName": "Admin HTTP Proxy",
+        "description": "管理员HTTP代理规则"
       }
     }
   ],
   "chains": [
     {
-      "name": "chain-tcp-10004",
+      "name": "chain-tcp-2999",
       "hops": [
         {
           "name": "hop-0",
           "nodes": [
             {
-              "addr": "134.121.24.1:443",
+              "addr": "1.1.1.1:443",
               "connector": {
                 "type": "tcp"
               }
@@ -91,13 +106,13 @@
       ]
     },
     {
-      "name": "chain-tcp-10005",
+      "name": "chain-tcp-6443",
       "hops": [
         {
           "name": "hop-1",
           "nodes": [
             {
-              "addr": "134.21.55.1:443",
+              "addr": "1.1.1.1:443",
               "connector": {
                 "type": "tcp"
               }
@@ -107,13 +122,13 @@
       ]
     },
     {
-      "name": "chain-tcp-15637",
+      "name": "chain-tcp-8080",
       "hops": [
         {
           "name": "hop-2",
           "nodes": [
             {
-              "addr": "192.168.1.11:3004",
+              "addr": "1.1.1.1:80",
               "connector": {
                 "type": "tcp"
               }
@@ -121,22 +136,36 @@
           ]
         }
       ]
-    },
+    }
+  ],
+  "authers": [
     {
-      "name": "chain-tcp-24753",
-      "hops": [
-        {
-          "name": "hop-3",
-          "nodes": [
-            {
-              "addr": "134.162.11.24:443",
-              "connector": {
-                "type": "tcp"
-              }
-            }
-          ]
-        }
-      ]
+      "name": "auther-0",
+      "plugin": {
+        "type": "http",
+        "addr": "http://localhost:3000/api/gost-plugin/auth",
+        "timeout": "5s"
+      }
+    }
+  ],
+  "observers": [
+    {
+      "name": "observer-0",
+      "plugin": {
+        "type": "http",
+        "addr": "http://localhost:3000/api/gost-plugin/observer",
+        "timeout": "10s"
+      }
+    }
+  ],
+  "limiters": [
+    {
+      "name": "limiter-0",
+      "plugin": {
+        "type": "http",
+        "addr": "http://localhost:3000/api/gost-plugin/limiter",
+        "timeout": "5s"
+      }
     }
   ]
 }

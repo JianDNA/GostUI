@@ -31,6 +31,32 @@
           <span v-else class="text-muted">未设置</span>
         </template>
       </el-table-column>
+      <el-table-column label="流量使用 (双向)" width="180">
+        <template #default="{ row }">
+          <div v-if="row.trafficStats">
+            <div class="traffic-usage">
+              <span class="used">{{ row.trafficStats.usedTrafficGB }}GB</span>
+              <span class="separator">/</span>
+              <span class="quota">{{ row.trafficStats.trafficQuotaGB || 'Unlimited' }}GB</span>
+            </div>
+            <el-progress
+              :percentage="row.trafficStats.usagePercent"
+              :status="row.trafficStats.usagePercent >= 90 ? 'exception' : (row.trafficStats.usagePercent >= 70 ? 'warning' : 'success')"
+              :stroke-width="6"
+              :show-text="false"
+            />
+            <div class="remaining">
+              剩余: {{ row.trafficStats.remainingGB }}
+            </div>
+            <div class="traffic-type">
+              <el-tooltip content="包含上行流量(客户端→服务器)和下行流量(服务器→客户端)" placement="top">
+                <el-tag size="small" type="info">双向流量</el-tag>
+              </el-tooltip>
+            </div>
+          </div>
+          <span v-else class="text-muted">无数据</span>
+        </template>
+      </el-table-column>
       <el-table-column label="过期时间" width="120">
         <template #default="{ row }">
           <span v-if="row.expiryDate" :class="{ 'expired': row.isExpired }">
@@ -86,6 +112,15 @@
               @click="viewUserRules(row)"
             >
               规则
+            </el-button>
+            <el-button
+              v-if="isAdmin"
+              type="warning"
+              size="small"
+              @click="handleResetTraffic(row)"
+              :title="`重置 ${row.username} 的流量统计`"
+            >
+              重置流量
             </el-button>
             <el-button
               v-if="row.username !== 'admin' && isAdmin"
@@ -270,6 +305,71 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 重置流量对话框 -->
+    <el-dialog
+      title="重置用户流量统计"
+      v-model="resetTrafficDialogVisible"
+      width="500px"
+    >
+      <div class="reset-traffic-content">
+        <el-alert
+          title="重要提醒"
+          type="warning"
+          :closable="false"
+          show-icon
+        >
+          <template #default>
+            <p>此操作将重置用户的所有流量统计数据，包括：</p>
+            <ul>
+              <li>✅ 用户总流量归零</li>
+              <li>✅ 所有规则流量归零</li>
+              <li>✅ 清理历史流量记录</li>
+              <li>🔒 <strong>保留所有转发规则</strong></li>
+            </ul>
+            <p><strong>此操作不可撤销，请谨慎操作！</strong></p>
+          </template>
+        </el-alert>
+
+        <el-form label-width="100px" style="margin-top: 20px;">
+          <el-form-item label="用户名">
+            <span class="user-info">{{ resetTrafficUser?.username }}</span>
+          </el-form-item>
+          <el-form-item label="当前流量">
+            <span class="traffic-info">
+              {{ resetTrafficUser?.trafficStats?.usedTrafficGB || 0 }}GB
+              / {{ resetTrafficUser?.trafficStats?.trafficQuotaGB || 'Unlimited' }}GB
+            </span>
+          </el-form-item>
+          <el-form-item label="转发规则">
+            <span class="rules-info">
+              {{ resetTrafficUser?.forwardRuleCount || 0 }} 个规则将被保留
+            </span>
+          </el-form-item>
+          <el-form-item label="重置原因">
+            <el-input
+              v-model="resetTrafficReason"
+              type="textarea"
+              :rows="3"
+              placeholder="请输入重置原因（可选）"
+              maxlength="200"
+              show-word-limit
+            />
+          </el-form-item>
+        </el-form>
+      </div>
+
+      <template #footer>
+        <el-button @click="resetTrafficDialogVisible = false">取消</el-button>
+        <el-button
+          type="danger"
+          @click="confirmResetTraffic"
+          :loading="resettingTraffic"
+        >
+          确认重置
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -292,12 +392,16 @@ export default {
     const loading = ref(false)
     const submitting = ref(false)
     const extending = ref(false)
+    const resettingTraffic = ref(false)
     const users = ref([])
     const dialogVisible = ref(false)
     const extendDialogVisible = ref(false)
+    const resetTrafficDialogVisible = ref(false)
     const isEdit = ref(false)
     const currentUser = ref(null)
+    const resetTrafficUser = ref(null)
     const extendMonths = ref(1)
+    const resetTrafficReason = ref('')
     const formRef = ref(null)
     const portConflictMessage = ref('')
     const hasPortConflict = ref(false)
@@ -447,7 +551,24 @@ export default {
       loading.value = true
       try {
         const response = await api.users.getUsers()
-        users.value = response.data
+        // 处理用户数据，添加流量统计信息
+        users.value = response.data.map(user => {
+          const usedTrafficGB = (user.usedTraffic / (1024 * 1024 * 1024)).toFixed(2)
+          const trafficQuotaGB = user.trafficQuota || 0
+          const usagePercent = trafficQuotaGB > 0 ? Math.min((user.usedTraffic / (trafficQuotaGB * 1024 * 1024 * 1024)) * 100, 100) : 0
+          const remainingGB = trafficQuotaGB > 0 ? Math.max(trafficQuotaGB - parseFloat(usedTrafficGB), 0).toFixed(2) + 'GB' : 'Unlimited'
+
+          return {
+            ...user,
+            trafficStats: {
+              usedTrafficGB: parseFloat(usedTrafficGB),
+              trafficQuotaGB: trafficQuotaGB,
+              usagePercent: Math.round(usagePercent),
+              remainingGB: remainingGB
+            }
+          }
+        })
+        console.log('📊 Users with traffic stats:', users.value)
       } catch (error) {
         ElMessage.error('获取用户列表失败: ' + (error.response?.data?.message || error.message))
       } finally {
@@ -621,6 +742,65 @@ export default {
       })
     }
 
+    const handleResetTraffic = (user) => {
+      if (!isAdmin.value) {
+        ElMessage.error('没有权限重置用户流量')
+        return
+      }
+
+      resetTrafficUser.value = user
+      resetTrafficReason.value = ''
+      resetTrafficDialogVisible.value = true
+    }
+
+    const confirmResetTraffic = async () => {
+      if (!resetTrafficUser.value) {
+        return
+      }
+
+      try {
+        await ElMessageBox.confirm(
+          `确定要重置用户 "${resetTrafficUser.value.username}" 的流量统计吗？\n\n此操作将：\n• 用户总流量归零\n• 所有规则流量归零\n• 清理历史流量记录\n• 保留所有转发规则\n\n此操作不可撤销！`,
+          '确认重置流量',
+          {
+            confirmButtonText: '确认重置',
+            cancelButtonText: '取消',
+            type: 'warning',
+            dangerouslyUseHTMLString: false
+          }
+        )
+
+        resettingTraffic.value = true
+
+        const response = await api.users.resetUserTraffic(resetTrafficUser.value.id, {
+          reason: resetTrafficReason.value || '管理员重置'
+        })
+
+        if (response.data.success) {
+          ElMessage.success({
+            message: `成功重置用户 ${resetTrafficUser.value.username} 的流量统计`,
+            duration: 5000
+          })
+
+          // 显示重置详情
+          const summary = response.data.data.resetSummary
+          console.log('🔄 流量重置完成:', summary)
+
+          resetTrafficDialogVisible.value = false
+          await loadUsers() // 刷新用户列表
+        } else {
+          ElMessage.error('重置流量失败: ' + (response.data.message || '未知错误'))
+        }
+
+      } catch (error) {
+        if (error !== 'cancel') {
+          ElMessage.error('重置流量失败: ' + (error.response?.data?.message || error.message))
+        }
+      } finally {
+        resettingTraffic.value = false
+      }
+    }
+
     const resetForm = () => {
       Object.assign(form, {
         username: '',
@@ -649,14 +829,18 @@ export default {
       loading,
       submitting,
       extending,
+      resettingTraffic,
       users,
       displayUsers,
       dialogVisible,
       extendDialogVisible,
+      resetTrafficDialogVisible,
       isEdit,
       isAdmin,
       currentUser,
+      resetTrafficUser,
       extendMonths,
+      resetTrafficReason,
       form,
       rules,
       formRef,
@@ -672,6 +856,8 @@ export default {
       handleExtendExpiry,
       confirmExtendExpiry,
       viewUserRules,
+      handleResetTraffic,
+      confirmResetTraffic,
       resetForm,
       checkPortConflictsDebounced
     }
@@ -718,5 +904,57 @@ export default {
   background: #FEF0F0;
   border: 1px solid #FBC4C4;
   border-radius: 4px;
+}
+
+.traffic-usage {
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.traffic-usage .used {
+  color: #409eff;
+  font-weight: bold;
+}
+
+.traffic-usage .separator {
+  margin: 0 4px;
+  color: #909399;
+}
+
+.traffic-usage .quota {
+  color: #606266;
+}
+
+.remaining {
+  font-size: 11px;
+  color: #909399;
+  margin-top: 2px;
+}
+
+/* 重置流量对话框样式 */
+.reset-traffic-content .user-info {
+  font-weight: bold;
+  color: #409eff;
+}
+
+.reset-traffic-content .traffic-info {
+  font-weight: bold;
+  color: #e6a23c;
+}
+
+.reset-traffic-content .rules-info {
+  font-weight: bold;
+  color: #67c23a;
+}
+
+.reset-traffic-content ul {
+  margin: 10px 0;
+  padding-left: 20px;
+}
+
+.reset-traffic-content li {
+  margin: 5px 0;
 }
 </style>

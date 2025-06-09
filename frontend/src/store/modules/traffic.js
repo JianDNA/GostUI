@@ -27,9 +27,27 @@ const actions = {
   async fetchStats({ commit }) {
     try {
       commit('SET_LOADING', true);
-      const { data } = await request.get('/traffic/stats');
-      commit('SET_STATS', data);
-      return data;
+      // 使用新的 dashboard API
+      const response = await request.get('/dashboard/overview');
+      console.log('📊 Dashboard API response:', response.data);
+
+      const dashboardData = response.data.data;
+
+      // 转换数据格式以兼容现有组件
+      const stats = {
+        activeUsers: dashboardData.users.active,
+        totalUsers: dashboardData.users.total,
+        activeRules: dashboardData.rules.total,
+        totalTraffic: dashboardData.traffic.totalUsed,
+        totalBytesIn: Math.floor(dashboardData.traffic.totalUsed * 0.4), // 估算
+        totalBytesOut: Math.floor(dashboardData.traffic.totalUsed * 0.6), // 估算
+        traffic24h: dashboardData.traffic.total24h,
+        activeUsers24h: dashboardData.traffic.activeUsers24h
+      };
+
+      console.log('📈 Processed stats:', stats);
+      commit('SET_STATS', stats);
+      return stats;
     } catch (error) {
       console.error('Fetch traffic stats error:', error);
       commit('SET_ERROR', error.response?.data?.message || '获取流量统计失败');
@@ -39,14 +57,56 @@ const actions = {
     }
   },
 
-  async fetchTopUsers({ commit }, { period, limit }) {
+  async fetchTopUsers({ commit }, { period = 7, limit = 10 }) {
     try {
       commit('SET_LOADING', true);
-      const users = await request.get('/traffic/top-users', { params: { period, limit } });
+      // 使用新的 dashboard API
+      const response = await request.get('/dashboard/traffic-ranking', {
+        params: { days: period, limit }
+      });
+      const users = response.data.data;
       commit('SET_TOP_USERS', users);
       return users;
     } catch (error) {
       commit('SET_ERROR', error.message);
+      throw error;
+    } finally {
+      commit('SET_LOADING', false);
+    }
+  },
+
+  async fetchTrafficLogs({ commit }, params = {}) {
+    try {
+      commit('SET_LOADING', true);
+      console.log('📊 Fetching traffic logs with params:', params);
+
+      // 调用真实的流量日志 API
+      const response = await request.get('/traffic/logs', { params });
+      console.log('📊 Traffic logs API response:', response.data);
+
+      const data = response.data.data;
+
+      // 确保数据格式正确
+      const formattedData = {
+        logs: data.logs || [],
+        total: data.total || 0,
+        stats: {
+          total: data.stats?.total || 0,
+          upload: data.stats?.upload || 0,
+          download: data.stats?.download || 0
+        },
+        chartData: {
+          timestamps: data.chartData?.timestamps || [],
+          upload: data.chartData?.upload || [],
+          download: data.chartData?.download || []
+        }
+      };
+
+      console.log('📊 Formatted traffic logs data:', formattedData);
+      return { data: formattedData };
+    } catch (error) {
+      console.error('❌ Failed to fetch traffic logs:', error);
+      commit('SET_ERROR', error.response?.data?.message || error.message);
       throw error;
     } finally {
       commit('SET_LOADING', false);

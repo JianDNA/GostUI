@@ -18,6 +18,7 @@ const Rule = require('./Rule')(sequelize);
 const ForwardRule = require('./ForwardRule')(sequelize);
 const UserForwardRule = require('./UserForwardRule')(sequelize);
 const TrafficLog = require('./TrafficLog')(sequelize);
+const { TrafficHourly, SpeedMinutely } = require('./TrafficStats')(sequelize);
 
 // 定义模型关联
 const models = {
@@ -25,7 +26,9 @@ const models = {
   Rule,
   ForwardRule,
   UserForwardRule,
-  TrafficLog
+  TrafficLog,
+  TrafficHourly,
+  SpeedMinutely
 };
 
 // 建立模型之间的关联关系

@@ -3,6 +3,7 @@ const router = express.Router();
 const gostService = require('../services/gostService');
 const fs = require('fs');
 const path = require('path');
+const { getGostExecutablePath } = require('../utils/platform');
 
 /**
  * 获取 Go-Gost 运行状态，包含详细信息
@@ -19,7 +20,8 @@ router.get('/status', async (req, res) => {
       config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     }
 
-    const executablePath = path.join(__dirname, '../bin/gost' + (process.platform === 'win32' ? '.exe' : ''));
+    // 🔧 使用统一的动态平台检测
+    const executablePath = getGostExecutablePath();
     const executableExists = fs.existsSync(executablePath);
 
     res.json({
@@ -72,15 +74,17 @@ router.get('/config', (req, res) => {
 });
 
 /**
- * 更新配置
+ * 更新配置 - 热加载优化版
  */
 router.post('/config', async (req, res) => {
   try {
     const newConfig = req.body;
-    await gostService.updateConfig(newConfig);
+    const result = await gostService.updateConfig(newConfig);
     res.json({
       success: true,
-      message: '配置已更新并重启服务'
+      message: '配置已更新（使用热加载技术，无需重启）',
+      method: 'hot_reload',
+      updated: result
     });
   } catch (error) {
     res.status(500).json({
@@ -199,30 +203,38 @@ router.post('/stop', (req, res) => {
 });
 
 /**
- * 重启服务 - 增强版
+ * 重启服务 - 热加载优化版
  */
 router.post('/restart', async (req, res) => {
   try {
     console.log('收到重启 Go-Gost 服务请求');
 
-    // 停止服务
-    gostService.stop();
-    console.log('Go-Gost 服务已停止');
+    const { force = false } = req.body;
 
-    // 关闭现有进程
-    await gostService.killExistingProcess();
-    console.log('已清理现有 Go-Gost 进程');
+    if (force) {
+      console.log('🔄 强制完全重启模式');
+      // 强制完全重启
+      gostService.stop();
+      console.log('Go-Gost 服务已停止');
 
-    // 重新启动服务
-    await gostService.startWithConfig();
+      await gostService.killExistingProcess();
+      console.log('已清理现有 Go-Gost 进程');
+
+      await gostService.startWithConfig();
+    } else {
+      console.log('🔥 智能重启模式（优先热加载）');
+      // 智能重启（优先热加载）
+      await gostService.restart({}, true);
+    }
 
     const status = await gostService.getStatus();
     console.log('Go-Gost 服务已重启', status);
 
     res.json({
       success: true,
-      message: 'Go-Gost 服务已重启',
-      data: status
+      message: force ? 'Go-Gost 服务已强制重启' : 'Go-Gost 服务已智能重启',
+      data: status,
+      method: force ? 'force_restart' : 'smart_restart'
     });
   } catch (error) {
     console.error('重启服务失败:', error);

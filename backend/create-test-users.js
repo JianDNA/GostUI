@@ -40,7 +40,7 @@ async function createTestUsers() {
         email: 'test@example.com',
         role: 'user',
         portRangeStart: 2000,
-        portRangeEnd: 3000,
+        portRangeEnd: 2999,  // 🔧 修复：避免包含3000端口
         isActive: true,
         trafficQuota: 100, // 100GB限制
         usedTraffic: 0,
@@ -66,7 +66,7 @@ async function createTestUsers() {
           ruleUUID: uuidv4(),  // 🔧 添加必需的 ruleUUID 字段
           name: 'Admin HTTPS Proxy',
           sourcePort: 6443,
-          targetAddress: '1.1.1.1:443',
+          targetAddress: '127.0.0.1:3000',  // 🔧 修复：改为安全的本地服务
           protocol: 'tcp',
           isActive: true,
           description: '管理员HTTPS代理规则',
@@ -76,8 +76,8 @@ async function createTestUsers() {
           userId: adminUser.id,
           ruleUUID: uuidv4(),  // 🔧 添加必需的 ruleUUID 字段
           name: 'Admin HTTP Proxy',
-          sourcePort: 8080,
-          targetAddress: '1.1.1.1:80',
+          sourcePort: 9080,  // 🔧 修复：改为 9080，避免与 Vue 前端冲突
+          targetAddress: '127.0.0.1:8081',  // 🔧 保留：8081是安全端口
           protocol: 'tcp',
           isActive: true,
           description: '管理员HTTP代理规则',
@@ -92,7 +92,7 @@ async function createTestUsers() {
           ruleUUID: uuidv4(),  // 🔧 添加必需的 ruleUUID 字段
           name: 'Test HTTPS Proxy',
           sourcePort: 2999,
-          targetAddress: '1.1.1.1:443',
+          targetAddress: '127.0.0.1:3000',  // 🔧 修复：改为安全的本地服务
           protocol: 'tcp',
           isActive: true,
           description: '测试用户HTTPS代理规则',
@@ -127,12 +127,18 @@ async function createTestUsers() {
 
     // 显示所有转发规则
     const allRules = await UserForwardRule.findAll({
-      attributes: ['id', 'userId', 'name', 'sourcePort', 'targetAddress', 'protocol', 'isActive', 'usedTraffic']
+      attributes: ['id', 'userId', 'name', 'sourcePort', 'targetAddress', 'protocol', 'usedTraffic'],
+      include: [{
+        model: User,
+        as: 'user',
+        attributes: ['id', 'isActive', 'userStatus', 'role']
+      }]
     });
 
     console.log('\n📊 当前转发规则:');
     allRules.forEach(rule => {
-      console.log(`  规则${rule.id}: ${rule.name} - 用户${rule.userId} 端口${rule.sourcePort} -> ${rule.targetAddress} (${rule.protocol}) 流量${rule.usedTraffic}B`);
+      const isActive = rule.isActive; // 使用计算属性
+      console.log(`  规则${rule.id}: ${rule.name} - 用户${rule.userId} 端口${rule.sourcePort} -> ${rule.targetAddress} (${rule.protocol}) ${isActive ? '✅' : '❌'} 流量${rule.usedTraffic}B`);
     });
 
     console.log('\n🎉 测试用户和规则创建完成！');

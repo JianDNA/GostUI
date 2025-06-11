@@ -25,10 +25,15 @@
           <el-icon><TrendCharts /></el-icon>
           <span>流量统计</span>
         </el-menu-item>
-        <el-menu-item v-if="isAdmin" index="/simple/test">
-          <el-icon><Tools /></el-icon>
-          <span>⚡ API 测试</span>
+        <el-menu-item v-if="canUseTrafficTest" index="/traffic-test">
+          <el-icon><Connection /></el-icon>
+          <span>🧪 API测试</span>
         </el-menu-item>
+        <el-menu-item v-if="isAdmin" index="/system-status">
+          <el-icon><Setting /></el-icon>
+          <span>系统状态</span>
+        </el-menu-item>
+
       </el-menu>
     </el-aside>
 
@@ -51,11 +56,16 @@
 <script setup>
 import { computed } from 'vue';
 import { useStore } from 'vuex';
-import { Monitor, User, List, TrendCharts, Tools } from '@element-plus/icons-vue';
+import { Monitor, User, List, TrendCharts, Connection, Setting } from '@element-plus/icons-vue';
 import Navbar from './Navbar.vue';
 
 const store = useStore();
 const isAdmin = computed(() => store.getters['user/isAdmin']);
+const currentUser = computed(() => store.getters['user/currentUser']);
+const canUseTrafficTest = computed(() => {
+  const username = currentUser.value?.username;
+  return username === 'admin' || username === 'test';
+});
 </script>
 
 <style scoped>

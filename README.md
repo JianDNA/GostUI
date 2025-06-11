@@ -1,19 +1,19 @@
-# Gost 管理系统
+# 🚀 Gost 管理系统
 
-一个基于 Vue 3 + Node.js 的 Gost 代理服务管理平台，提供可视化的界面来管理和监控 Gost 代理服务。
+一个基于 Vue 3 + Node.js 的现代化 Gost 代理服务管理平台，提供可视化的界面来管理和监控 Gost 代理服务。
 
 ## 📋 项目概述
 
-本项目是一个完整的 Gost 代理服务管理解决方案，包含前端管理界面和后端 API 服务，支持：
+本项目是一个企业级的 Gost 代理服务管理解决方案，包含前端管理界面和后端 API 服务，支持：
 
-- 🚀 Gost 服务的启动、停止、重启
-- 🔄 **Gost 配置自动同步系统** (新增)
-- 📊 实时流量监控和统计
-- 🔧 代理规则的可视化管理
-- 👥 用户权限和端口范围管理
-- 📈 数据可视化图表
-- 🔐 JWT 身份认证
-- ⚡ 实时配置更新和服务重启
+- 🚀 **Gost 服务管理** - 启动、停止、重启和状态监控
+- 🔄 **智能配置同步** - 自动生成和同步 Gost 配置文件
+- 📊 **实时流量监控** - 精确的流量统计和可视化图表
+- 🔧 **规则管理** - 可视化的代理规则创建和编辑
+- 👥 **用户权限控制** - 基于角色的访问控制和端口范围管理
+- 📈 **数据可视化** - 丰富的图表和仪表盘
+- 🔐 **安全认证** - JWT 身份认证和安全防护
+- ⚡ **高性能架构** - 支持高并发和大流量处理
 
 ## 🏗️ 项目架构
 
@@ -470,65 +470,67 @@ FROM node:16-alpine AS production
 # ... 生产环境配置
 `
 
-## 🧪 测试指南
+## 🧪 测试和验证
 
-### 🚨 生产环境安全警告
+### 🚨 安全提醒
 
-**⚠️ 重要: 所有测试脚本和测试功能都被严格限制在开发和测试环境中运行！**
+**⚠️ 重要: 测试功能仅在开发和测试环境中可用，生产环境已自动禁用！**
 
-- 🔒 **自动环境检测**: 测试脚本会自动检测运行环境并阻止在生产环境中执行
-- 🛡️ **API 保护**: 生产环境中的敏感 API 需要特殊授权令牌
-- 📝 **审计日志**: 所有尝试在生产环境中运行测试的行为都会被记录
-- 🚫 **严格限制**: 防止意外的数据丢失或服务中断
+- 🔒 **环境检测**: 自动识别运行环境并限制测试功能
+- 🛡️ **安全保护**: 生产环境中的敏感操作需要特殊授权
+- 📝 **操作审计**: 记录所有测试和管理操作
+- 🚫 **数据保护**: 防止意外的数据丢失或服务中断
 
-### 快速测试 (仅限开发/测试环境)
+### 快速验证 (开发/测试环境)
 ```bash
-# 系统集成检查
+# 系统健康检查
 node backend/scripts/check-gost-integration.js
 
-# Gost 配置服务测试
+# 配置同步测试
 node backend/test-gost-config.js
 
-# 创建测试数据（性能测试）
-node backend/scripts/create-test-data.js
+# 性能基准测试
+node backend/debug-gentle-test.js
 
-# 清理测试数据
-node backend/scripts/create-test-data.js --cleanup
+# 系统诊断
+node backend/diagnose-system.js
 ```
 
-**注意**: 如果在生产环境中运行上述命令，会看到如下安全警告：
+### 测试覆盖
+- ✅ **功能完整性**: 验证所有核心功能正常工作
+- ✅ **配置同步**: 测试自动配置生成和同步机制
+- ✅ **性能基准**: 验证系统在不同负载下的表现
+- ✅ **安全机制**: 测试权限控制和安全防护
+- ✅ **用户界面**: 验证前端交互和数据展示
+- ✅ **API 接口**: 测试所有后端 API 的功能和性能
+
+📖 **详细指南**: 查看 [TESTING.md](TESTING.md) 获取完整的测试文档。
+
+## 🚀 部署指南
+
+### ⚡ 快速部署
+```bash
+# Linux 一键部署 (推荐)
+curl -fsSL https://raw.githubusercontent.com/your-repo/gost-manager/main/scripts/quick-deploy.sh | sudo bash
+
+# 简化部署 (已有 Node.js 环境)
+curl -fsSL https://raw.githubusercontent.com/your-repo/gost-manager/main/scripts/simple-deploy.sh | bash
+
+# Windows 部署
+# 以管理员身份运行 PowerShell
+iwr -useb https://raw.githubusercontent.com/your-repo/gost-manager/main/scripts/quick-deploy.ps1 | iex
 ```
-🚨 安全警告: 此测试脚本禁止在生产环境中运行！
-   当前环境: production
-   请在开发或测试环境中运行此脚本。
-```
 
-### 测试覆盖范围
-- ✅ **系统集成测试**: 验证所有组件正确集成
-- ✅ **配置同步测试**: 测试自动配置生成和同步
-- ✅ **API 功能测试**: 验证所有 API 接口
-- ✅ **前端界面测试**: 测试用户界面交互
-- ✅ **性能测试**: 大数据量下的系统性能
-- ✅ **兼容性测试**: 与原有系统的兼容性
+### 📚 详细文档
+- 📖 **快速开始**: [QUICK_START.md](QUICK_START.md) - 5分钟快速部署
+- 🔧 **完整部署**: [DEPLOYMENT.md](DEPLOYMENT.md) - 详细的生产环境部署
+- 🔒 **安全配置**: [PRODUCTION_SECURITY.md](PRODUCTION_SECURITY.md) - 安全最佳实践
+- 🛑 **停止卸载**: [STOP_UNINSTALL_GUIDE.md](STOP_UNINSTALL_GUIDE.md) - 安全停止和卸载
 
-### 详细测试文档
-查看 [TESTING.md](TESTING.md) 获取完整的测试指南和最佳实践。
-
-## 🚀 生产环境部署
-
-### Linux 服务器部署
-查看 [DEPLOYMENT.md](DEPLOYMENT.md) 获取详细的 Linux 服务器部署指南，包括：
-
-- 📋 **系统要求和环境准备**
-- 🛠️ **自动化安装脚本**
-- ⚙️ **配置文件和环境变量**
-- 🔐 **SSL/HTTPS 配置**
-- 🛡️ **安全加固措施**
-- 📊 **监控和日志管理**
-- 🔄 **自动化部署和更新**
-
-### 安全部署指南
-查看 [PRODUCTION_SECURITY.md](PRODUCTION_SECURITY.md) 了解生产环境安全最佳实践。
+### 🎯 部署后访问
+- **默认地址**: `http://your-server-ip:3000`
+- **默认账户**: admin / admin123
+- **⚠️ 重要**: 部署后请立即修改默认密码！
 
 ## 🤝 贡献指南
 

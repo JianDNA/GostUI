@@ -22,7 +22,7 @@ class PlatformUtils {
     const platform = process.platform;
     const release = os.release();
     const type = os.type();
-    
+
     let osInfo = {
       platform,
       arch: process.arch,
@@ -59,7 +59,7 @@ class PlatformUtils {
       // 检查 /etc/os-release
       if (this.fileExists('/etc/os-release')) {
         const osRelease = execSync('cat /etc/os-release', { encoding: 'utf8' });
-        
+
         if (osRelease.includes('Ubuntu')) {
           distro = 'ubuntu';
           packageManager = 'apt';
@@ -83,7 +83,7 @@ class PlatformUtils {
           packageManager = 'pacman';
         }
       }
-      
+
       // 备用检测方法
       if (distro === 'linux') {
         if (this.fileExists('/etc/debian_version')) {
@@ -137,10 +137,69 @@ class PlatformUtils {
   }
 
   /**
-   * 获取 Gost 可执行文件路径
+   * 获取 Gost 可执行文件路径 (动态平台检测)
    */
-  getGostExecutablePath(baseDir = path.join(__dirname, '../bin')) {
-    return path.join(baseDir, this.getGostExecutableName());
+  getGostExecutablePath(baseDir = path.join(__dirname, '../assets/gost')) {
+    const executableName = this.getGostExecutableName();
+
+    // 🔧 动态平台检测逻辑
+    let platformDir = this.getGostPlatformDir();
+
+    // 构建平台特定路径
+    const platformPath = path.join(baseDir, platformDir, executableName);
+
+    // 检查平台特定版本是否存在
+    if (this.fileExists(platformPath)) {
+      console.log(`🎯 使用平台特定版本: ${platformDir}/${executableName}`);
+      return platformPath;
+    }
+
+    // 检查根目录下的通用版本
+    const fallbackPath = path.join(baseDir, executableName);
+    if (this.fileExists(fallbackPath)) {
+      console.log(`🔄 使用通用版本: ${executableName}`);
+      return fallbackPath;
+    }
+
+    // 检查旧的 bin 目录 (向后兼容)
+    const legacyPath = path.join(__dirname, '../bin', executableName);
+    if (this.fileExists(legacyPath)) {
+      console.log(`🔄 使用旧版本路径: bin/${executableName}`);
+      return legacyPath;
+    }
+
+    // 如果都不存在，返回平台特定路径 (让调用者处理错误)
+    console.log(`⚠️ 未找到 Gost 二进制文件，期望路径: ${platformPath}`);
+    return platformPath;
+  }
+
+  /**
+   * 获取当前平台对应的 Gost 目录名
+   */
+  getGostPlatformDir() {
+    if (this.osInfo.isWindows) {
+      // Windows 平台
+      if (this.arch === 'x64' || this.arch === 'x86_64') {
+        return 'windows_amd64';
+      } else {
+        return 'windows_386';
+      }
+    } else if (this.osInfo.isLinux) {
+      // Linux 平台
+      if (this.arch === 'x64' || this.arch === 'x86_64') {
+        return 'linux_amd64';
+      } else {
+        return 'linux_386';
+      }
+    } else if (this.osInfo.isMacOS) {
+      // macOS 平台 (通常使用 amd64 版本)
+      console.log('⚠️ macOS 平台检测到，使用 Linux amd64 版本');
+      return 'linux_amd64';
+    } else {
+      // 未知平台，默认使用 Linux amd64
+      console.log(`⚠️ 未知平台: ${this.platform}/${this.arch}，使用默认 Linux amd64 版本`);
+      return 'linux_amd64';
+    }
   }
 
   /**
@@ -186,7 +245,7 @@ class PlatformUtils {
    */
   getPackageInstallCommand(packages) {
     const packageList = Array.isArray(packages) ? packages.join(' ') : packages;
-    
+
     switch (this.osInfo.packageManager) {
       case 'apt':
         return `apt update && apt install -y ${packageList}`;
@@ -285,7 +344,7 @@ class PlatformUtils {
    */
   getExtractCommand(archivePath, extractDir) {
     const ext = path.extname(archivePath).toLowerCase();
-    
+
     if (this.osInfo.isWindows) {
       if (ext === '.zip') {
         return `powershell -command "Expand-Archive -Path '${archivePath}' -DestinationPath '${extractDir}' -Force"`;
@@ -304,9 +363,88 @@ class PlatformUtils {
   }
 
   /**
+   * 验证 Gost 二进制文件是否可用
+   */
+  validateGostExecutable(executablePath = null) {
+    const gostPath = executablePath || this.getGostExecutablePath();
+
+    if (!this.fileExists(gostPath)) {
+      throw new Error(`GOST 二进制文件不存在: ${gostPath}`);
+    }
+
+    // 检查文件权限 (仅 Linux/macOS)
+    if (!this.osInfo.isWindows) {
+      try {
+        const fs = require('fs');
+        fs.accessSync(gostPath, fs.constants.F_OK | fs.constants.X_OK);
+      } catch (error) {
+        throw new Error(`GOST 二进制文件无执行权限: ${gostPath}`);
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * 获取 Gost 平台信息诊断
+   */
+  getGostPlatformDiagnostics() {
+    const baseDir = path.join(__dirname, '../assets/gost');
+    const platformDir = this.getGostPlatformDir();
+    const executableName = this.getGostExecutableName();
+
+    const diagnostics = {
+      platform: this.osInfo.platform,
+      architecture: this.arch,
+      platformDir: platformDir,
+      executableName: executableName,
+      expectedPath: path.join(baseDir, platformDir, executableName),
+      fallbackPath: path.join(baseDir, executableName),
+      legacyPath: path.join(__dirname, '../bin', executableName),
+      availableVersions: []
+    };
+
+    // 检查所有可能的版本
+    const possibleDirs = ['linux_386', 'linux_amd64', 'windows_386', 'windows_amd64'];
+    for (const dir of possibleDirs) {
+      const dirPath = path.join(baseDir, dir);
+      const execPath = path.join(dirPath, dir.includes('windows') ? 'gost.exe' : 'gost');
+      if (this.fileExists(execPath)) {
+        diagnostics.availableVersions.push({
+          platform: dir,
+          path: execPath,
+          isRecommended: dir === platformDir
+        });
+      }
+    }
+
+    // 检查通用版本
+    if (this.fileExists(diagnostics.fallbackPath)) {
+      diagnostics.availableVersions.push({
+        platform: 'generic',
+        path: diagnostics.fallbackPath,
+        isRecommended: false
+      });
+    }
+
+    // 检查旧版本
+    if (this.fileExists(diagnostics.legacyPath)) {
+      diagnostics.availableVersions.push({
+        platform: 'legacy',
+        path: diagnostics.legacyPath,
+        isRecommended: false
+      });
+    }
+
+    return diagnostics;
+  }
+
+  /**
    * 获取环境信息摘要
    */
   getEnvironmentSummary() {
+    const gostDiagnostics = this.getGostPlatformDiagnostics();
+
     return {
       platform: this.osInfo.platform,
       distro: this.osInfo.distro,
@@ -315,7 +453,13 @@ class PlatformUtils {
       nodeVersion: process.version,
       hostname: os.hostname(),
       totalMemory: Math.round(os.totalmem() / 1024 / 1024 / 1024) + 'GB',
-      cpuCount: os.cpus().length
+      cpuCount: os.cpus().length,
+      gost: {
+        platformDir: gostDiagnostics.platformDir,
+        executableName: gostDiagnostics.executableName,
+        expectedPath: gostDiagnostics.expectedPath,
+        availableVersions: gostDiagnostics.availableVersions.length
+      }
     };
   }
 
@@ -332,6 +476,32 @@ class PlatformUtils {
     console.log(`   主机名: ${info.hostname}`);
     console.log(`   内存: ${info.totalMemory}`);
     console.log(`   CPU 核心: ${info.cpuCount}`);
+    console.log(`   Gost 平台: ${info.gost.platformDir}`);
+    console.log(`   可用版本: ${info.gost.availableVersions} 个`);
+  }
+
+  /**
+   * 打印 Gost 平台诊断信息
+   */
+  printGostDiagnostics() {
+    const diagnostics = this.getGostPlatformDiagnostics();
+
+    console.log('🔍 Gost 平台诊断信息:');
+    console.log(`   当前平台: ${diagnostics.platform}/${diagnostics.architecture}`);
+    console.log(`   推荐目录: ${diagnostics.platformDir}`);
+    console.log(`   可执行文件: ${diagnostics.executableName}`);
+    console.log(`   期望路径: ${diagnostics.expectedPath}`);
+    console.log(`   可用版本: ${diagnostics.availableVersions.length} 个`);
+
+    if (diagnostics.availableVersions.length > 0) {
+      console.log('   版本列表:');
+      diagnostics.availableVersions.forEach(version => {
+        const marker = version.isRecommended ? '✅' : '  ';
+        console.log(`   ${marker} ${version.platform}: ${version.path}`);
+      });
+    } else {
+      console.log('   ⚠️ 未找到任何可用版本');
+    }
   }
 }
 
@@ -341,7 +511,7 @@ const platformUtils = new PlatformUtils();
 module.exports = {
   PlatformUtils,
   platformUtils,
-  
+
   // 便捷方法
   isWindows: () => platformUtils.osInfo.isWindows,
   isLinux: () => platformUtils.osInfo.isLinux,
@@ -350,6 +520,10 @@ module.exports = {
   getPackageManager: () => platformUtils.osInfo.packageManager,
   getGostExecutableName: () => platformUtils.getGostExecutableName(),
   getGostExecutablePath: (baseDir) => platformUtils.getGostExecutablePath(baseDir),
+  getGostPlatformDir: () => platformUtils.getGostPlatformDir(),
+  validateGostExecutable: (path) => platformUtils.validateGostExecutable(path),
+  getGostPlatformDiagnostics: () => platformUtils.getGostPlatformDiagnostics(),
   commandExists: (command) => platformUtils.commandExists(command),
-  printEnvironmentInfo: () => platformUtils.printEnvironmentInfo()
+  printEnvironmentInfo: () => platformUtils.printEnvironmentInfo(),
+  printGostDiagnostics: () => platformUtils.printGostDiagnostics()
 };

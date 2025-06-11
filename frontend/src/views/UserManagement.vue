@@ -27,7 +27,7 @@
       </el-table-column>
       <el-table-column label="流量限额" width="100">
         <template #default="{ row }">
-          <span v-if="row.trafficQuota">{{ row.trafficQuota }}GB</span>
+          <span v-if="row.trafficQuota">{{ formatQuota(row.trafficQuota) }}</span>
           <span v-else class="text-muted">未设置</span>
         </template>
       </el-table-column>
@@ -37,7 +37,7 @@
             <div class="traffic-usage">
               <span class="used">{{ row.trafficStats.usedTrafficGB }}GB</span>
               <span class="separator">/</span>
-              <span class="quota">{{ row.trafficStats.trafficQuotaGB || 'Unlimited' }}GB</span>
+              <span class="quota">{{ formatQuota(row.trafficStats.trafficQuotaGB) || 'Unlimited' }}</span>
             </div>
             <el-progress
               :percentage="row.trafficStats.usagePercent"
@@ -164,6 +164,24 @@
           <el-input v-model="form.email" placeholder="请输入邮箱" />
         </el-form-item>
 
+        <!-- 密码编辑 - Admin可以编辑任何用户的密码 -->
+        <el-form-item
+          v-if="isEdit && isAdmin"
+          label="重置密码"
+          prop="newPassword"
+        >
+          <el-input
+            v-model="form.newPassword"
+            type="password"
+            placeholder="输入新密码（留空表示不修改）"
+            show-password
+            clearable
+          />
+          <div class="form-tip">
+            留空表示不修改密码，输入新密码将重置用户密码
+          </div>
+        </el-form-item>
+
         <el-form-item v-if="!isEdit" label="密码" prop="password">
           <el-input
             v-model="form.password"
@@ -241,13 +259,15 @@
         <el-form-item label="流量限额" prop="trafficQuota" v-if="form.role === 'user'">
           <el-input-number
             v-model="form.trafficQuota"
-            :min="1"
+            :min="0.001"
             :max="10240"
+            :step="0.001"
+            :precision="3"
             placeholder="GB"
             style="width: 100%"
           />
           <div class="form-tip">
-            必须设置流量限额，单位：GB，范围：1-10240
+            必须设置流量限额，单位：GB，范围：0.001-10240（支持小数，如0.1GB=100MB）
           </div>
         </el-form-item>
 
@@ -338,7 +358,7 @@
           <el-form-item label="当前流量">
             <span class="traffic-info">
               {{ resetTrafficUser?.trafficStats?.usedTrafficGB || 0 }}GB
-              / {{ resetTrafficUser?.trafficStats?.trafficQuotaGB || 'Unlimited' }}GB
+              / {{ formatQuota(resetTrafficUser?.trafficStats?.trafficQuotaGB) || 'Unlimited' }}
             </span>
           </el-form-item>
           <el-form-item label="转发规则">
@@ -485,7 +505,7 @@ export default {
 
         baseRules.trafficQuota = [
           { required: true, message: '请设置流量限额', trigger: 'blur' },
-          { type: 'number', min: 1, max: 10240, message: '流量限额范围在 1-10240 GB', trigger: 'blur' }
+          { type: 'number', min: 0.001, max: 10240, message: '流量限额范围在 0.001-10240 GB', trigger: 'blur' }
         ]
       }
 
@@ -602,7 +622,7 @@ export default {
         portRangeStart: user.portRangeStart,
         portRangeEnd: user.portRangeEnd,
         expiryDate: user.expiryDate,
-        trafficQuota: user.trafficQuota || 100,
+        trafficQuota: user.trafficQuota || 1,
         isActive: user.isActive
       })
 
@@ -654,13 +674,14 @@ export default {
         const data = { ...form }
 
         if (isEdit.value) {
-          // 编辑时处理密码
-          if (form.username === 'admin' && form.newPassword) {
+          // 编辑时处理密码 - Admin可以重置任何用户的密码
+          if (isAdmin.value && form.newPassword) {
             data.password = form.newPassword
+            console.log(`🔑 Admin正在重置用户 ${form.username} 的密码`)
           } else {
             delete data.password
-            delete data.newPassword
           }
+          delete data.newPassword
 
           await api.users.updateUser(currentUser.value.id, data)
           ElMessage.success('用户更新成功')
@@ -811,13 +832,37 @@ export default {
         portRangeStart: null,
         portRangeEnd: null,
         expiryDate: null,
-        trafficQuota: 100,
+        trafficQuota: 1,
         isActive: true
       })
       portConflictMessage.value = ''
       hasPortConflict.value = false
       if (formRef.value) {
         formRef.value.clearValidate()
+      }
+    }
+
+    // 格式化配额显示
+    const formatQuota = (quota) => {
+      if (!quota || quota === 0) return '0GB'
+
+      // 如果是整数GB，直接显示
+      if (quota >= 1 && quota % 1 === 0) {
+        return `${quota}GB`
+      }
+
+      // 如果是小数GB，显示更友好的格式
+      if (quota >= 1) {
+        return `${quota}GB`
+      } else if (quota >= 0.001) {
+        const mb = quota * 1024
+        if (mb >= 1 && mb % 1 === 0) {
+          return `${mb}MB`
+        } else {
+          return `${quota}GB`
+        }
+      } else {
+        return `${quota}GB`
       }
     }
 
@@ -859,7 +904,8 @@ export default {
       handleResetTraffic,
       confirmResetTraffic,
       resetForm,
-      checkPortConflictsDebounced
+      checkPortConflictsDebounced,
+      formatQuota
     }
   }
 }

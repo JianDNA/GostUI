@@ -91,6 +91,39 @@ export const traffic = {
   getChartData: (params) => request.get('/traffic/chart', { params })
 }
 
+// 系统状态相关API
+export const system = {
+  // 获取系统状态
+  getStatus: () => request.get('/api/system/status'),
+
+  // 获取GOST状态
+  getGostStatus: () => request.get('/api/system/gost-status'),
+
+  // 重启GOST服务
+  restartGost: () => request.post('/api/system/restart-gost'),
+
+  // 获取系统日志
+  getLogs: (params) => request.get('/api/system/logs', { params }),
+
+  // 获取系统统计
+  getStats: () => request.get('/api/system/stats'),
+
+  // 获取实时监控状态
+  getMonitorStatus: () => request.get('/api/system/monitor-status'),
+
+  // 获取配额协调器状态
+  getQuotaStatus: () => request.get('/api/system/quota-status'),
+
+  // 获取同步协调器状态
+  getSyncStatus: () => request.get('/api/system/sync-status'),
+
+  // 强制同步配置
+  forceSync: () => request.post('/api/system/force-sync'),
+
+  // 获取观察器状态
+  getObserverStatus: () => request.get('/api/system/observer-status')
+}
+
 // 默认导出一个包含所有API的对象
 const api = {
   // 直接使用request实例的方法
@@ -99,14 +132,15 @@ const api = {
   put: (url, data, config) => request.put(url, data, config),
   delete: (url, config) => request.delete(url, config),
   patch: (url, data, config) => request.patch(url, data, config),
-  
+
   // 分类的API方法
   auth,
   users,
   rules,
   userForwardRules,
   gost,
-  traffic
+  traffic,
+  system
 }
 
 export default api

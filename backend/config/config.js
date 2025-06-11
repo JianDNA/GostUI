@@ -42,7 +42,7 @@ const config = {
   // GOST Configuration
   gost: {
     configPath: process.env.GOST_CONFIG_PATH || path.join(__dirname, '../config/gost-config.json'),
-    executablePath: process.env.GOST_BINARY_PATH || getGostExecutablePath(path.join(__dirname, '../bin')),
+    executablePath: process.env.GOST_BINARY_PATH || getGostExecutablePath(),
     defaultConfig: {
       services: [],
       chains: []

@@ -7,6 +7,7 @@ const http = require('http');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const { getGostExecutablePath, validateGostExecutable, isWindows, getGostExecutableName } = require('../utils/platform');
 
 class GostHealthService {
   constructor() {
@@ -17,23 +18,22 @@ class GostHealthService {
     this.restartAttempts = 0;
     this.maxRestartAttempts = 3;
     this.lastHealthCheck = null;
-    
+
     // GOST 配置路径
     this.configPath = path.join(__dirname, '../config/gost-config.json');
-    this.gostBinaryPath = this.getGostBinaryPath();
+    this.gostBinaryPath = getGostExecutablePath();
   }
 
   /**
-   * 获取 GOST 二进制文件路径
+   * 验证 GOST 二进制文件
    */
-  getGostBinaryPath() {
-    const platform = process.platform;
-    const assetsDir = path.join(__dirname, '../assets/gost');
-    
-    if (platform === 'win32') {
-      return path.join(assetsDir, 'gost-windows.exe');
-    } else {
-      return path.join(assetsDir, 'gost-linux');
+  validateGostBinary() {
+    try {
+      validateGostExecutable(this.gostBinaryPath);
+      return true;
+    } catch (error) {
+      console.error('❌ GOST 二进制文件验证失败:', error.message);
+      return false;
     }
   }
 
@@ -69,7 +69,7 @@ class GostHealthService {
     }
 
     this.isRunning = false;
-    
+
     if (this.healthTimer) {
       clearInterval(this.healthTimer);
       this.healthTimer = null;
@@ -84,7 +84,7 @@ class GostHealthService {
   async performHealthCheck() {
     try {
       this.lastHealthCheck = new Date();
-      
+
       // 检查配置文件是否存在
       if (!fs.existsSync(this.configPath)) {
         console.warn('⚠️ GOST 配置文件不存在，跳过健康检查');
@@ -93,7 +93,7 @@ class GostHealthService {
 
       // 读取配置文件
       const config = JSON.parse(fs.readFileSync(this.configPath, 'utf8'));
-      
+
       if (!config.services || config.services.length === 0) {
         console.log('📋 GOST 配置中没有服务，跳过健康检查');
         return;
@@ -105,16 +105,37 @@ class GostHealthService {
         criticalPorts.map(port => this.checkPortHealth(port))
       );
 
-      // 分析健康检查结果
+      // 🔧 分析健康检查结果，区分不同类型的问题
       const failedPorts = [];
+      const healthyPorts = [];
+      const warningPorts = [];
+
       healthResults.forEach((result, index) => {
-        if (result.status === 'rejected') {
-          failedPorts.push(criticalPorts[index]);
+        const port = criticalPorts[index];
+        if (result.status === 'fulfilled') {
+          healthyPorts.push({ port, ...result.value });
+        } else {
+          const reason = result.reason;
+          if (reason.status === 'not_listening') {
+            failedPorts.push({ port, ...reason });
+          } else {
+            warningPorts.push({ port, ...reason });
+          }
         }
       });
 
+      // 输出详细的健康检查结果
+      if (healthyPorts.length > 0) {
+        console.log(`✅ 健康端口 (${healthyPorts.length}): ${healthyPorts.map(p => p.port).join(', ')}`);
+      }
+
+      if (warningPorts.length > 0) {
+        console.log(`⚠️ 警告端口 (${warningPorts.length}): ${warningPorts.map(p => `${p.port}(${p.error})`).join(', ')}`);
+        console.log('💡 提示：转发端口的连接重置是正常现象');
+      }
+
       if (failedPorts.length > 0) {
-        console.warn(`⚠️ 检测到 ${failedPorts.length} 个端口不可用: ${failedPorts.join(', ')}`);
+        console.warn(`🚨 失败端口 (${failedPorts.length}): ${failedPorts.map(p => p.port).join(', ')}`);
         await this.handleUnhealthyService(failedPorts);
       } else {
         console.log('✅ GOST 服务健康检查通过');
@@ -131,7 +152,7 @@ class GostHealthService {
    */
   getCriticalPorts(config) {
     const ports = [];
-    
+
     if (config.services) {
       config.services.forEach(service => {
         if (service.addr) {
@@ -152,72 +173,133 @@ class GostHealthService {
 
   /**
    * 检查单个端口的健康状态
+   * 🔧 修复：使用TCP连接检查而不是HTTP请求
    */
   checkPortHealth(port) {
     return new Promise((resolve, reject) => {
-      const options = {
-        hostname: 'localhost',
-        port: port,
-        method: 'GET',
-        timeout: 5000
-      };
+      const net = require('net');
+      const socket = new net.Socket();
 
-      const req = http.request(options, (res) => {
-        resolve({ port, status: 'healthy', statusCode: res.statusCode });
+      const timeout = setTimeout(() => {
+        socket.destroy();
+        reject({ port, status: 'timeout', error: 'Connection timeout' });
+      }, 3000);
+
+      socket.connect(port, 'localhost', () => {
+        clearTimeout(timeout);
+        socket.destroy();
+        resolve({ port, status: 'healthy', message: 'Port is listening' });
       });
 
-      req.on('error', (error) => {
-        reject({ port, status: 'unhealthy', error: error.message });
+      socket.on('error', (error) => {
+        clearTimeout(timeout);
+        // 🔧 区分不同的错误类型
+        if (error.code === 'ECONNREFUSED') {
+          reject({ port, status: 'not_listening', error: 'Port not listening' });
+        } else if (error.code === 'ECONNRESET') {
+          // TCP连接被重置，但端口在监听（这对于转发端口是正常的）
+          resolve({ port, status: 'healthy', message: 'Port is listening (connection reset is normal for forwarding)' });
+        } else {
+          reject({ port, status: 'unhealthy', error: error.message });
+        }
       });
-
-      req.on('timeout', () => {
-        req.destroy();
-        reject({ port, status: 'timeout', error: 'Request timeout' });
-      });
-
-      req.end();
     });
   }
 
   /**
    * 处理不健康的服务
+   * 🔧 优化：更智能的健康检查和重启逻辑
    */
   async handleUnhealthyService(failedPorts) {
+    // 🔧 检查用户是否主动停止了服务
+    const gostService = require('./gostService');
+    if (gostService.userStoppedService) {
+      console.log('🛑 用户主动停止了服务，跳过自动重启');
+      return;
+    }
+
+    // 🔧 更智能的失败分析
+    const criticalFailures = failedPorts.filter(portInfo => {
+      // 1. 检查是否是真正的服务问题
+      if (portInfo.status === 'connection_refused') {
+        // 连接被拒绝可能是目标服务不可用，这是正常的
+        console.log(`📋 端口 ${portInfo.port} 连接被拒绝，可能是目标服务不可用（正常现象）`);
+        return false;
+      }
+
+      // 2. 检查是否是端口未监听
+      if (portInfo.status === 'not_listening') {
+        // 只有管理端口（如6443）未监听才是关键问题
+        const isManagementPort = this.isManagementPort(portInfo.port);
+        if (!isManagementPort) {
+          console.log(`📋 端口 ${portInfo.port} 未监听，但不是管理端口（可能正常）`);
+          return false;
+        }
+      }
+
+      // 3. 检查是否是网络超时
+      if (portInfo.status === 'timeout') {
+        console.log(`📋 端口 ${portInfo.port} 超时，可能是网络问题（暂不重启）`);
+        return false;
+      }
+
+      // 4. 只有真正的服务级别问题才认为是关键失败
+      return portInfo.status === 'service_error' ||
+             (portInfo.status === 'not_listening' && this.isManagementPort(portInfo.port));
+    });
+
+    if (criticalFailures.length === 0) {
+      console.log('📋 检测到的端口问题不是关键问题，跳过重启');
+      console.log('💡 提示：转发端口的目标地址不可用或网络问题是正常现象');
+      return;
+    }
+
     if (this.restartAttempts >= this.maxRestartAttempts) {
       console.error(`❌ GOST 服务重启次数已达上限 (${this.maxRestartAttempts})，停止自动恢复`);
       return;
     }
 
     this.restartAttempts++;
-    console.log(`🔄 尝试重启 GOST 服务 (第 ${this.restartAttempts}/${this.maxRestartAttempts} 次)...`);
+    console.log(`🔄 检测到关键端口问题，尝试重启 GOST 服务 (第 ${this.restartAttempts}/${this.maxRestartAttempts} 次)...`);
+    console.log(`🎯 关键失败端口: ${criticalFailures.map(p => p.port).join(', ')}`);
 
     try {
-      // 停止现有的 GOST 进程
-      await this.stopGostProcess();
-      
-      // 等待一段时间
-      await this.sleep(2000);
-      
-      // 重新启动 GOST 服务
-      await this.startGostProcess();
-      
-      console.log('✅ GOST 服务重启完成');
-      
+      // 🔥 优先尝试热加载重启
+      const gostService = require('./gostService');
+
+      console.log('🔥 尝试热加载重启 GOST 服务...');
+      try {
+        await gostService.restart({}, true);
+        // 🔧 重启成功后重置用户停止标志
+        gostService.userStoppedService = false;
+        console.log('✅ GOST 服务热加载重启完成');
+      } catch (hotReloadError) {
+        console.warn('⚠️ 热加载重启失败，回退到完全重启:', hotReloadError.message);
+
+        // 回退到传统重启方式
+        await this.stopGostProcess();
+        await this.sleep(2000);
+        await this.startGostProcess();
+        // 🔧 重启成功后重置用户停止标志
+        gostService.userStoppedService = false;
+        console.log('✅ GOST 服务完全重启完成');
+      }
+
       // 等待服务启动后再次检查
       setTimeout(async () => {
         const recheckResults = await Promise.allSettled(
-          failedPorts.map(port => this.checkPortHealth(port))
+          criticalFailures.map(portInfo => this.checkPortHealth(portInfo.port))
         );
-        
+
         const stillFailed = recheckResults.filter(result => result.status === 'rejected');
         if (stillFailed.length === 0) {
           console.log('✅ GOST 服务重启后健康检查通过');
           this.restartAttempts = 0;
         } else {
-          console.warn(`⚠️ GOST 服务重启后仍有 ${stillFailed.length} 个端口不可用`);
+          console.warn(`⚠️ GOST 服务重启后仍有 ${stillFailed.length} 个关键端口不可用`);
         }
       }, 5000);
-      
+
     } catch (error) {
       console.error('❌ GOST 服务重启失败:', error);
     }
@@ -232,24 +314,34 @@ class GostHealthService {
         this.gostProcess.kill('SIGTERM');
         this.gostProcess = null;
       }
-      
-      // 强制杀死可能残留的 GOST 进程
-      const platform = process.platform;
+
+      // 🔧 使用更安全和精确的进程清理方式
       let killCommand;
-      
-      if (platform === 'win32') {
-        killCommand = spawn('taskkill', ['/F', '/IM', 'gost-windows.exe'], { stdio: 'ignore' });
+
+      if (isWindows()) {
+        // Windows: 只杀死 gost.exe 进程
+        killCommand = spawn('taskkill', ['/F', '/IM', 'gost.exe'], { stdio: 'ignore' });
       } else {
-        killCommand = spawn('pkill', ['-f', 'gost'], { stdio: 'ignore' });
+        // Linux: 使用更精确的命令，避免误杀其他进程
+        const gostExecutableName = getGostExecutableName();
+        killCommand = spawn('sh', ['-c', `pgrep -f "${gostExecutableName}" | xargs -r kill -TERM || true`], { stdio: 'ignore' });
       }
-      
-      killCommand.on('close', () => {
-        console.log('🛑 GOST 进程已停止');
+
+      killCommand.on('close', (code) => {
+        console.log(`🛑 GOST 进程清理完成，退出码: ${code}`);
         resolve();
       });
-      
+
+      killCommand.on('error', (error) => {
+        console.log(`⚠️ 进程清理命令执行失败: ${error.message}，继续启动`);
+        resolve(); // 即使清理失败也继续
+      });
+
       // 超时处理
-      setTimeout(resolve, 3000);
+      setTimeout(() => {
+        console.log('⏰ 进程清理超时，继续启动');
+        resolve();
+      }, 3000);
     });
   }
 
@@ -258,8 +350,9 @@ class GostHealthService {
    */
   async startGostProcess() {
     return new Promise((resolve, reject) => {
-      if (!fs.existsSync(this.gostBinaryPath)) {
-        reject(new Error(`GOST 二进制文件不存在: ${this.gostBinaryPath}`));
+      // 使用动态平台检测验证二进制文件
+      if (!this.validateGostBinary()) {
+        reject(new Error(`GOST 二进制文件验证失败: ${this.gostBinaryPath}`));
         return;
       }
 
@@ -269,7 +362,7 @@ class GostHealthService {
       }
 
       console.log(`🚀 启动 GOST 进程: ${this.gostBinaryPath}`);
-      
+
       this.gostProcess = spawn(this.gostBinaryPath, ['-C', this.configPath], {
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: false
@@ -303,6 +396,22 @@ class GostHealthService {
         }
       }, 2000);
     });
+  }
+
+  /**
+   * 检查是否是管理端口
+   * @param {number} port - 端口号
+   * @returns {boolean} 是否是管理端口
+   */
+  isManagementPort(port) {
+    // 管理端口列表（这些端口的失败才是真正的问题）
+    const managementPorts = [
+      6443, // 默认管理端口
+      9080, // 备用管理端口
+      3000  // API端口
+    ];
+
+    return managementPorts.includes(port);
   }
 
   /**

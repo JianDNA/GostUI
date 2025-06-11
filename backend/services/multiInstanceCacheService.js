@@ -13,7 +13,7 @@ class MultiInstanceCacheService {
     // 内存缓存（进程级别）
     this.memoryCache = new Map();
     this.portUserMapping = new Map();
-    
+
     // 缓存配置
     this.config = {
       cacheTTL: 2 * 60 * 1000, // 2分钟（多实例环境下缩短TTL）
@@ -21,20 +21,20 @@ class MultiInstanceCacheService {
       lockTimeout: 5000, // 文件锁超时
       maxRetries: 3
     };
-    
+
     // 缓存文件路径（放在临时目录，避免触发 nodemon 重启）
     this.cacheDir = path.join(__dirname, '../cache');
     this.lockFile = path.join(this.cacheDir, '.cache.lock');
     this.cacheFile = path.join(this.cacheDir, '.shared-cache.json');
-    
+
     // 定时器
     this.syncTimer = null;
     this.cleanupTimer = null;
-    
+
     // 进程标识
     this.processId = process.pid;
     this.instanceId = process.env.PM2_INSTANCE_ID || process.env.NODE_APP_INSTANCE || '0';
-    
+
     console.log(`💾 多实例缓存服务初始化 (PID: ${this.processId}, Instance: ${this.instanceId})`);
   }
 
@@ -45,16 +45,16 @@ class MultiInstanceCacheService {
     try {
       // 创建缓存目录
       await this.ensureCacheDirectory();
-      
+
       // 启动同步定时器
       this.startSyncTimer();
-      
+
       // 启动清理定时器
       this.startCleanupTimer();
-      
+
       // 初始化端口用户映射
       await this.refreshPortUserMapping();
-      
+
       console.log(`✅ 多实例缓存服务启动成功 (Instance: ${this.instanceId})`);
     } catch (error) {
       console.error('❌ 多实例缓存服务启动失败:', error);
@@ -78,7 +78,7 @@ class MultiInstanceCacheService {
    */
   async acquireLock() {
     const maxAttempts = this.config.maxRetries;
-    
+
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         const lockData = {
@@ -86,7 +86,7 @@ class MultiInstanceCacheService {
           instanceId: this.instanceId,
           timestamp: Date.now()
         };
-        
+
         await fs.writeFile(this.lockFile, JSON.stringify(lockData), { flag: 'wx' });
         return true;
       } catch (error) {
@@ -95,7 +95,7 @@ class MultiInstanceCacheService {
           try {
             const lockContent = await fs.readFile(this.lockFile, 'utf8');
             const lockData = JSON.parse(lockContent);
-            
+
             if (Date.now() - lockData.timestamp > this.config.lockTimeout) {
               // 锁已过期，删除并重试
               await fs.unlink(this.lockFile);
@@ -107,7 +107,7 @@ class MultiInstanceCacheService {
             await fs.unlink(this.lockFile).catch(() => {});
             continue;
           }
-          
+
           // 等待后重试
           await this.sleep(100 * attempt);
         } else {
@@ -115,7 +115,7 @@ class MultiInstanceCacheService {
         }
       }
     }
-    
+
     return false;
   }
 
@@ -154,7 +154,7 @@ class MultiInstanceCacheService {
       lastUpdate: Date.now(),
       updatedBy: this.instanceId
     };
-    
+
     await fs.writeFile(this.cacheFile, JSON.stringify(cacheData, null, 2));
   }
 
@@ -175,13 +175,19 @@ class MultiInstanceCacheService {
       // 🔧 从数据库获取最新数据（带重试机制）
       const users = await this.queryUsersWithRetry();
 
-      const rules = await UserForwardRule.findAll({
-        where: { isActive: true },
+      // 获取所有规则，通过计算属性判断是否激活
+      const allRules = await UserForwardRule.findAll({
         include: [{
           model: User,
           as: 'user',
-          attributes: ['id', 'username', 'expiryDate']
+          attributes: ['id', 'username', 'expiryDate', 'isActive', 'userStatus', 'role', 'portRangeStart', 'portRangeEnd']
         }]
+      });
+
+      // 过滤出激活的规则
+      const rules = allRules.filter(rule => {
+        if (!rule.user) return false;
+        return rule.isActive; // 使用计算属性
       });
 
       // 构建新的缓存数据
@@ -201,48 +207,56 @@ class MultiInstanceCacheService {
           });
         }
 
+        // 🔧 修复：添加 trafficLimitBytes 字段，用于限制器检查
+        const trafficLimitBytes = user.trafficQuota ? user.trafficQuota * 1024 * 1024 * 1024 : 0; // 转换 GB 到字节
+
         newCacheData.users[user.id] = {
           id: user.id,
           username: user.username,
+          role: user.role || 'user', // 🔧 添加角色字段
           expiryDate: user.expiryDate,
           trafficQuota: user.trafficQuota,
+          trafficLimitBytes: trafficLimitBytes, // 🔧 关键修复：添加字节单位的流量限制
           usedTraffic: user.usedTraffic || 0,
+          status: (!user.expiryDate || new Date(user.expiryDate) > new Date()) ? 'active' : 'inactive', // 🔧 添加状态字段
           portRanges: portRanges,
           isActive: !user.expiryDate || new Date(user.expiryDate) > new Date(), // 简化活跃状态判断
           lastUpdate: Date.now()
         };
       }
 
-      // 端口映射
+      // 端口映射 - 使用计算属性判断规则是否激活
       for (const rule of rules) {
         if (rule.user) {
-          const isUserActive = !rule.user.expiryDate || new Date(rule.user.expiryDate) > new Date();
-          
-          if (isUserActive) {
+          // 使用计算属性判断规则是否应该激活
+          if (rule.isActive) {
             newCacheData.portMapping[rule.sourcePort] = {
               userId: rule.user.id,
               username: rule.user.username,
               ruleId: rule.id,
               ruleName: rule.name
             };
+            console.log(`✅ 端口映射已添加: ${rule.sourcePort} -> 用户${rule.user.username} (规则: ${rule.name})`);
+          } else {
+            console.log(`🚫 跳过端口映射: ${rule.sourcePort} -> 用户${rule.user.username} (规则: ${rule.name}) - 计算属性为false`);
           }
         }
       }
 
       // 写入共享缓存
       await this.writeSharedCache(newCacheData);
-      
+
       // 更新内存缓存
       this.memoryCache.clear();
       this.portUserMapping.clear();
-      
+
       for (const [userId, userData] of Object.entries(newCacheData.users)) {
         this.memoryCache.set(`user:${userId}`, {
           value: userData,
           expireTime: Date.now() + this.config.cacheTTL
         });
       }
-      
+
       for (const [port, mapping] of Object.entries(newCacheData.portMapping)) {
         this.portUserMapping.set(parseInt(port), mapping);
       }
@@ -259,17 +273,17 @@ class MultiInstanceCacheService {
    */
   getUserCache(userId) {
     const cached = this.memoryCache.get(`user:${userId}`);
-    
+
     if (!cached) {
       return null;
     }
-    
+
     // 检查是否过期
     if (Date.now() > cached.expireTime) {
       this.memoryCache.delete(`user:${userId}`);
       return null;
     }
-    
+
     return cached.value;
   }
 
@@ -327,7 +341,7 @@ class MultiInstanceCacheService {
       }
 
       const isActive = !user.expiryDate || new Date(user.expiryDate) > new Date();
-      
+
       // 构建端口范围数组
       const portRanges = [];
       if (user.portRangeStart && user.portRangeEnd) {
@@ -380,6 +394,10 @@ class MultiInstanceCacheService {
       const cachedUser = this.getUserCache(userId);
       if (cachedUser) {
         cachedUser.usedTraffic = newUsedTraffic;
+        // 🔧 确保 trafficLimitBytes 字段存在
+        if (user.trafficQuota && !cachedUser.trafficLimitBytes) {
+          cachedUser.trafficLimitBytes = user.trafficQuota * 1024 * 1024 * 1024;
+        }
         cachedUser.lastUpdate = Date.now();
         this.setUserCache(userId, cachedUser);
       }
@@ -419,7 +437,7 @@ class MultiInstanceCacheService {
     this.syncTimer = setInterval(async () => {
       await this.syncCache();
     }, this.config.syncInterval);
-    
+
     console.log(`⏰ 缓存同步定时器已启动，间隔: ${this.config.syncInterval / 1000} 秒`);
   }
 
@@ -430,7 +448,7 @@ class MultiInstanceCacheService {
     this.cleanupTimer = setInterval(() => {
       this.cleanupExpiredCache();
     }, 60 * 1000); // 每分钟清理一次
-    
+
     console.log('⏰ 缓存清理定时器已启动');
   }
 
@@ -477,7 +495,7 @@ class MultiInstanceCacheService {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         return await User.findAll({
-          attributes: ['id', 'username', 'expiryDate', 'trafficQuota', 'usedTraffic', 'portRangeStart', 'portRangeEnd']
+          attributes: ['id', 'username', 'role', 'expiryDate', 'trafficQuota', 'usedTraffic', 'portRangeStart', 'portRangeEnd']
         });
       } catch (error) {
         if (error.name === 'SequelizeDatabaseError' && error.original?.code === 'SQLITE_IOERR') {

@@ -39,7 +39,7 @@ router.get('/', auth, async (req, res) => {
       include: [{
         model: UserForwardRule,
         as: 'forwardRules',
-        attributes: ['id', 'name', 'sourcePort', 'isActive']
+        attributes: ['id', 'name', 'sourcePort']
       }]
     });
 
@@ -113,7 +113,12 @@ router.get('/:id', auth, async (req, res) => {
       include: [{
         model: UserForwardRule,
         as: 'forwardRules',
-        attributes: ['id', 'name', 'sourcePort', 'isActive']
+        attributes: ['id', 'name', 'sourcePort'],
+        include: [{
+          model: User,
+          as: 'user',
+          attributes: ['id', 'isActive', 'userStatus', 'role', 'expiryDate', 'portRangeStart', 'portRangeEnd']
+        }]
       }]
     });
 
@@ -149,7 +154,11 @@ router.get('/:id', auth, async (req, res) => {
         ...userData,
         isExpired: user.isExpired(),
         forwardRuleCount: user.forwardRules ? user.forwardRules.length : 0,
-        activeRuleCount: user.forwardRules ? user.forwardRules.filter(rule => rule.isActive).length : 0,
+        activeRuleCount: user.forwardRules ? user.forwardRules.filter(rule => {
+          // 为计算属性设置用户关联
+          rule.user = rule.user || user;
+          return rule.isActive;
+        }).length : 0,
         trafficStats: {
           usedTrafficBytes,
           trafficLimitBytes,
@@ -392,11 +401,15 @@ router.put('/:id', auth, async (req, res) => {
       }
     }
 
-    // 处理admin用户密码修改
-    if (user.username === 'admin' && updateData.newPassword) {
-      updateData.password = updateData.newPassword;
-      delete updateData.newPassword;
+    // 处理密码修改 - Admin可以重置任何用户的密码
+    if (req.user.role === 'admin' && updateData.password) {
+      console.log(`🔑 Admin ${req.user.username} 正在重置用户 ${user.username} 的密码`);
+      // 密码会在模型的 beforeUpdate hook 中自动加密
+    } else {
+      // 如果不是密码重置，移除密码字段
+      delete updateData.password;
     }
+    delete updateData.newPassword;
 
     // 检查端口范围是否变动，如果变动需要清理不在范围内的转发规则
     const oldPortRangeStart = user.portRangeStart;
@@ -431,6 +444,21 @@ router.put('/:id', auth, async (req, res) => {
 
     // 更新用户信息
     await user.update(updateData);
+
+    // 🔧 关键修复：如果更新了流量配额或用户状态，立即触发GOST配置同步
+    if (updateData.trafficQuota !== undefined || updateData.userStatus !== undefined) {
+      try {
+        console.log(`🔄 用户 ${user.id} 配额/状态更新，触发GOST配置同步...`);
+
+        // 强制触发GOST配置同步
+        const gostConfigService = require('../services/gostConfigService');
+        await gostConfigService.triggerSync('quota_update', true, 10);
+
+        console.log(`✅ 用户 ${user.id} 配额/状态更新后GOST配置同步成功`);
+      } catch (error) {
+        console.error('配额/状态更新后同步GOST配置失败:', error);
+      }
+    }
 
     // 触发 Gost 配置同步（如果端口范围变化或清理了规则）
     if (cleanedRulesCount > 0 || newPortRangeStart || newPortRangeEnd) {
@@ -631,7 +659,7 @@ router.get('/', auth, async (req, res) => {
       include: [{
         model: UserForwardRule,
         as: 'forwardRules',
-        attributes: ['id', 'name', 'sourcePort', 'isActive']
+        attributes: ['id', 'name', 'sourcePort']
       }]
     });
 
@@ -640,7 +668,11 @@ router.get('/', auth, async (req, res) => {
       ...user.toJSON(),
       isExpired: user.isExpired(),
       forwardRuleCount: user.forwardRules ? user.forwardRules.length : 0,
-      activeRuleCount: user.forwardRules ? user.forwardRules.filter(rule => rule.isActive).length : 0
+      activeRuleCount: user.forwardRules ? user.forwardRules.filter(rule => {
+        // 为计算属性设置用户关联
+        rule.user = user;
+        return rule.isActive;
+      }).length : 0
     }));
 
     res.json(usersWithStatus);
@@ -677,9 +709,20 @@ router.post('/:id/reset-traffic', auth, async (req, res) => {
     const transaction = await sequelize.transaction();
 
     try {
-      // 1. 重置用户总流量
+      // 1. 重置用户总流量并恢复用户状态
       const oldUserTraffic = targetUser.usedTraffic || 0;
-      await targetUser.update({ usedTraffic: 0 }, { transaction });
+      const oldUserStatus = targetUser.userStatus;
+
+      // 🔧 关键修复：重置流量时自动恢复用户状态
+      const updateData = { usedTraffic: 0 };
+
+      // 如果用户状态是suspended或quota_exceeded（通常是因为超出配额），恢复为active
+      if (targetUser.userStatus === 'suspended' || targetUser.userStatus === 'quota_exceeded') {
+        updateData.userStatus = 'active';
+        console.log(`🔄 用户状态从 ${oldUserStatus} 恢复为 active`);
+      }
+
+      await targetUser.update(updateData, { transaction });
       console.log(`✅ 用户总流量已重置: ${formatBytes(oldUserTraffic)} → 0B`);
 
       // 2. 重置用户所有规则的流量（保留规则本身）
@@ -761,12 +804,34 @@ router.post('/:id/reset-traffic', auth, async (req, res) => {
       // 提交事务
       await transaction.commit();
 
-      // 6. 触发GOST配置同步 (更新用户状态)
+      // 6. 触发GOST配置同步 (更新用户状态) - 强制同步
       try {
         const gostConfigService = require('../services/gostConfigService');
-        gostConfigService.triggerSync().catch(error => {
-          console.error('重置流量后同步GOST配置失败:', error);
-        });
+
+        // 设置强制更新环境变量
+        process.env.FORCE_GOST_UPDATE = 'true';
+
+        try {
+          await gostConfigService.triggerSync('traffic_reset', true, 10);
+          console.log('✅ 流量重置后GOST配置同步成功');
+
+          // 强制触发配额重新评估，确保规则立即激活
+          console.log(`🔄 用户 ${userId} 流量重置后，强制触发配额检查...`);
+          try {
+            const quotaCoordinatorService = require('../services/quotaCoordinatorService');
+            if (quotaCoordinatorService && quotaCoordinatorService.forceRefreshUser) {
+              await quotaCoordinatorService.forceRefreshUser(userId, 'traffic_reset');
+              console.log(`✅ 用户 ${userId} 流量重置后配额检查完成`);
+            }
+          } catch (quotaError) {
+            console.log(`⚠️ 配额检查服务不可用: ${quotaError.message}`);
+          }
+        } catch (syncError) {
+          console.error('❌ 重置流量后同步GOST配置失败:', syncError);
+        } finally {
+          // 清除强制更新标志
+          delete process.env.FORCE_GOST_UPDATE;
+        }
       } catch (error) {
         console.error('触发GOST配置同步失败:', error);
       }

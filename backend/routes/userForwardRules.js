@@ -1,10 +1,11 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿const express = require('express');
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿const express = require('express');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
 const { UserForwardRule, User } = require('../models');
 const { Op } = require('sequelize');
 const dns = require('dns').promises;
 const os = require('os');
+const { portSecurityService } = require('../services/portSecurityService');
 
 // 获取服务器的公网IP地址
 const getServerPublicIP = async () => {
@@ -188,12 +189,7 @@ router.get('/', auth, async (req, res) => {
       const users = await User.findAll({
         include: [{
           model: UserForwardRule,
-          as: 'forwardRules',
-          include: [{
-            model: User,
-            as: 'user',
-            attributes: ['id', 'username']
-          }]
+          as: 'forwardRules'
         }],
         order: [['username', 'ASC'], ['forwardRules', 'createdAt', 'DESC']]
       });
@@ -208,6 +204,15 @@ router.get('/', auth, async (req, res) => {
         // 为每个规则添加流量统计
         const rulesWithStats = await Promise.all(user.forwardRules.map(async (rule) => {
           const ruleData = rule.toJSON();
+
+          // 手动设置用户关联，确保 isActive 计算正确
+          rule.user = user;
+
+          // 添加计算属性 isActive
+          ruleData.isActive = rule.isActive;
+
+          // 调试信息
+          console.log(`🔍 规则 ${rule.name} isActive: ${rule.isActive}, 用户: ${user.username}, 状态: ${user.userStatus}`);
 
           // 获取最近7天的流量统计
           const last7Days = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -320,6 +325,12 @@ router.get('/', auth, async (req, res) => {
       const { TrafficHourly } = require('../services/dbService').models;
       const rulesWithStats = await Promise.all(rules.map(async (rule) => {
         const ruleData = rule.toJSON();
+
+        // 添加计算属性 isActive
+        ruleData.isActive = rule.isActive;
+
+        // 调试信息
+        console.log(`🔍 单用户模式 - 规则 ${rule.name} isActive: ${rule.isActive}, 用户: ${rule.user?.username}`);
 
         // 获取最近7天的流量统计
         const last7Days = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -434,7 +445,35 @@ router.post('/', auth, async (req, res) => {
       return res.status(403).json({ message: '用户已过期，无法创建转发规则' });
     }
 
-    // 检查端口范围（只对非管理员用户进行限制）
+    // 🔒 端口安全验证（新增）
+    try {
+      const portValidation = await portSecurityService.validatePort(
+        sourcePort,
+        user.role,
+        userId
+      );
+
+      if (!portValidation.valid) {
+        return res.status(400).json({
+          message: '端口安全验证失败',
+          errors: portValidation.errors,
+          warnings: portValidation.warnings,
+          suggestions: portValidation.suggestions
+        });
+      }
+
+      // 如果有警告，记录到日志
+      if (portValidation.warnings.length > 0) {
+        console.log(`⚠️ 端口 ${sourcePort} 安全警告:`, portValidation.warnings);
+      }
+    } catch (portSecurityError) {
+      console.error('端口安全验证异常:', portSecurityError);
+      return res.status(500).json({
+        message: '端口安全验证服务异常，请稍后重试'
+      });
+    }
+
+    // 检查端口范围（保留原有逻辑作为备用）
     if (user.role !== 'admin' && !user.isPortInRange(sourcePort)) {
       return res.status(400).json({
         message: `端口 ${sourcePort} 不在允许的端口范围内 (${user.portRangeStart}-${user.portRangeEnd})`
@@ -465,8 +504,10 @@ router.post('/', auth, async (req, res) => {
     }
 
     // 创建规则
+    const { v4: uuidv4 } = require('uuid');
     const rule = await UserForwardRule.create({
       userId,
+      ruleUUID: uuidv4(), // 自动生成UUID
       name,
       sourcePort,
       targetAddress,
@@ -484,10 +525,10 @@ router.post('/', auth, async (req, res) => {
       }]
     });
 
-    // 触发 Gost 配置同步
+    // 触发 Gost 配置同步（使用统一协调器）
     try {
-      const gostConfigService = require('../services/gostConfigService');
-      gostConfigService.triggerSync().catch(error => {
+      const gostSyncCoordinator = require('../services/gostSyncCoordinator');
+      gostSyncCoordinator.requestSync('rule_create', false, 8).catch(error => {
         console.error('创建规则后同步配置失败:', error);
       });
     } catch (error) {
@@ -504,7 +545,8 @@ router.post('/', auth, async (req, res) => {
 // 更新转发规则
 router.put('/:id', auth, async (req, res) => {
   try {
-    const { name, sourcePort, targetAddress, protocol, description, isActive } = req.body;
+    const { name, sourcePort, targetAddress, protocol, description } = req.body;
+    // isActive 现在是计算属性，不能直接设置
 
     // 查找规则
     const rule = await UserForwardRule.findByPk(req.params.id, {
@@ -560,14 +602,16 @@ router.put('/:id', auth, async (req, res) => {
       }
     }
 
-    // 更新规则
+    // isActive 现在是计算属性，不需要安全校验
+    // 规则的激活状态由用户状态、配额等自动决定
+
+    // 更新规则（不包括 isActive，因为它现在是计算属性）
     await rule.update({
       name: name || rule.name,
       sourcePort: sourcePort || rule.sourcePort,
       targetAddress: targetAddress || rule.targetAddress,
       protocol: protocol || rule.protocol,
-      description: description !== undefined ? description : rule.description,
-      isActive: isActive !== undefined ? isActive : rule.isActive
+      description: description !== undefined ? description : rule.description
     });
 
     // 返回更新后的规则
@@ -579,17 +623,21 @@ router.put('/:id', auth, async (req, res) => {
       }]
     });
 
-    // 触发 Gost 配置同步
+    // 触发 Gost 配置同步（使用统一协调器）
     try {
-      const gostConfigService = require('../services/gostConfigService');
-      gostConfigService.triggerSync().catch(error => {
+      const gostSyncCoordinator = require('../services/gostSyncCoordinator');
+      gostSyncCoordinator.requestSync('rule_update', false, 8).catch(error => {
         console.error('更新规则后同步配置失败:', error);
       });
     } catch (error) {
       console.error('触发配置同步失败:', error);
     }
 
-    res.json(updatedRule);
+    // 添加计算属性到返回数据
+    const ruleData = updatedRule.toJSON();
+    ruleData.isActive = updatedRule.isActive;
+
+    res.json(ruleData);
   } catch (error) {
     console.error('更新转发规则失败:', error);
     res.status(500).json({ message: '更新转发规则失败', error: error.message });
@@ -613,10 +661,10 @@ router.delete('/:id', auth, async (req, res) => {
 
     await rule.destroy();
 
-    // 触发 Gost 配置同步
+    // 触发 Gost 配置同步（使用统一协调器）
     try {
-      const gostConfigService = require('../services/gostConfigService');
-      gostConfigService.triggerSync().catch(error => {
+      const gostSyncCoordinator = require('../services/gostSyncCoordinator');
+      gostSyncCoordinator.requestSync('rule_delete', false, 8).catch(error => {
         console.error('删除规则后同步配置失败:', error);
       });
     } catch (error) {
@@ -630,8 +678,8 @@ router.delete('/:id', auth, async (req, res) => {
   }
 });
 
-// 切换规则启用状态
-router.post('/:id/toggle', auth, async (req, res) => {
+// 获取规则状态（只读）
+router.get('/:id/status', auth, async (req, res) => {
   try {
     const rule = await UserForwardRule.findByPk(req.params.id, {
       include: [{
@@ -644,40 +692,57 @@ router.post('/:id/toggle', auth, async (req, res) => {
       return res.status(404).json({ message: '转发规则不存在' });
     }
 
-    // 权限检查：普通用户只能操作自己的规则
+    // 权限检查：普通用户只能查看自己的规则
     if (req.user.role !== 'admin' && rule.userId !== req.user.id) {
-      return res.status(403).json({ message: '没有权限操作此规则' });
+      return res.status(403).json({ message: '没有权限查看此规则' });
     }
 
-    // 检查用户是否过期（非管理员）
-    if (rule.user.role !== 'admin' && rule.user.isExpired()) {
-      return res.status(403).json({ message: '用户已过期，无法操作转发规则' });
+    // 获取详细的状态说明
+    let reason = '';
+    if (rule.isActive) {
+      reason = '规则已激活，正在转发流量';
+    } else {
+      const reasons = [];
+      const user = rule.user;
+
+      if (!user.isActive) {
+        reasons.push('用户已被禁用');
+      }
+
+      if (user.userStatus === 'suspended') {
+        reasons.push('用户已被暂停');
+      }
+
+      if (user.isExpired && user.isExpired()) {
+        reasons.push('用户已过期');
+      }
+
+      if (user.role !== 'admin' && !user.isPortInRange(rule.sourcePort)) {
+        reasons.push(`端口 ${rule.sourcePort} 超出允许范围`);
+      }
+
+      // 检查配额（这里可以添加更详细的配额检查）
+      if (reasons.length === 0) {
+        reasons.push('可能因配额限制或其他系统限制');
+      }
+
+      reason = `规则已禁用：${reasons.join('、')}`;
     }
 
-    await rule.update({ isActive: !rule.isActive });
-
-    const updatedRule = await UserForwardRule.findByPk(rule.id, {
-      include: [{
-        model: User,
-        as: 'user',
-        attributes: ['id', 'username', 'portRangeStart', 'portRangeEnd', 'expiryDate']
-      }]
+    res.json({
+      success: true,
+      data: {
+        id: rule.id,
+        name: rule.name,
+        sourcePort: rule.sourcePort,
+        isActive: rule.isActive, // 这是计算属性
+        reason: reason
+      },
+      message: '规则状态查询成功'
     });
-
-    // 触发 Gost 配置同步
-    try {
-      const gostConfigService = require('../services/gostConfigService');
-      gostConfigService.triggerSync().catch(error => {
-        console.error('切换规则状态后同步配置失败:', error);
-      });
-    } catch (error) {
-      console.error('触发配置同步失败:', error);
-    }
-
-    res.json(updatedRule);
   } catch (error) {
-    console.error('切换规则状态失败:', error);
-    res.status(500).json({ message: '切换规则状态失败', error: error.message });
+    console.error('查询规则状态失败:', error);
+    res.status(500).json({ message: '查询规则状态失败', error: error.message });
   }
 });
 

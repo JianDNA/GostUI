@@ -4,18 +4,18 @@ const bcrypt = require('bcryptjs');
 module.exports = (sequelize) => {
   class User extends Model {
     static associate(models) {
-      // 定义关联
+      // 定义关联 - 用户拥有多个规则
       User.hasMany(models.Rule, {
         foreignKey: 'userId',
         as: 'rules',
-        onDelete: 'CASCADE'
+        onDelete: 'CASCADE'  // ✅ 正确：删除用户时级联删除其规则
       });
 
-      // 添加用户转发规则关联
+      // 用户转发规则关联
       User.hasMany(models.UserForwardRule, {
         foreignKey: 'userId',
         as: 'forwardRules',
-        onDelete: 'CASCADE'
+        onDelete: 'CASCADE'  // ✅ 正确：删除用户时级联删除其转发规则
       });
     }
 
@@ -208,14 +208,14 @@ module.exports = (sequelize) => {
       defaultValue: true
     },
     trafficQuota: {
-      type: DataTypes.INTEGER,
+      type: DataTypes.DECIMAL(10, 3), // 改为DECIMAL支持小数，如0.1GB
       allowNull: true,
       validate: {
-        min: 1,
+        min: 0.001, // 最小1MB = 0.001GB
         max: 10240,
         isValidQuota(value) {
-          if (value !== null && (value < 1 || value > 10240)) {
-            throw new Error('流量限额必须在1-10240GB之间');
+          if (value !== null && (value < 0.001 || value > 10240)) {
+            throw new Error('流量限额必须在0.001-10240GB之间');
           }
         }
       }
@@ -255,10 +255,10 @@ module.exports = (sequelize) => {
       comment: '流量重置时间'
     },
     userStatus: {
-      type: DataTypes.ENUM('active', 'expired', 'disabled', 'quota_exceeded'),
+      type: DataTypes.ENUM('active', 'expired', 'disabled', 'quota_exceeded', 'suspended'),
       defaultValue: 'active',
       allowNull: false,
-      comment: '用户状态: active-正常, expired-过期, disabled-禁用, quota_exceeded-流量超限'
+      comment: '用户状态: active-正常, expired-过期, disabled-禁用, quota_exceeded-流量超限, suspended-暂停'
     }
   }, {
     sequelize,

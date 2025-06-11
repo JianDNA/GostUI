@@ -31,7 +31,7 @@ class TrafficService {
           }
         });
 
-        const currentUsage = monthlyTraffic ? 
+        const currentUsage = monthlyTraffic ?
           (monthlyTraffic.get('totalBytesIn') + monthlyTraffic.get('totalBytesOut')) / (1024 * 1024 * 1024) : 0;
         const newUsage = currentUsage + (data.bytesIn + data.bytesOut) / (1024 * 1024 * 1024);
 
@@ -134,11 +134,18 @@ class TrafficService {
       }) || 0;
 
       if (monthlyTraffic >= user.trafficLimit) {
-        // Disable all user's rules
-        await ForwardRule.update(
-          { isActive: false },
-          { where: { userId } }
-        );
+        // 使用配额强制执行服务来禁用规则，而不是直接修改数据库
+        try {
+          const { quotaEnforcementService } = require('./quotaEnforcementService');
+          await quotaEnforcementService.checkUserQuotaEnforcement(userId);
+        } catch (error) {
+          console.error('触发配额强制执行失败:', error);
+          // 作为备用方案，直接禁用规则
+          await ForwardRule.update(
+            { isActive: false },
+            { where: { userId } }
+          );
+        }
         return false;
       }
 
@@ -195,4 +202,4 @@ class TrafficService {
   }
 }
 
-module.exports = new TrafficService(); 
+module.exports = new TrafficService();

@@ -1,0 +1,151 @@
+{
+  "version": "1.0.0",
+  "description": "Gost 端口安全策略配置",
+  "lastUpdated": "2025-06-10",
+  
+  "security": {
+    "enablePortRestrictions": true,
+    "allowPrivilegedPorts": false,
+    "maxPortsPerUser": 10,
+    "portRangeMin": 1024,
+    "portRangeMax": 65535
+  },
+
+  "reservedPorts": {
+    "description": "系统保留端口，禁止用户配置",
+    "system": {
+      "description": "系统关键服务端口",
+      "ports": [22, 23, 25, 53, 80, 110, 143, 443, 993, 995],
+      "ranges": [
+        {"start": 1, "end": 1023, "description": "特权端口范围"}
+      ]
+    },
+    
+    "application": {
+      "description": "应用服务端口",
+      "ports": [3000, 8080, 8443, 9000, 9090],
+      "dynamic": {
+        "description": "动态检测的应用端口",
+        "detectRunning": true,
+        "excludeOwn": true
+      }
+    },
+    
+    "database": {
+      "description": "数据库服务端口",
+      "ports": [3306, 5432, 6379, 27017, 1433, 1521, 5984, 9200, 9300]
+    },
+    
+    "monitoring": {
+      "description": "监控和管理端口",
+      "ports": [2375, 2376, 4243, 8086, 9090, 9093, 9100, 3000, 8080]
+    },
+    
+    "security": {
+      "description": "安全相关端口",
+      "ports": [389, 636, 88, 464, 749, 750, 751, 752, 754, 760]
+    },
+    
+    "development": {
+      "description": "开发工具端口",
+      "ports": [3001, 4000, 5000, 5173, 8000, 8081, 8082, 8083, 8084, 8085, 9229]
+    }
+  },
+
+  "allowedRanges": {
+    "description": "允许用户使用的端口范围",
+    "user": [
+      {"start": 10000, "end": 19999, "description": "用户端口范围1"},
+      {"start": 20000, "end": 29999, "description": "用户端口范围2"},
+      {"start": 30000, "end": 39999, "description": "用户端口范围3"}
+    ],
+    "admin": [
+      {"start": 2000, "end": 2999, "description": "管理员端口范围1"},
+      {"start": 6000, "end": 6999, "description": "管理员端口范围2"},
+      {"start": 7000, "end": 7999, "description": "管理员端口范围3"},
+      {"start": 10000, "end": 59999, "description": "管理员扩展范围"}
+    ]
+  },
+
+  "specialRules": {
+    "description": "特殊规则配置",
+    "apiBypass": {
+      "description": "API 服务绕过端口限制",
+      "enabled": true,
+      "ports": [3000],
+      "paths": ["/api", "/health", "/metrics"]
+    },
+    
+    "internalServices": {
+      "description": "内部服务绕过限制",
+      "enabled": true,
+      "services": ["gost-health", "gost-api", "cache-sync"]
+    },
+    
+    "temporaryPorts": {
+      "description": "临时端口分配",
+      "enabled": true,
+      "ttl": 3600,
+      "range": {"start": 40000, "end": 49999}
+    }
+  },
+
+  "validation": {
+    "description": "端口验证规则",
+    "rules": [
+      {
+        "name": "port_range",
+        "description": "端口必须在有效范围内",
+        "min": 1,
+        "max": 65535
+      },
+      {
+        "name": "not_reserved",
+        "description": "不能使用保留端口",
+        "checkReserved": true
+      },
+      {
+        "name": "not_in_use",
+        "description": "端口不能已被占用",
+        "checkRunning": true
+      },
+      {
+        "name": "user_quota",
+        "description": "用户端口配额限制",
+        "checkQuota": true
+      }
+    ]
+  },
+
+  "messages": {
+    "errors": {
+      "portReserved": "端口 {port} 是系统保留端口，不允许使用",
+      "portInUse": "端口 {port} 已被其他服务占用",
+      "portOutOfRange": "端口 {port} 超出允许范围 ({min}-{max})",
+      "quotaExceeded": "用户端口配额已满，最多允许 {max} 个端口",
+      "privilegedPort": "端口 {port} 是特权端口，需要管理员权限",
+      "invalidPort": "无效的端口号: {port}"
+    },
+    
+    "warnings": {
+      "commonPort": "端口 {port} 是常用服务端口，建议使用其他端口",
+      "developmentPort": "端口 {port} 通常用于开发环境，生产环境请谨慎使用"
+    }
+  },
+
+  "recommendations": {
+    "description": "推荐的端口范围",
+    "safe": [
+      {"start": 10000, "end": 10999, "description": "安全端口范围1"},
+      {"start": 20000, "end": 20999, "description": "安全端口范围2"},
+      {"start": 30000, "end": 30999, "description": "安全端口范围3"}
+    ],
+    
+    "suggestions": {
+      "web": [8888, 9999, 10080, 20080, 30080],
+      "api": [10000, 20000, 30000],
+      "proxy": [10443, 20443, 30443],
+      "custom": [11000, 21000, 31000]
+    }
+  }
+}

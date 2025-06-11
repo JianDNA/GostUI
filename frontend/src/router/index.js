@@ -12,7 +12,9 @@ const UserManagement = () => import('@/views/UserManagement.vue');
 const UserForwardRules = () => import('@/views/UserForwardRules.vue');
 const TrafficStats = () => import('@/views/TrafficStats.vue');
 const GostConfig = () => import('@/views/GostConfig.vue');
-const SimpleTestPanel = () => import('@/views/SimpleTestPanel.vue');
+
+const AdvancedTrafficTest = () => import('@/views/AdvancedTrafficTest.vue');
+const SystemStatus = () => import('@/views/SystemStatus.vue');
 
 const routes = [
   {
@@ -82,14 +84,25 @@ const routes = [
           title: 'Gost 配置'
         }
       },
+
       {
-        path: '/simple/test',
-        name: 'SimpleTestPanel',
-        component: SimpleTestPanel,
+        path: '/traffic-test',
+        name: 'AdvancedTrafficTest',
+        component: AdvancedTrafficTest,
+        meta: {
+          requiresAuth: true,
+          title: 'API & 流量测试',
+          allowedUsers: ['admin', 'test'] // 只允许 admin 和 test 用户
+        }
+      },
+      {
+        path: '/system-status',
+        name: 'SystemStatus',
+        component: SystemStatus,
         meta: {
           requiresAuth: true,
           requiresAdmin: true,
-          title: 'API 测试面板'
+          title: '系统状态'
         }
       }
     ]
@@ -125,6 +138,17 @@ router.beforeEach(async (to, from, next) => {
     if (to.matched.some(record => record.meta.requiresAdmin) && !isAdmin) {
       next({ name: 'Dashboard' });
       return;
+    }
+
+    // 检查特定用户权限的路由
+    const routeWithAllowedUsers = to.matched.find(record => record.meta.allowedUsers);
+    if (routeWithAllowedUsers) {
+      const currentUser = store.getters['user/currentUser'];
+      const allowedUsers = routeWithAllowedUsers.meta.allowedUsers;
+      if (!allowedUsers.includes(currentUser?.username)) {
+        next({ name: 'Dashboard' });
+        return;
+      }
     }
 
     // 测试面板需要特殊权限检查

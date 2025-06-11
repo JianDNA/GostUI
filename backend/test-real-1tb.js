@@ -480,6 +480,34 @@ async function real1TBTest() {
     console.log('⏳ 等待最终数据处理完成...');
     await sleep(15000);
 
+    // 🔧 DEBUG: 检查端口映射状态
+    console.log('\n🔍 [DEBUG] 检查端口映射状态...');
+    const multiInstanceCacheService = require('./services/multiInstanceCacheService');
+    const portMapping = await multiInstanceCacheService.getPortUserMapping();
+    console.log('📊 端口映射状态:');
+    if (Object.keys(portMapping).length === 0) {
+      console.log('❌ 端口映射为空 - 这是问题所在！');
+    } else {
+      Object.entries(portMapping).forEach(([port, userInfo]) => {
+        console.log(`  端口${port}: 用户${userInfo.userId} (${userInfo.username})`);
+      });
+    }
+
+    // 🔧 DEBUG: 检查观察器累积统计
+    console.log('\n🔍 [DEBUG] 检查观察器累积统计...');
+    const gostPluginService = require('./services/gostPluginService');
+    const cumulativeStats = gostPluginService.getCumulativeStatsInfo();
+    console.log('📊 观察器累积统计:');
+    console.log(`  跟踪条目数: ${cumulativeStats.totalTracked}`);
+    if (cumulativeStats.entries.length > 0) {
+      console.log('  最近5条记录:');
+      cumulativeStats.entries.slice(-5).forEach(entry => {
+        console.log(`    ${entry.key}: ${(entry.totalBytes / 1024 / 1024).toFixed(2)}MB (${entry.lastUpdate})`);
+      });
+    } else {
+      console.log('  ❌ 没有累积统计记录');
+    }
+
     // 获取最终用户流量
     console.log('📈 最终流量统计:');
     let finalTotalTraffic = 0;

@@ -38,17 +38,19 @@ router.post('/auth', async (req, res) => {
   try {
     console.log('🔐 收到 GOST 认证请求:', {
       username: req.body.username,
+      service: req.body.service,
       client: req.body.client,
       timestamp: new Date().toISOString()
     });
 
-    await gostPluginService.handleAuth(req, res);
+    // 使用新的认证器服务
+    const gostAuthService = require('../services/gostAuthService');
+    const response = await gostAuthService.handleAuthRequest(req.body);
+
+    res.json(response);
   } catch (error) {
     console.error('❌ GOST 认证处理失败:', error);
-    res.status(500).json({
-      ok: false,
-      error: 'Internal server error'
-    });
+    res.json({ ok: false, id: '', secret: '' });
   }
 });
 
@@ -153,16 +155,114 @@ router.post('/limiter', async (req, res) => {
     console.log('🚦 收到 GOST 限制器请求:', {
       client: req.body.client,
       scope: req.body.scope,
+      service: req.body.service,
       timestamp: new Date().toISOString()
     });
 
-    await gostPluginService.handleLimiter(req, res);
+    // 🔧 修复：使用统一的限制器实现，优先使用缓存数据
+    const { client, scope, service } = req.body;
+    const multiInstanceCacheService = require('../services/multiInstanceCacheService');
+
+    // 无限制的网速 (不限制传输速度)
+    const unlimitedSpeed = 1073741824; // 1GB/s
+
+    if (!client) {
+      // 没有用户标识，尝试从服务名解析
+      if (service) {
+        const portMatch = service.match(/forward-\w+-(\d+)/);
+        if (portMatch) {
+          const port = parseInt(portMatch[1]);
+          const userMapping = multiInstanceCacheService.getPortUserMapping();
+
+          if (userMapping[port]) {
+            const { userId } = userMapping[port];
+            const userCache = multiInstanceCacheService.getUserCache(userId);
+
+            if (userCache) {
+              console.log(`🔍 通过端口 ${port} 找到用户: ${userCache.username}`);
+
+              // 检查流量限制
+              if (userCache.role === 'admin') {
+                console.log(`👑 管理员用户 ${userCache.username} 不受流量限制`);
+                return res.json({ in: unlimitedSpeed, out: unlimitedSpeed });
+              }
+
+              if (userCache.status !== 'active') {
+                console.log(`🚫 用户 ${userCache.username} 状态异常: ${userCache.status}，禁止访问`);
+                return res.json({ in: 0, out: 0 });
+              }
+
+              const trafficLimitBytes = userCache.trafficLimitBytes || 0;
+              const usedTraffic = userCache.usedTraffic || 0;
+
+              if (trafficLimitBytes > 0 && usedTraffic >= trafficLimitBytes) {
+                console.log(`🚫 用户 ${userCache.username} 流量超限: ${usedTraffic}/${trafficLimitBytes} 字节，禁止访问`);
+                return res.json({ in: 0, out: 0 });
+              }
+
+              console.log(`✅ 用户 ${userCache.username} 可正常访问，流量使用: ${trafficLimitBytes > 0 ? (usedTraffic / trafficLimitBytes * 100).toFixed(1) : 0}%`);
+              return res.json({ in: unlimitedSpeed, out: unlimitedSpeed });
+            }
+          }
+        }
+      }
+
+      console.log(`ℹ️ 未知用户，返回无限制`);
+      return res.json({ in: unlimitedSpeed, out: unlimitedSpeed });
+    }
+
+    // 有客户端标识，直接检查
+    let userId = null;
+    if (client.startsWith('user_')) {
+      userId = parseInt(client.replace('user_', ''));
+    } else {
+      userId = parseInt(client);
+    }
+
+    if (!userId) {
+      console.log(`⚠️ 无效的客户端标识: ${client}`);
+      return res.json({ in: unlimitedSpeed, out: unlimitedSpeed });
+    }
+
+    const userCache = multiInstanceCacheService.getUserCache(userId);
+    if (!userCache) {
+      console.log(`🚫 用户 ${userId} 不存在，禁止访问`);
+      return res.json({ in: 0, out: 0 });
+    }
+
+    // Admin 用户不受任何限制
+    if (userCache.role === 'admin') {
+      console.log(`👑 管理员用户 ${userCache.username} 不受流量限制`);
+      return res.json({ in: unlimitedSpeed, out: unlimitedSpeed });
+    }
+
+    // 检查用户状态
+    if (userCache.status !== 'active') {
+      console.log(`🚫 用户 ${userCache.username} 状态异常: ${userCache.status}，禁止访问`);
+      return res.json({ in: 0, out: 0 });
+    }
+
+    // 检查流量是否超限
+    const trafficLimitBytes = userCache.trafficLimitBytes || 0;
+    const usedTraffic = userCache.usedTraffic || 0;
+
+    if (trafficLimitBytes > 0 && usedTraffic >= trafficLimitBytes) {
+      console.log(`🚫 用户 ${userCache.username} 流量超限: ${usedTraffic}/${trafficLimitBytes} 字节，禁止访问`);
+      return res.json({ in: 0, out: 0 });
+    }
+
+    // 用户状态正常且未超限，返回无限制网速
+    const usagePercent = trafficLimitBytes > 0
+      ? (usedTraffic / trafficLimitBytes * 100).toFixed(1)
+      : 0;
+
+    console.log(`✅ 用户 ${userCache.username} 可正常访问，流量使用: ${usagePercent}%`);
+    res.json({ in: unlimitedSpeed, out: unlimitedSpeed });
+
   } catch (error) {
     console.error('❌ GOST 限制器处理失败:', error);
-    res.status(500).json({
-      in: 1048576,  // 默认 1MB/s
-      out: 1048576
-    });
+    // 出错时返回无限制，避免影响服务
+    res.json({ in: 1073741824, out: 1073741824 });
   }
 });
 
@@ -393,6 +493,201 @@ router.use((error, req, res, next) => {
     message: error.message,
     timestamp: new Date().toISOString()
   });
+});
+
+/**
+ * 清理限制器缓存
+ */
+router.post('/clear-limiter-cache', async (req, res) => {
+  try {
+    const { userId } = req.body;
+    const gostLimiterService = require('../services/gostLimiterService');
+
+    if (userId) {
+      gostLimiterService.clearUserQuotaCache(userId);
+      res.json({
+        ok: true,
+        message: `用户 ${userId} 限制器缓存已清理`
+      });
+    } else {
+      gostLimiterService.clearAllQuotaCache();
+      res.json({
+        ok: true,
+        message: '所有限制器缓存已清理'
+      });
+    }
+  } catch (error) {
+    console.error('❌ 清理限制器缓存失败:', error);
+    res.status(500).json({
+      ok: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 清理认证器缓存
+ */
+router.post('/clear-auth-cache', async (req, res) => {
+  try {
+    const { port } = req.body;
+    const gostAuthService = require('../services/gostAuthService');
+
+    if (port) {
+      gostAuthService.clearPortCache(port);
+      res.json({
+        ok: true,
+        message: `端口 ${port} 认证器缓存已清理`
+      });
+    } else {
+      gostAuthService.clearAllCache();
+      res.json({
+        ok: true,
+        message: '所有认证器缓存已清理'
+      });
+    }
+  } catch (error) {
+    console.error('❌ 清理认证器缓存失败:', error);
+    res.status(500).json({
+      ok: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 获取插件状态信息
+ */
+router.get('/status', async (req, res) => {
+  try {
+    const gostLimiterService = require('../services/gostLimiterService');
+    const gostAuthService = require('../services/gostAuthService');
+
+    const status = {
+      observer: {
+        status: 'active'
+      },
+      limiter: {
+        status: 'active'
+      },
+      auth: {
+        status: 'active'
+      },
+      timestamp: new Date().toISOString()
+    };
+
+    // 安全地获取观察器状态
+    try {
+      const observerStats = gostPluginService.getBufferStatus();
+      status.observer = { ...status.observer, ...observerStats };
+    } catch (error) {
+      console.warn('⚠️ 获取观察器状态失败:', error.message);
+      status.observer.error = error.message;
+    }
+
+    // 安全地获取限制器状态
+    try {
+      const limiterStats = gostLimiterService.getQuotaStats();
+      status.limiter = { ...status.limiter, ...limiterStats };
+    } catch (error) {
+      console.warn('⚠️ 获取限制器状态失败:', error.message);
+      status.limiter.error = error.message;
+    }
+
+    // 安全地获取认证器状态
+    try {
+      const authStats = gostAuthService.getAuthStats();
+      status.auth = { ...status.auth, ...authStats };
+    } catch (error) {
+      console.warn('⚠️ 获取认证器状态失败:', error.message);
+      status.auth.error = error.message;
+    }
+
+    res.json(status);
+  } catch (error) {
+    console.error('❌ 获取插件状态失败:', error);
+    res.status(500).json({
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 测试限制器功能
+ */
+router.post('/test-limiter', async (req, res) => {
+  try {
+    const { userId, service } = req.body;
+    const gostLimiterService = require('../services/gostLimiterService');
+
+    if (!userId && !service) {
+      return res.status(400).json({
+        error: 'Missing required parameter: userId or service'
+      });
+    }
+
+    // 构造测试请求
+    const testRequest = {
+      scope: 'client',
+      service: service || `forward-tcp-6443`,
+      network: 'tcp',
+      addr: 'test.com:443',
+      client: userId ? `user_${userId}` : undefined,
+      src: '127.0.0.1:12345'
+    };
+
+    const response = await gostLimiterService.handleLimiterRequest(testRequest);
+
+    res.json({
+      ok: true,
+      request: testRequest,
+      response
+    });
+  } catch (error) {
+    console.error('❌ 测试限制器失败:', error);
+    res.status(500).json({
+      ok: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 测试认证器功能
+ */
+router.post('/test-auth', async (req, res) => {
+  try {
+    const { service } = req.body;
+    const gostAuthService = require('../services/gostAuthService');
+
+    if (!service) {
+      return res.status(400).json({
+        error: 'Missing required parameter: service'
+      });
+    }
+
+    // 构造测试请求
+    const testRequest = {
+      service,
+      network: 'tcp',
+      addr: 'test.com:443',
+      src: '127.0.0.1:12345'
+    };
+
+    const response = await gostAuthService.handleAuthRequest(testRequest);
+
+    res.json({
+      ok: true,
+      request: testRequest,
+      response
+    });
+  } catch (error) {
+    console.error('❌ 测试认证器失败:', error);
+    res.status(500).json({
+      ok: false,
+      error: error.message
+    });
+  }
 });
 
 module.exports = router;

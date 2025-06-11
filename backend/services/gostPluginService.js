@@ -344,13 +344,35 @@ class GostPluginService {
         return;
       }
 
-      // 获取端口用户映射
-      const portMapping = await this.getPortUserMapping();
-      const userInfo = portMapping[port];
+      // 获取端口用户映射（确保缓存已准备好）
+      let portMapping = await this.getPortUserMapping();
+
+      // 如果缓存为空，尝试刷新一次
+      if (Object.keys(portMapping).length === 0) {
+        console.log(`🔄 端口映射缓存为空，尝试刷新...`);
+        await multiInstanceCacheService.refreshPortUserMapping();
+        portMapping = await this.getPortUserMapping();
+      }
+
+      let userInfo = portMapping[port];
 
       if (!userInfo) {
-        console.log(`⚠️ 端口 ${port} 没有对应的用户映射`);
-        return;
+        console.log(`⚠️ 端口 ${port} 没有对应的用户映射，可用端口:`, Object.keys(portMapping));
+
+        // 尝试重新构建端口映射
+        console.log('🔄 尝试重新构建端口映射...');
+        await multiInstanceCacheService.refreshPortUserMapping();
+        const newPortMapping = await this.getPortUserMapping();
+        const newUserInfo = newPortMapping[port];
+
+        if (!newUserInfo) {
+          console.log(`⚠️ 重建后端口 ${port} 仍无用户映射，跳过流量统计`);
+          return;
+        }
+
+        console.log(`✅ 重建映射成功，端口 ${port} 映射到用户 ${newUserInfo.username} (ID: ${newUserInfo.userId})`);
+        // 使用新映射继续处理
+        userInfo = newUserInfo;
       }
 
       const userId = userInfo.userId;
@@ -363,10 +385,10 @@ class GostPluginService {
       // 🔧 重构：GOST现在发送增量数据（resetTraffic=true），直接使用即可
       const incrementalTotalBytes = cumulativeTotalBytes;
 
-      // 🔧 增量合理性检查（防止异常数据）
-      const maxReasonableIncrement = 500 * 1024 * 1024; // 500MB
+      // 🔧 增量合理性检查（防止异常数据）- Phase 3 修复：提高限制到50GB
+      const maxReasonableIncrement = 50 * 1024 * 1024 * 1024; // 50GB
       if (incrementalTotalBytes > maxReasonableIncrement) {
-        console.log(`⚠️ 增量异常: ${(incrementalTotalBytes/1024/1024).toFixed(2)}MB > 500MB，跳过处理`);
+        console.log(`⚠️ 增量异常: ${(incrementalTotalBytes/1024/1024/1024).toFixed(2)}GB > 50GB，跳过处理`);
         return;
       }
 
@@ -400,6 +422,18 @@ class GostPluginService {
       // 🔧 关键修复：使用用户级别的互斥锁，防止并发更新导致的竞态条件
       await this.updateUserTrafficWithLock(userId, incrementalTotalBytes);
 
+      // 🔧 Phase 2: 流量更新后的配额管理
+      this.clearLimiterCacheForUser(userId);
+
+      // 🔧 关键修复：强制刷新用户缓存，确保限制器能立即获取最新数据
+      await this.forceRefreshUserCache(userId);
+
+      // 🔧 Phase 2: 使用统一配额协调器检查，避免并发冲突
+      this.triggerUnifiedQuotaCheck(userId);
+
+      // 🔧 新增：立即检查配额状态，不等待异步处理
+      await this.immediateQuotaCheck(userId, incrementalTotalBytes);
+
       // 更新规则级别的流量统计 (使用增量)
       try {
         const { UserForwardRule } = require('../models');
@@ -407,13 +441,18 @@ class GostPluginService {
         // 先检查规则是否存在
         const rule = await UserForwardRule.findOne({
           where: {
-            id: userInfo.ruleId,
-            isActive: true
-          }
+            id: userInfo.ruleId
+          },
+          include: [{
+            model: User,
+            as: 'user',
+            attributes: ['id', 'isActive', 'userStatus', 'role']
+          }]
         });
 
-        if (!rule) {
-          console.log(`⚠️ 规则 ${userInfo.ruleId} 不存在或已禁用，跳过流量更新`);
+        // 检查规则是否通过计算属性激活
+        if (!rule || !rule.isActive) {
+          console.log(`⚠️ 规则 ${userInfo.ruleId} 不存在或未激活，跳过流量更新`);
           return;
         }
 
@@ -422,8 +461,7 @@ class GostPluginService {
           { usedTraffic: incrementalTotalBytes },
           {
             where: {
-              id: userInfo.ruleId,
-              isActive: true
+              id: userInfo.ruleId
             }
           }
         );
@@ -873,34 +911,284 @@ class GostPluginService {
   }
 
   /**
-   * 🔧 关键修复：使用正确的互斥锁更新流量，防止并发竞态条件
+   * 清除用户的限制器缓存
+   * @param {number} userId - 用户ID
+   */
+  clearLimiterCacheForUser(userId) {
+    try {
+      const gostLimiterService = require('./gostLimiterService');
+      gostLimiterService.clearUserQuotaCache(userId);
+    } catch (error) {
+      console.error(`❌ 清除用户 ${userId} 限制器缓存失败:`, error);
+    }
+  }
+
+  /**
+   * 触发用户配额检查
+   * @param {number} userId - 用户ID
+   */
+  triggerQuotaCheckForUser(userId) {
+    try {
+      // 异步触发配额检查，不阻塞流量统计处理
+      setImmediate(async () => {
+        try {
+          const quotaManagementService = require('./quotaManagementService');
+          await quotaManagementService.triggerQuotaCheck(userId);
+        } catch (error) {
+          console.error(`❌ 触发用户 ${userId} 配额检查失败:`, error);
+        }
+      });
+    } catch (error) {
+      console.error(`❌ 触发用户 ${userId} 配额检查失败:`, error);
+    }
+  }
+
+  /**
+   * 触发统一配额检查（避免并发冲突）
+   * @param {number} userId - 用户ID
+   */
+  triggerUnifiedQuotaCheck(userId) {
+    try {
+      // 异步触发统一配额检查，不阻塞流量统计处理
+      setImmediate(async () => {
+        try {
+          const quotaCoordinatorService = require('./quotaCoordinatorService');
+          const result = await quotaCoordinatorService.checkUserQuota(userId, 'traffic_update');
+
+          // 如果需要更新规则状态
+          if (result.needsRuleUpdate) {
+            console.log(`🔄 [流量统计] 用户 ${userId} 需要更新规则状态: ${result.reason}`);
+            await this.updateUserRulesStatus(userId, result.allowed, result.reason);
+          }
+        } catch (error) {
+          console.error(`❌ 触发用户 ${userId} 统一配额检查失败:`, error);
+        }
+      });
+    } catch (error) {
+      console.error(`❌ 触发用户 ${userId} 统一配额检查失败:`, error);
+    }
+  }
+
+  /**
+   * 🔧 新增：立即配额检查，用于快速响应
+   * @param {number} userId - 用户ID
+   * @param {number} incrementalBytes - 本次增量流量
+   */
+  async immediateQuotaCheck(userId, incrementalBytes) {
+    try {
+      // 获取用户当前状态
+      const { User } = require('../models');
+      const user = await User.findByPk(userId, {
+        attributes: ['trafficQuota', 'usedTraffic']
+      });
+
+      if (!user || !user.trafficQuota) {
+        return; // 无配额限制
+      }
+
+      const quotaBytes = user.trafficQuota * 1024 * 1024 * 1024;
+      const currentUsed = user.usedTraffic || 0;
+      const usagePercentage = (currentUsed / quotaBytes) * 100;
+
+      // 🔧 立即检查：如果超过配额，立即禁用规则
+      if (currentUsed >= quotaBytes) {
+        console.log(`🚨 [立即检查] 用户 ${userId} 超过配额 ${usagePercentage.toFixed(1)}%，立即禁用规则`);
+
+        // 立即进行配额控制
+        await this.emergencyQuotaControl(userId, `超配额: ${usagePercentage.toFixed(1)}%`);
+
+        // 触发GOST配置同步 - 强制更新
+        const gostSyncCoordinator = require('./gostSyncCoordinator');
+
+        // 设置强制更新环境变量
+        process.env.FORCE_GOST_UPDATE = 'true';
+
+        try {
+          await gostSyncCoordinator.requestSync('emergency_quota_disable', true, 10);
+          console.log('✅ 紧急配额禁用配置同步成功');
+        } catch (error) {
+          console.error('❌ 紧急配额禁用同步失败:', error);
+        } finally {
+          // 清除强制更新标志
+          delete process.env.FORCE_GOST_UPDATE;
+        }
+      }
+      // 🔧 预警：接近配额时增加检查频率
+      else if (usagePercentage > 90) {
+        console.log(`⚠️ [立即检查] 用户 ${userId} 接近配额限制 ${usagePercentage.toFixed(1)}%`);
+      }
+
+    } catch (error) {
+      console.error(`❌ 立即配额检查失败:`, error);
+    }
+  }
+
+  /**
+   * 🔧 新增：紧急配额控制（通过用户状态控制）
+   * @param {number} userId - 用户ID
+   * @param {string} reason - 控制原因
+   */
+  async emergencyQuotaControl(userId, reason) {
+    try {
+      const { User } = require('../models');
+
+      // 通过设置用户状态来控制规则激活
+      // 这样所有规则的 isActive 计算属性都会返回 false
+      const user = await User.findByPk(userId);
+      if (!user) {
+        console.error(`❌ 用户 ${userId} 不存在`);
+        return;
+      }
+
+      // 记录原始状态，以便后续恢复
+      const originalStatus = user.userStatus;
+
+      // 临时设置用户状态为 suspended（暂停）
+      await user.update({
+        userStatus: 'suspended',
+        // 在用户备注中记录原始状态和暂停原因
+        notes: `${user.notes || ''} [紧急暂停: ${reason}, 原状态: ${originalStatus}]`.trim()
+      });
+
+      console.log(`🚫 [紧急配额控制] 已暂停用户 ${userId} - ${reason}`);
+      console.log(`💡 所有转发规则将通过计算属性自动禁用`);
+
+    } catch (error) {
+      console.error(`❌ 紧急配额控制失败:`, error);
+    }
+  }
+
+  /**
+   * 更新用户规则状态
+   * @param {number} userId - 用户ID
+   * @param {boolean} allowed - 是否允许
+   * @param {string} reason - 原因
+   */
+  async updateUserRulesStatus(userId, allowed, reason) {
+    try {
+      const UserForwardRule = require('../models').UserForwardRule;
+      const rules = await UserForwardRule.findAll({ where: { userId } });
+
+      let updatedCount = 0;
+      for (const rule of rules) {
+        if (allowed) {
+          // 恢复规则（只恢复被配额限制禁用的规则）
+          if (!rule.isActive && rule.description && rule.description.includes('[配额超限自动禁用]')) {
+            await rule.update({
+              isActive: true,
+              description: rule.description.replace(' [配额超限自动禁用]', '').trim()
+            });
+            updatedCount++;
+            console.log(`✅ [流量统计] 恢复规则 ${rule.id} (${rule.name})`);
+          }
+        } else {
+          // 禁用规则
+          if (rule.isActive) {
+            await rule.update({
+              isActive: false,
+              description: `${rule.description || ''} [配额超限自动禁用]`.trim()
+            });
+            updatedCount++;
+            console.log(`🚫 [流量统计] 禁用规则 ${rule.id} (${rule.name}) - ${reason}`);
+          }
+        }
+      }
+
+      if (updatedCount > 0) {
+        console.log(`📊 [流量统计] 用户 ${userId} 更新了 ${updatedCount} 个规则状态`);
+
+        // 触发GOST配置更新（使用统一协调器）
+        const gostSyncCoordinator = require('./gostSyncCoordinator');
+        gostSyncCoordinator.requestSync('quota_change', false, 6).catch(error => {
+          console.error('触发GOST配置同步失败:', error);
+        });
+      }
+
+    } catch (error) {
+      console.error(`❌ 更新用户 ${userId} 规则状态失败:`, error);
+    }
+  }
+
+  /**
+   * 强制刷新用户缓存
+   * @param {number} userId - 用户ID
+   */
+  async forceRefreshUserCache(userId) {
+    try {
+      const multiInstanceCacheService = require('./multiInstanceCacheService');
+
+      // 清除用户缓存
+      multiInstanceCacheService.clearUserCache(userId);
+
+      // 从数据库重新加载用户数据
+      const { User } = require('../models');
+      const user = await User.findByPk(userId, {
+        attributes: ['id', 'username', 'role', 'expiryDate', 'trafficQuota', 'usedTraffic', 'portRangeStart', 'portRangeEnd']
+      });
+
+      if (user) {
+        // 构建新的缓存数据
+        const portRanges = [];
+        if (user.portRangeStart && user.portRangeEnd) {
+          portRanges.push({
+            start: user.portRangeStart,
+            end: user.portRangeEnd
+          });
+        }
+
+        const trafficLimitBytes = user.trafficQuota ? user.trafficQuota * 1024 * 1024 * 1024 : 0;
+
+        const userData = {
+          id: user.id,
+          username: user.username,
+          role: user.role || 'user',
+          expiryDate: user.expiryDate,
+          trafficQuota: user.trafficQuota,
+          trafficLimitBytes: trafficLimitBytes,
+          usedTraffic: user.usedTraffic || 0,
+          status: (!user.expiryDate || new Date(user.expiryDate) > new Date()) ? 'active' : 'inactive',
+          portRanges: portRanges,
+          isActive: !user.expiryDate || new Date(user.expiryDate) > new Date(),
+          lastUpdate: Date.now()
+        };
+
+        // 更新缓存
+        multiInstanceCacheService.setUserCache(userId, userData);
+
+        console.log(`🔄 强制刷新用户 ${userId} 缓存完成，流量: ${userData.usedTraffic}/${userData.trafficLimitBytes} 字节`);
+      }
+    } catch (error) {
+      console.error(`❌ 强制刷新用户 ${userId} 缓存失败:`, error);
+    }
+  }
+
+  /**
+   * 🔧 优化：简化的流量更新机制，减少锁竞争
    * @param {number} userId - 用户ID
    * @param {number} incrementalBytes - 增量字节数
    */
   async updateUserTrafficWithLock(userId, incrementalBytes) {
     const startTime = Date.now();
 
-    // 🔧 修复：使用递归等待确保真正的串行执行
-    while (this.userUpdateLocks.has(userId)) {
-      loggerService.logConcurrencyDetection(userId, true);
-      // 等待当前锁完成
-      await this.userUpdateLocks.get(userId);
-      // 短暂延迟，避免忙等待
-      await new Promise(resolve => setTimeout(resolve, 1));
+    // 🔧 优化：使用更简单的锁机制，减少等待时间
+    const lockKey = `traffic_${userId}`;
+
+    // 如果已有锁，直接返回（避免阻塞）
+    if (this.userUpdateLocks.has(lockKey)) {
+      console.log(`⚡ [性能优化] 用户 ${userId} 流量更新已在进行，跳过重复更新`);
+      return null;
     }
 
+    // 设置锁
+    this.userUpdateLocks.set(lockKey, true);
     const lockWaitTime = Date.now() - startTime;
 
-    // 创建新的更新操作
-    const updatePromise = this.performUserTrafficUpdate(userId, incrementalBytes, lockWaitTime);
-    this.userUpdateLocks.set(userId, updatePromise);
-
     try {
-      const result = await updatePromise;
+      const result = await this.performUserTrafficUpdate(userId, incrementalBytes, lockWaitTime);
       return result;
     } finally {
       // 清理锁
-      this.userUpdateLocks.delete(userId);
+      this.userUpdateLocks.delete(lockKey);
     }
   }
 
@@ -1068,6 +1356,30 @@ class GostPluginService {
     }
 
     return stats;
+  }
+
+  /**
+   * 重建端口映射 (修复端口映射丢失问题)
+   */
+  async rebuildPortMapping() {
+    try {
+      console.log('🔄 开始重建端口映射...');
+
+      const multiInstanceCacheService = require('./multiInstanceCacheService');
+
+      // 强制刷新端口用户映射
+      await multiInstanceCacheService.refreshPortUserMapping();
+
+      // 重新获取映射
+      const newMapping = await this.getPortUserMapping();
+
+      console.log(`✅ 端口映射重建完成，当前映射端口数: ${Object.keys(newMapping).length}`);
+
+      return newMapping;
+    } catch (error) {
+      console.error('❌ 重建端口映射失败:', error);
+      return {};
+    }
   }
 
   /**

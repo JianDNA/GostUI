@@ -1,38 +1,25 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
-const os = require('os');
-const { platformUtils, isWindows, isLinux, getDistro } = require('../utils/platform');
+const {
+  platformUtils,
+  isWindows,
+  getGostExecutableName,
+  getGostPlatformDir
+} = require('../utils/platform');
 
 const GOST_VERSION = '3.0.0-nightly.20250218';
 const BIN_DIR = path.join(__dirname, '../bin');
 const ASSETS_DIR = path.join(__dirname, '../assets/gost');
 
-// 获取系统信息
-const envInfo = platformUtils.getEnvironmentSummary();
-
-// 映射系统信息到文件名
+// 🔧 使用统一的平台检测获取文件名
 const getFileName = () => {
-    const platformMap = {
-        'win32': 'windows',
-        'linux': 'linux',
-        'darwin': 'darwin'  // MacOS
-    };
-
-    const archMap = {
-        'x64': 'amd64',
-        'ia32': '386',
-        'arm': 'arm',
-        'arm64': 'arm64'
-    };
-
-    const platformName = platformMap[envInfo.platform] || 'linux';
-    const archName = archMap[envInfo.arch] || 'amd64';
+    const platformDir = getGostPlatformDir(); // 例如: linux_amd64, windows_386
 
     if (isWindows()) {
-        return `gost_${GOST_VERSION}_${platformName}_${archName}.zip`;
+        return `gost_${GOST_VERSION}_${platformDir}.zip`;
     }
-    return `gost_${GOST_VERSION}_${platformName}_${archName}.tar.gz`;
+    return `gost_${GOST_VERSION}_${platformDir}.tar.gz`;
 };
 
 // 检查文件是否存在
@@ -76,7 +63,7 @@ const extractFile = async (filePath) => {
     }
 
     // 移动可执行文件到 bin 目录
-    const executableName = platformUtils.getGostExecutableName();
+    const executableName = getGostExecutableName();
     const sourcePath = path.join(extractDir, executableName);
     const targetPath = path.join(BIN_DIR, executableName);
 
@@ -111,7 +98,7 @@ const extractFile = async (filePath) => {
         fs.rmSync(extractDir, { recursive: true, force: true });
     } catch (error) {
         // 如果fs.rmSync不支持或失败，尝试使用rm命令
-        if (platform !== 'win32') {
+        if (!isWindows()) {
             try {
                 execSync(`rm -rf "${extractDir}"`);
             } catch (rmError) {
@@ -152,20 +139,18 @@ async function installGost() {
 
             await extractFile(finalPath);
 
-            // 验证安装
-            const execPath = platformUtils.getGostExecutablePath(BIN_DIR);
+            // 验证安装 - 使用统一的平台工具
+            const execPath = path.join(BIN_DIR, getGostExecutableName());
             if (fs.existsSync(execPath)) {
                 console.log('Go-Gost installation completed successfully!');
 
                 // 确保在Linux上设置了执行权限
                 if (!isWindows()) {
-                    const chmodCmd = platformUtils.getChmodCommand(execPath, '755');
-                    if (chmodCmd) {
-                        try {
-                            execSync(chmodCmd);
-                        } catch (error) {
-                            console.error('Warning: Failed to set executable permissions');
-                        }
+                    try {
+                        fs.chmodSync(execPath, '755');
+                        console.log('✅ 执行权限设置成功');
+                    } catch (error) {
+                        console.error('⚠️ 设置执行权限失败:', error.message);
                     }
                 }
             } else {

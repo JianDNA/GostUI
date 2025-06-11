@@ -83,11 +83,14 @@ router.post('/sync', auth, productionSafetyMiddleware, async (req, res) => {
       });
     }
 
-    const result = await gostConfigService.triggerSync();
+    const gostSyncCoordinator = require('../services/gostSyncCoordinator');
+    const result = await gostSyncCoordinator.requestSync('manual_admin', true, 10);
     res.json({
       success: true,
       data: result,
-      message: result.updated ? '配置已更新并同步' : '配置无变化'
+      message: result.updated ? '配置已更新并同步' :
+               result.skipped ? '同步已跳过' :
+               result.queued ? '同步已加入队列' : '配置无变化'
     });
   } catch (error) {
     console.error('手动同步失败:', error);
@@ -201,6 +204,52 @@ router.get('/compare', auth, productionSafetyMiddleware, async (req, res) => {
     res.status(500).json({
       success: false,
       message: '配置比较失败',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 获取同步协调器状态
+ */
+router.get('/sync-status', auth, async (req, res) => {
+  try {
+    const gostSyncCoordinator = require('../services/gostSyncCoordinator');
+    const status = gostSyncCoordinator.getStatus();
+
+    res.json({
+      success: true,
+      data: status,
+      message: '同步协调器状态获取成功'
+    });
+  } catch (error) {
+    console.error('获取同步协调器状态失败:', error);
+    res.status(500).json({
+      success: false,
+      message: '获取同步协调器状态失败',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 获取实时流量监控状态
+ */
+router.get('/realtime-monitor-status', auth, async (req, res) => {
+  try {
+    const realTimeTrafficMonitor = require('../services/realTimeTrafficMonitor');
+    const status = realTimeTrafficMonitor.getMonitoringStatus();
+
+    res.json({
+      success: true,
+      data: status,
+      message: '实时流量监控状态获取成功'
+    });
+  } catch (error) {
+    console.error('获取实时流量监控状态失败:', error);
+    res.status(500).json({
+      success: false,
+      message: '获取实时流量监控状态失败',
       error: error.message
     });
   }

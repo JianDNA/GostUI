@@ -3,7 +3,6 @@ const { models } = require('./dbService');
 const { ForwardRule } = models;
 const path = require('path');
 const { spawn } = require('child_process');
-const config = require('../config/gost');
 const fs = require('fs');
 const os = require('os');
 const { promisify } = require('util');
@@ -17,6 +16,7 @@ class GostService {
     this.process = null;
     this.isRunning = false;
     this.startTime = null;
+    this.userStoppedService = false; // 🔧 标志：用户是否主动停止服务
 
     // 启动时加载持久化状态
     this.initializeFromPersistedState();
@@ -129,8 +129,24 @@ class GostService {
 
   async generateConfig() {
     try {
-      const rules = await ForwardRule.findAll({
-        where: { isActive: true }
+      // 获取所有规则，然后使用计算属性过滤
+      const allRules = await ForwardRule.findAll({
+        include: [{
+          model: models.User,
+          as: 'user',
+          attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'expiryDate', 'portRangeStart', 'portRangeEnd']
+        }]
+      });
+
+      // 使用计算属性过滤有效规则
+      const rules = allRules.filter(rule => {
+        if (!rule.isActive) return false; // 数据库字段检查
+
+        if (rule.user) {
+          rule.user = rule.user; // 确保关联存在
+          return rule.getComputedIsActive(); // 计算属性检查
+        }
+        return rule.isActive; // 如果没有用户信息，使用数据库字段
       });
 
       const config = {
@@ -218,6 +234,26 @@ class GostService {
 
   // 检查并关闭已存在的 Go-Gost 进程
   async killExistingProcess() {
+    // 🔧 添加超时保护，确保不会无限期阻塞
+    const timeoutPromise = new Promise((resolve) => {
+      setTimeout(() => {
+        console.log('⏰ 进程清理超时，继续启动服务');
+        resolve();
+      }, 5000); // 5秒超时
+    });
+
+    const cleanupPromise = this._performProcessCleanup();
+
+    try {
+      await Promise.race([cleanupPromise, timeoutPromise]);
+    } catch (error) {
+      console.log('⚠️ 进程清理过程中出现错误:', error.message);
+      console.log('🔄 忽略清理错误，继续启动服务...');
+    }
+  }
+
+  // 实际的进程清理逻辑
+  async _performProcessCleanup() {
     try {
       console.log('Checking for existing Go-Gost processes...');
       const gostExecutableName = platformUtils.getGostExecutableName();
@@ -231,44 +267,125 @@ class GostService {
           console.log('Existing Go-Gost process killed');
         }
       } else {
-        // Linux/Mac 系统
+        // Linux/Mac 系统 - 使用更安全的进程清理方式
         try {
-          // 先尝试 ps 命令
-          const { stdout } = await execPromise('ps -ef | grep gost | grep -v grep || echo ""');
-          if (stdout.trim()) {
-            console.log('Found existing Go-Gost process, killing...');
+          // 🔧 改进：使用更安全的进程查找和清理方式
+          console.log('🔍 检查现有 Gost 进程...');
 
-            // 尝试使用 pkill (大多数Linux都支持)
-            await execPromise('pkill -f gost || true');
+          // 方法1：使用更精确的进程查找（避免误杀）
+          try {
+            // 🔧 修复：只查找真正的 gost 可执行文件进程，避免误杀 Node.js 等其他进程
+            const gostExecutableName = platformUtils.getGostExecutableName();
+            const { stdout: pgrepOutput } = await execPromise(`pgrep -f "${gostExecutableName}" 2>/dev/null || echo ""`);
+            let pids = pgrepOutput.trim().split('\n').filter(p => p && /^\d+$/.test(p));
 
-            // 备用方案：使用 ps 查找PID后用 kill 命令终止
-            try {
-              const { stdout: pidOutput } = await execPromise('ps -ef | grep gost | grep -v grep | awk \'{print $2}\' || echo ""');
-              const pids = pidOutput.trim().split('\n').filter(p => p);
+            // 🔧 额外安全检查：验证进程确实是 gost 可执行文件
+            const validPids = [];
+            for (const pid of pids) {
+              try {
+                const { stdout: cmdline } = await execPromise(`cat /proc/${pid}/cmdline 2>/dev/null | tr '\\0' ' ' || echo ""`);
+                // 只有命令行中包含 gost 可执行文件路径的才是真正的 gost 进程
+                if (cmdline.includes(gostExecutableName) &&
+                    (cmdline.includes('/gost') || cmdline.includes('\\gost')) &&
+                    !cmdline.includes('node') &&
+                    !cmdline.includes('npm') &&
+                    !cmdline.includes('app.js')) {
+                  validPids.push(pid);
+                  console.log(`✅ 确认 Gost 进程 PID ${pid}: ${cmdline.trim()}`);
+                } else {
+                  console.log(`⚠️ 跳过非 Gost 进程 PID ${pid}: ${cmdline.trim()}`);
+                }
+              } catch (e) {
+                console.log(`⚠️ 无法验证进程 ${pid}，跳过`);
+              }
+            }
+            pids = validPids;
+
+            if (pids.length > 0) {
+              console.log(`🎯 发现 ${pids.length} 个 Gost 进程:`, pids.join(', '));
+
               for (const pid of pids) {
-                if (pid) {
-                  await execPromise(`kill -9 ${pid}`);
+                try {
+                  console.log(`🛑 终止进程 PID: ${pid}`);
+                  await execPromise(`kill -TERM ${pid} 2>/dev/null || true`);
+
+                  // 🔧 改进：减少等待时间，避免阻塞启动
+                  await new Promise(resolve => setTimeout(resolve, 200));
+
+                  // 检查进程是否还存在，如果存在则强制杀死
+                  try {
+                    await execPromise(`kill -0 ${pid} 2>/dev/null`);
+                    console.log(`🔨 强制终止进程 PID: ${pid}`);
+                    await execPromise(`kill -9 ${pid} 2>/dev/null || true`);
+                  } catch (e) {
+                    // 进程已经不存在了，这是好事
+                    console.log(`✅ 进程 ${pid} 已成功终止`);
+                  }
+                } catch (error) {
+                  console.log(`⚠️ 终止进程 ${pid} 时出错:`, error.message);
                 }
               }
-            } catch (e) {
-              // 忽略错误
+              console.log('✅ Gost 进程清理完成');
+            } else {
+              console.log('✅ 未发现运行中的 Gost 进程');
             }
+          } catch (pgrepError) {
+            console.log('⚠️ pgrep 命令不可用，尝试备用方案');
 
-            console.log('Existing Go-Gost process killed');
+            // 方法2：使用 ps 命令作为备用方案（更安全的过滤）
+            try {
+              const gostExecutableName = platformUtils.getGostExecutableName();
+              // 🔧 修复：使用更精确的 grep 模式，避免匹配到 Node.js 进程
+              const { stdout } = await execPromise(`ps -ef | grep "${gostExecutableName}" | grep -v grep | grep -v node | grep -v npm 2>/dev/null || echo ""`);
+              if (stdout.trim()) {
+                console.log('🎯 使用 ps 命令发现 Gost 进程，尝试清理...');
+
+                // 提取 PID 并验证
+                const lines = stdout.trim().split('\n');
+                for (const line of lines) {
+                  const parts = line.trim().split(/\s+/);
+                  if (parts.length >= 2) {
+                    const pid = parts[1];
+                    const cmdline = line;
+
+                    // 🔧 额外验证：确保不是 Node.js 或其他非 Gost 进程
+                    if (pid && /^\d+$/.test(pid) &&
+                        !cmdline.includes('node') &&
+                        !cmdline.includes('npm') &&
+                        !cmdline.includes('app.js') &&
+                        (cmdline.includes('/gost') || cmdline.includes('\\gost'))) {
+                      try {
+                        console.log(`🛑 终止 Gost 进程 PID: ${pid}`);
+                        console.log(`📋 进程信息: ${cmdline}`);
+                        await execPromise(`kill -TERM ${pid} 2>/dev/null || true`);
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        await execPromise(`kill -9 ${pid} 2>/dev/null || true`);
+                      } catch (e) {
+                        console.log(`⚠️ 终止进程 ${pid} 时出错:`, e.message);
+                      }
+                    } else {
+                      console.log(`⚠️ 跳过非 Gost 进程: ${cmdline}`);
+                    }
+                  }
+                }
+                console.log('✅ 备用进程清理完成');
+              } else {
+                console.log('✅ 未发现运行中的 Gost 进程');
+              }
+            } catch (psError) {
+              console.log('⚠️ ps 命令也失败，跳过进程清理');
+            }
           }
-        } catch (e) {
-          console.log('Error finding or killing processes:', e.message);
-          // 有些系统可能不支持上述命令，使用兜底方案
-          try {
-            await execPromise('killall -9 gost 2>/dev/null || true');
-          } catch (e2) {
-            // 忽略错误
-          }
+        } catch (error) {
+          // 🔧 改进：即使进程清理完全失败，也不应该中断启动
+          console.log('⚠️ 进程清理过程中出现错误:', error.message);
+          console.log('🔄 跳过进程清理，继续启动服务...');
         }
       }
     } catch (error) {
-      // 忽略错误，可能是找不到进程
-      console.log('No existing Go-Gost process found');
+      // 🔧 改进：更详细的错误处理，但不中断启动流程
+      console.log('⚠️ 进程清理阶段出现异常:', error.message);
+      console.log('🔄 忽略清理错误，继续启动服务...');
     }
   }
 
@@ -578,9 +695,20 @@ class GostService {
         gostConfig = await this.updateConfigPort(forwardPort);
       }
 
+      // 🔧 添加Web API配置以支持热加载
+      const configWithAPI = {
+        ...gostConfig,
+        api: {
+          addr: ':18080',
+          pathPrefix: '/api',
+          accesslog: false
+        }
+      };
+
       // 写入配置文件
-      fs.writeFileSync(this.configPath, JSON.stringify(gostConfig, null, 2));
+      fs.writeFileSync(this.configPath, JSON.stringify(configWithAPI, null, 2));
       console.log('已创建配置文件:', this.configPath);
+      console.log('🔧 已启用GOST Web API (端口18080) 支持热加载');
 
       // 启动 Go-Gost 进程
       const args = ['-C', this.configPath];
@@ -591,7 +719,7 @@ class GostService {
         // 捕获stdout和stderr
         stdio: ['ignore', 'pipe', 'pipe'],
         // 使用shell (在Windows上可能需要)
-        shell: process.platform === 'win32',
+        shell: isWindows(),
         // 分离进程以避免受父进程影响
         detached: false,
         // 环境变量
@@ -641,6 +769,7 @@ class GostService {
         process.kill(this.process.pid, 0); // 发送信号0检查进程是否存在
         this.isRunning = true;
         this.startTime = Date.now();
+        this.userStoppedService = false; // 🔧 重置用户停止标志
         console.log('Go-Gost 服务启动成功');
       } catch (e) {
         throw new Error('Go-Gost 进程启动后立即退出');
@@ -707,6 +836,9 @@ class GostService {
     if (this.process) {
       console.log('Stopping Go-Gost service...');
       try {
+        // 🔧 设置标志，防止健康检查自动重启
+        this.userStoppedService = true;
+
         this.process.kill();
         console.log('Go-Gost process terminated');
       } catch (error) {
@@ -715,20 +847,50 @@ class GostService {
       this.process = null;
       this.isRunning = false;
       this.startTime = null;
+
+      // 🔧 持久化停止状态
+      this.persistStatus(false, null);
+
       console.log('Go-Gost service stopped');
     } else {
       console.log('No running Go-Gost service to stop');
     }
   }
 
-  // 重启 Go-Gost
+  // 重启 Go-Gost (优先使用热加载)
   async restart(options = {}, useConfig = false) {
-    console.log('Restarting Go-Gost service...');
+    console.log('🔄 重启 Go-Gost 服务...');
+
+    // 🔥 如果服务正在运行且使用配置文件，尝试热加载
+    if (this.isRunning && useConfig) {
+      try {
+        console.log('🔥 尝试使用热加载重启...');
+        const currentConfig = await this.getCurrentConfig();
+        if (currentConfig) {
+          const success = await this.hotReloadConfig(currentConfig);
+          if (success) {
+            console.log('✅ 热加载重启成功！');
+            return;
+          }
+        }
+      } catch (error) {
+        console.warn('⚠️ 热加载重启失败，回退到完全重启:', error.message);
+      }
+    }
+
+    // 回退到传统重启方式
+    console.log('🔄 执行完全重启...');
+    await this.forceRestart(useConfig);
+  }
+
+  // 强制完全重启 (不使用热加载)
+  async forceRestart(useConfig = false) {
+    console.log('🔄 强制完全重启 Go-Gost 服务...');
     this.stop();
     if (useConfig) {
       await this.startWithConfig();
     } else {
-      await this.start(options);
+      await this.start();
     }
   }
 
@@ -860,9 +1022,10 @@ class GostService {
           };
         });
 
-        // 系统信息
+        // 系统信息 - 使用统一的平台工具
         const systemInfo = {
-          platform: process.platform,
+          platform: platformUtils.osInfo.platform,
+          distro: platformUtils.osInfo.distro,
           hostname: os.hostname(),
           uptime: this.startTime ? Math.floor((Date.now() - this.startTime) / 1000) : 0,
           startTime: this.startTime ? new Date(this.startTime).toISOString() : null
@@ -907,16 +1070,42 @@ class GostService {
           }
         }
       } else {
-        // Linux/Mac 系统
-        const { stdout } = await execPromise('ps -ef | grep gost | grep -v grep || echo ""');
+        // Linux/Mac 系统 - 更精确地检测GOST可执行文件
+        const { stdout } = await execPromise(`ps -ef | grep "${gostExecutableName}" | grep -v grep | grep -v node || echo ""`);
         if (stdout.trim()) {
           const lines = stdout.trim().split('\n');
           for (const line of lines) {
             const parts = line.trim().split(/\s+/);
-            if (parts.length >= 2) {
+            if (parts.length >= 8) {
               const pid = parseInt(parts[1], 10);
+              const command = parts.slice(7).join(' '); // 获取完整命令行
+
+              // 确保这是真正的GOST可执行文件，而不是包含gost路径的其他进程
               if (!isNaN(pid)) {
-                return { pid, name: 'gost' };
+                // 更严格的检查：必须是真正的GOST可执行文件
+                const isRealGost = (
+                  // 1. 命令行以gost可执行文件开头
+                  command.startsWith(gostExecutableName) ||
+                  command.includes(`/${gostExecutableName} `) ||
+                  command.includes(`\\${gostExecutableName}.exe`) ||
+                  // 2. 或者是完整路径的gost可执行文件
+                  (command.includes('/gost') && (command.includes(' -C ') || command.includes(' -L ')))
+                ) && (
+                  // 3. 排除明显的非GOST进程
+                  !command.includes('curl') &&
+                  !command.includes('node') &&
+                  !command.includes('npm') &&
+                  !command.includes('vue-cli-service') &&
+                  !command.includes('http://') &&
+                  !command.includes('https://')
+                );
+
+                if (isRealGost) {
+                  console.log(`🔍 检测到真正的 GOST 进程: PID=${pid}, 命令=${command}`);
+                  return { pid, name: gostExecutableName };
+                } else {
+                  console.log(`⚠️ 跳过非 Gost 进程 PID ${pid}: ${command}`);
+                }
               }
             }
           }
@@ -979,21 +1168,194 @@ class GostService {
     return null;
   }
 
-  // 更新配置文件
-  async updateConfig(newConfig) {
+  // 🔥 新增：GOST热加载方法 (高性能，无重启)
+  async hotReloadConfig(newConfig) {
     try {
-      fs.writeFileSync(this.configPath, JSON.stringify(newConfig, null, 2));
-      console.log('Configuration file updated');
+      console.log('🔥 开始GOST热加载配置...');
 
-      // 如果正在运行，则重启服务
+      // 检查配置是否真的有变化
+      const currentConfig = await this.getCurrentConfig();
+      const configChanged = this.isConfigurationChanged(currentConfig, newConfig);
+
+      // 强制更新模式：某些关键场景必须更新
+      const forceUpdate = process.env.FORCE_GOST_UPDATE === 'true';
+
+      if (!configChanged && !forceUpdate) {
+        console.log('📋 配置无变化，跳过热加载');
+        return false;
+      }
+
+      if (forceUpdate && !configChanged) {
+        console.log('🔥 强制更新模式，即使配置无变化也执行热加载');
+      }
+
+      console.log('📝 配置发生变化，执行热加载...');
+
+      // 🔧 添加Web API配置以支持热加载
+      const configWithAPI = {
+        ...newConfig,
+        api: {
+          addr: ':18080',
+          pathPrefix: '/api',
+          accesslog: false
+        }
+      };
+
+      // 保存新配置
+      fs.writeFileSync(this.configPath, JSON.stringify(configWithAPI, null, 2));
+      console.log('✅ 配置文件已更新');
+
+      // 🔥 使用GOST Web API进行热加载
       if (this.isRunning) {
-        await this.restart({}, true);
+        try {
+          console.log('🔥 通过Web API执行热加载...');
+
+          // 使用Node.js内置的http模块进行热加载
+          const http = require('http');
+
+          const options = {
+            hostname: 'localhost',
+            port: 18080,
+            path: '/api/config/reload',  // 🔧 使用正确的reload API
+            method: 'POST',  // 🔧 根据GOST官方文档，使用POST方法重新加载配置文件
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            timeout: 5000
+          };
+
+          const success = await new Promise((resolve) => {
+            const req = http.request(options, (res) => {
+              let responseData = '';
+
+              res.on('data', (chunk) => {
+                responseData += chunk;
+              });
+
+              res.on('end', () => {
+                if (res.statusCode === 200) {
+                  console.log('✅ GOST热加载成功！配置文件已重新加载');
+                  resolve(true);
+                } else {
+                  console.warn(`⚠️ 热加载失败，状态码: ${res.statusCode}, 响应: ${responseData}`);
+                  resolve(false);
+                }
+              });
+            });
+
+            req.on('error', (error) => {
+              console.warn('⚠️ 热加载API调用失败:', error.message);
+              resolve(false);
+            });
+
+            req.on('timeout', () => {
+              console.warn('⚠️ 热加载API调用超时');
+              req.destroy();
+              resolve(false);
+            });
+
+            req.end();  // 不需要发送数据，只是触发重新加载
+          });
+
+          if (success) {
+            return true;
+          } else {
+            console.warn('⚠️ 热加载失败，强制重启GOST服务以确保配置生效');
+            await this.forceRestart(true);
+            return true; // 重启成功后返回true
+          }
+        } catch (error) {
+          console.warn('⚠️ 热加载异常，强制重启GOST服务:', error.message);
+          await this.forceRestart(true);
+          return true; // 重启成功后返回true
+        }
+      } else if (newConfig.services && newConfig.services.length > 0) {
+        console.log('🚀 服务未运行但有有效配置，启动GOST服务...');
+        await this.startWithConfig(configWithAPI);
+      } else {
+        console.log('📋 服务未运行且无有效配置，配置已保存');
       }
 
       return true;
     } catch (error) {
-      console.error('Failed to update configuration:', error);
+      console.error('❌ GOST热加载失败:', error);
       throw error;
+    }
+  }
+
+  // 更新配置文件（优化版本 - 使用热加载）
+  async updateConfig(newConfig) {
+    try {
+      console.log('🔄 开始更新GOST配置...');
+
+      // 🔧 优先使用热加载
+      return await this.hotReloadConfig(newConfig);
+
+    } catch (error) {
+      console.error('❌ 更新GOST配置失败:', error);
+      throw error;
+    }
+  }
+
+  // 获取当前配置
+  async getCurrentConfig() {
+    try {
+      if (fs.existsSync(this.configPath)) {
+        const configContent = fs.readFileSync(this.configPath, 'utf8');
+        return JSON.parse(configContent);
+      }
+      return null;
+    } catch (error) {
+      console.warn('读取当前配置失败:', error);
+      return null;
+    }
+  }
+
+  // 检查配置是否有实质性变化
+  isConfigurationChanged(oldConfig, newConfig) {
+    if (!oldConfig || !newConfig) {
+      return true; // 如果无法比较，假设有变化
+    }
+
+    try {
+      // 比较关键配置项
+      const oldServices = oldConfig.services || [];
+      const newServices = newConfig.services || [];
+
+      // 服务数量变化
+      if (oldServices.length !== newServices.length) {
+        console.log(`🔍 服务数量变化: ${oldServices.length} -> ${newServices.length}`);
+        return true;
+      }
+
+      // 逐个比较服务配置
+      for (let i = 0; i < newServices.length; i++) {
+        const oldService = oldServices[i];
+        const newService = newServices[i];
+
+        if (!oldService ||
+            oldService.name !== newService.name ||
+            oldService.addr !== newService.addr ||
+            JSON.stringify(oldService.handler) !== JSON.stringify(newService.handler)) {
+          console.log(`🔍 服务配置变化: ${newService.name}`);
+          return true;
+        }
+      }
+
+      // 比较观察器配置
+      const oldObservers = oldConfig.observers || [];
+      const newObservers = newConfig.observers || [];
+
+      if (JSON.stringify(oldObservers) !== JSON.stringify(newObservers)) {
+        console.log('🔍 观察器配置变化');
+        return true;
+      }
+
+      console.log('📋 配置无实质性变化');
+      return false;
+    } catch (error) {
+      console.warn('配置比较失败，假设有变化:', error);
+      return true;
     }
   }
 }

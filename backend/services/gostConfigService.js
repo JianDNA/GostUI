@@ -50,9 +50,7 @@ class GostConfigService {
         include: [{
           model: UserForwardRule,
           as: 'forwardRules',
-          where: {
-            isActive: true
-          },
+          // 移除 isActive 查询条件，改为在后续处理中使用计算属性
           required: false // LEFT JOIN，允许用户没有转发规则
         }]
       });
@@ -62,8 +60,14 @@ class GostConfigService {
       validUsers.forEach(user => {
         if (user.forwardRules && user.forwardRules.length > 0) {
           user.forwardRules.forEach(rule => {
-            // 验证端口是否在用户允许范围内
-            if (user.role === 'admin' || user.isPortInRange(rule.sourcePort)) {
+            // 设置用户关联，以便计算属性能正常工作
+            rule.user = user;
+
+            // 使用计算属性检查规则是否应该激活
+            const shouldBeActive = rule.isActive; // 现在 isActive 就是计算属性
+
+            // 只有计算属性为true的规则才被包含
+            if (shouldBeActive) {
               allRules.push({
                 userId: user.id,
                 username: user.username,
@@ -74,6 +78,8 @@ class GostConfigService {
                 protocol: rule.protocol,
                 description: rule.description
               });
+            } else {
+              console.log(`🚫 跳过规则 ${rule.name} (端口${rule.sourcePort}): 计算属性=${shouldBeActive}`);
             }
           });
         }
@@ -136,17 +142,7 @@ class GostConfigService {
       const gostConfig = {
         services: [],
         chains: [],
-        // 添加认证器插件
-        authers: [
-          {
-            name: "auther-0",
-            plugin: {
-              type: "http",
-              addr: "http://localhost:3000/api/gost-plugin/auth",
-              timeout: "5s"
-            }
-          }
-        ],
+        // 🔧 端口转发模式不支持认证器插件
         // 添加观测器插件
         observers: [
           {
@@ -158,17 +154,7 @@ class GostConfigService {
             }
           }
         ],
-        // 添加限制器插件 (用于流量限制，不限制网速)
-        limiters: [
-          {
-            name: "limiter-0",
-            plugin: {
-              type: "http",
-              addr: "http://localhost:3000/api/gost-plugin/limiter",
-              timeout: "5s"
-            }
-          }
-        ]
+        // 🔧 端口转发模式不支持限制器插件
       };
 
       // 为每个转发规则创建服务和链
@@ -178,22 +164,20 @@ class GostConfigService {
 
         console.log(`🔧 创建服务: ${serviceName} (用户: ${rule.username}, 端口: ${rule.sourcePort} -> ${rule.targetAddress})`);
 
-        // 创建服务，包含插件支持
+        // 🔧 Phase 2: 创建服务，包含完整的插件支持
         const service = {
           name: serviceName,
           addr: `:${rule.sourcePort}`,
           observer: "observer-0",  // 服务级别的观察器
           handler: {
-            type: rule.protocol,
+            type: rule.protocol,  // 🔧 恢复为端口转发模式（TCP/UDP）
             chain: chainName,
-            // 添加认证器、观测器和限制器插件 (限制器用于流量控制)
-            auther: "auther-0",
-            observer: "observer-0",
-            limiter: "limiter-0",
+            // 🔧 只保留观察器，移除认证器和限制器（端口转发不支持）
+            observer: "observer-0",   // 流量统计
             metadata: {
               // Handler 级别的观察器配置
               "observer.period": "5s",
-              "observer.resetTraffic": true  // 🔧 关键修复：启用增量流量模式
+              "observer.resetTraffic": true,  // 🔧 关键：启用增量流量模式
             }
           },
           listener: {
@@ -293,7 +277,7 @@ class GostConfigService {
   /**
    * 更新 Gost 服务配置
    */
-  async updateGostService(config) {
+  async updateGostService(config, options = {}) {
     try {
       // 保存新配置
       await this.saveConfigToFile(config);
@@ -302,9 +286,16 @@ class GostConfigService {
       try {
         const gostService = require('./gostService');
 
-        // 使用原有的 updateConfig 方法，保持兼容性
-        await gostService.updateConfig(config);
-        console.log('Gost 服务配置更新成功');
+        // 🔧 检查是否需要强制重启（用于紧急配额禁用）
+        if (options.forceRestart) {
+          console.log('🚨 紧急配额禁用：强制重启GOST服务以断开所有连接');
+          await gostService.forceRestart(true);
+          console.log('✅ GOST服务强制重启完成，所有连接已断开');
+        } else {
+          // 使用原有的 updateConfig 方法（热加载），保持兼容性
+          await gostService.updateConfig(config);
+          console.log('Gost 服务配置更新成功');
+        }
       } catch (gostError) {
         console.warn('Gost 服务操作失败，但配置已保存:', gostError.message);
         // 不抛出错误，因为配置已经保存成功
@@ -357,51 +348,30 @@ class GostConfigService {
   }
 
   /**
-   * 启动定时同步
+   * 启动定时同步（已迁移到统一协调器）
    */
   startAutoSync() {
-    if (this.syncTimer) {
-      console.log('定时同步已在运行');
-      return;
-    }
-
-    console.log(`启动 Gost 配置自动同步，间隔: ${this.syncInterval / 1000}秒`);
-
-    // 延迟执行初始同步，确保系统完全启动
-    setTimeout(() => {
-      this.syncConfig().catch(error => {
-        console.error('初始同步失败:', error);
-      });
-    }, 5000); // 延迟5秒
-
-    // 设置定时器
-    this.syncTimer = setInterval(async () => {
-      try {
-        await this.syncConfig();
-      } catch (error) {
-        console.error('定时同步失败:', error);
-        // 记录错误但不停止定时器
-      }
-    }, this.syncInterval);
+    console.log('⚠️ [GOST配置] 定时同步已迁移到统一协调器');
+    const gostSyncCoordinator = require('./gostSyncCoordinator');
+    gostSyncCoordinator.startAutoSync();
   }
 
   /**
-   * 停止定时同步
+   * 停止定时同步（已迁移到统一协调器）
    */
   stopAutoSync() {
-    if (this.syncTimer) {
-      clearInterval(this.syncTimer);
-      this.syncTimer = null;
-      console.log('Gost 配置自动同步已停止');
-    }
+    console.log('⚠️ [GOST配置] 定时同步已迁移到统一协调器');
+    const gostSyncCoordinator = require('./gostSyncCoordinator');
+    gostSyncCoordinator.stopAutoSync();
   }
 
   /**
-   * 手动触发同步（用于用户编辑后立即同步）
+   * 手动触发同步（使用统一协调器）
    */
-  async triggerSync() {
-    console.log('手动触发 Gost 配置同步...');
-    return await this.syncConfig();
+  async triggerSync(trigger = 'manual', force = false, priority = 7) {
+    console.log(`手动触发 Gost 配置同步... (触发源: ${trigger})`);
+    const gostSyncCoordinator = require('./gostSyncCoordinator');
+    return await gostSyncCoordinator.requestSync(trigger, force, priority);
   }
 
   /**

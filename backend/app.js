@@ -11,6 +11,7 @@ const multiInstanceCacheService = require('./services/multiInstanceCacheService'
 const timeSeriesService = require('./services/timeSeriesService'); // 替换 InfluxDB
 const gostPluginService = require('./services/gostPluginService');
 const gostHealthService = require('./services/gostHealthService');
+// const { realtimeMonitoringService } = require('./services/realtimeMonitoringService'); // 暂时禁用
 
 // 创建 Express 应用
 const app = express();
@@ -41,6 +42,9 @@ app.use('/api/gost-config', require('./routes/gostConfig'));
 app.use('/api/traffic', require('./routes/traffic'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/test', require('./routes/test'));
+app.use('/api/quota', require('./routes/quota')); // 配额管理路由（完整版）
+app.use('/api/port-security', require('./routes/portSecurity')); // 端口安全验证路由
+app.use('/api/system', require('./routes/system')); // 系统状态API路由
 
 // 添加简单的健康检查接口
 app.get('/api/health', (req, res) => {
@@ -57,7 +61,7 @@ app.get('/api/test-forward', (req, res) => {
   res.json({
     status: 'ok',
     message: '如果你能看到这条消息，说明通过 6443 端口成功访问了本服务',
-    info: '这条消息由 Node.js 服务通过 6443->8080 端口转发提供'
+    info: '这条消息由 Node.js 服务通过端口转发提供'  // 🔧 修复：移除具体端口引用
   });
 });
 
@@ -115,22 +119,49 @@ app.get('/api/test-forward', (req, res) => {
       console.log(`服务器已启动在 http://localhost:${PORT}`);
       console.log(`测试端口转发: http://localhost:6443/api/test-forward`);
 
+      // 2.5 初始化实时监控WebSocket服务 (暂时禁用)
+      // try {
+      //   realtimeMonitoringService.initialize(server);
+      //   console.log('✅ 实时监控WebSocket服务已启动');
+      // } catch (error) {
+      //   console.warn('⚠️ 实时监控WebSocket服务启动失败:', error.message);
+      // }
+
       // 3. Web服务启动成功后，再启动gost服务
       console.log('正在初始化 Go-Gost 服务...');
       initGost()
         .then(() => {
           console.log('Go-Gost 服务启动成功');
 
-          // 4. 启动 Gost 配置自动同步服务
+          // 4. 启动 Gost 配置自动同步服务（使用统一协调器）
           setTimeout(() => {
             console.log('启动 Gost 配置自动同步服务...');
-            const gostConfigService = require('./services/gostConfigService');
-            gostConfigService.startAutoSync();
+            const gostSyncCoordinator = require('./services/gostSyncCoordinator');
+            gostSyncCoordinator.startAutoSync();
+
+            // 5. 启动实时流量监控服务
+            console.log('启动实时流量监控服务...');
+            const realTimeTrafficMonitor = require('./services/realTimeTrafficMonitor');
+            realTimeTrafficMonitor.startMonitoring();
 
             // 5. 启动 GOST 健康检查服务
             setTimeout(() => {
               console.log('启动 GOST 健康检查服务...');
               gostHealthService.start();
+
+              // 6. Phase 2: 启动配额监控服务
+              setTimeout(() => {
+                console.log('启动流量配额监控服务...');
+                const quotaManagementService = require('./services/quotaManagementService');
+                quotaManagementService.startQuotaMonitoring();
+
+                // 🔧 7. 启动配额强制执行服务
+                setTimeout(() => {
+                  console.log('启动配额强制执行服务...');
+                  const { quotaEnforcementService } = require('./services/quotaEnforcementService');
+                  quotaEnforcementService.start();
+                }, 2000); // 等待配额监控服务启动
+              }, 3000); // 等待健康检查服务启动
             }, 5000); // 等待GOST服务完全启动
           }, 2000);
         })
@@ -146,13 +177,29 @@ app.get('/api/test-forward', (req, res) => {
         // 停止 GOST 健康检查服务
         gostHealthService.stop();
 
-        // 停止 Gost 配置同步服务
-        const gostConfigService = require('./services/gostConfigService');
-        gostConfigService.stopAutoSync();
+        // 停止 Gost 配置同步服务（使用统一协调器）
+        const gostSyncCoordinator = require('./services/gostSyncCoordinator');
+        gostSyncCoordinator.stopAutoSync();
+        gostSyncCoordinator.cleanup();
+
+        // 停止实时流量监控服务
+        const realTimeTrafficMonitor = require('./services/realTimeTrafficMonitor');
+        realTimeTrafficMonitor.stopMonitoring();
 
         // 停止 Gost 服务
         const gostService = require('./services/gostService');
         gostService.stop();
+
+        // Phase 2: 停止配额监控服务
+        const quotaManagementService = require('./services/quotaManagementService');
+        quotaManagementService.stopQuotaMonitoring();
+
+        // 停止配额强制执行服务
+        const { quotaEnforcementService } = require('./services/quotaEnforcementService');
+        quotaEnforcementService.stop();
+
+        // 停止实时监控服务 (暂时禁用)
+        // realtimeMonitoringService.stop();
 
         // 清理新的服务
         console.log('🧹 清理缓存和监控服务...');

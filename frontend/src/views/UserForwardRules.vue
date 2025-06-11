@@ -3,16 +3,16 @@
     <div class="header">
       <h2>{{ pageTitle }}</h2>
       <div class="header-actions">
-        <el-button 
-          type="primary" 
+        <el-button
+          type="primary"
           @click="showCreateDialog = true"
           :disabled="userExpired"
         >
           <el-icon><Plus /></el-icon>
           添加规则
         </el-button>
-        <el-button 
-          type="danger" 
+        <el-button
+          type="danger"
           @click="batchDelete"
           :disabled="selectedRules.length === 0"
         >
@@ -36,16 +36,16 @@
         <div class="info-item">
           <span class="label">端口范围:</span>
           <span class="value">
-            {{ userInfo.portRangeStart && userInfo.portRangeEnd 
-                ? `${userInfo.portRangeStart}-${userInfo.portRangeEnd}` 
+            {{ userInfo.portRangeStart && userInfo.portRangeEnd
+                ? `${userInfo.portRangeStart}-${userInfo.portRangeEnd}`
                 : '未设置' }}
           </span>
         </div>
         <div class="info-item" v-if="!isAdmin">
           <span class="label">过期时间:</span>
           <span class="value" :class="{ 'expired': userInfo.isExpired }">
-            {{ userInfo.expiryDate 
-                ? new Date(userInfo.expiryDate).toLocaleDateString() 
+            {{ userInfo.expiryDate
+                ? new Date(userInfo.expiryDate).toLocaleDateString()
                 : '永不过期' }}
             <el-tag v-if="userInfo.isExpired" type="danger" size="small">已过期</el-tag>
           </span>
@@ -90,13 +90,23 @@
               <el-tag :type="getProtocolType(row.protocol)">{{ row.protocol.toUpperCase() }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="isActive" label="状态" width="80">
+          <el-table-column prop="isActive" label="状态" width="120">
             <template #default="{ row }">
-              <el-switch
-                v-model="row.isActive"
-                @change="toggleRule(row)"
-                :disabled="group.isExpired"
-              />
+              <div class="rule-status">
+                <el-tag
+                  :type="row.isActive ? 'success' : 'info'"
+                  size="small"
+                >
+                  {{ row.isActive ? '已激活' : '已禁用' }}
+                </el-tag>
+                <el-tooltip
+                  :content="getRuleStatusReason(row, group)"
+                  placement="top"
+                  effect="dark"
+                >
+                  <el-icon class="status-info"><InfoFilled /></el-icon>
+                </el-tooltip>
+              </div>
             </template>
           </el-table-column>
           <el-table-column label="流量统计 (双向)" width="140">
@@ -126,17 +136,17 @@
           </el-table-column>
           <el-table-column label="操作" width="150" fixed="right">
             <template #default="{ row }">
-              <el-button 
-                type="primary" 
-                size="small" 
+              <el-button
+                type="primary"
+                size="small"
                 @click="editRule(row)"
                 :disabled="group.isExpired"
               >
                 编辑
               </el-button>
-              <el-button 
-                type="danger" 
-                size="small" 
+              <el-button
+                type="danger"
+                size="small"
                 @click="deleteRule(row)"
               >
                 删除
@@ -146,7 +156,7 @@
         </el-table>
       </div>
     </div>
-    
+
     <div v-else>
       <!-- 单用户显示（普通用户或从用户管理跳转） -->
       <el-table
@@ -164,13 +174,23 @@
             <el-tag :type="getProtocolType(row.protocol)">{{ row.protocol.toUpperCase() }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="isActive" label="状态" width="80">
+        <el-table-column prop="isActive" label="状态" width="120">
           <template #default="{ row }">
-            <el-switch
-              v-model="row.isActive"
-              @change="toggleRule(row)"
-              :disabled="userExpired"
-            />
+            <div class="rule-status">
+              <el-tag
+                :type="row.isActive ? 'success' : 'info'"
+                size="small"
+              >
+                {{ row.isActive ? '已激活' : '已禁用' }}
+              </el-tag>
+              <el-tooltip
+                :content="getRuleStatusReason(row, { isExpired: userExpired })"
+                placement="top"
+                effect="dark"
+              >
+                <el-icon class="status-info"><InfoFilled /></el-icon>
+              </el-tooltip>
+            </div>
           </template>
         </el-table-column>
         <el-table-column label="流量统计 (双向)" width="140">
@@ -200,17 +220,17 @@
         </el-table-column>
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
-            <el-button 
-              type="primary" 
-              size="small" 
+            <el-button
+              type="primary"
+              size="small"
               @click="editRule(row)"
               :disabled="userExpired && !isAdmin"
             >
               编辑
             </el-button>
-            <el-button 
-              type="danger" 
-              size="small" 
+            <el-button
+              type="danger"
+              size="small"
               @click="deleteRule(row)"
             >
               删除
@@ -236,7 +256,7 @@
         <el-form-item label="规则名称" prop="name">
           <el-input v-model="ruleForm.name" placeholder="请输入规则名称" />
         </el-form-item>
-        
+
         <el-form-item label="源端口" prop="sourcePort">
           <el-input-number
             v-model="ruleForm.sourcePort"
@@ -249,7 +269,7 @@
             可用端口范围: {{ currentUserPortRange.start }}-{{ currentUserPortRange.end }}
           </div>
         </el-form-item>
-        
+
         <el-form-item label="目标地址" prop="targetAddress">
           <el-input
             v-model="ruleForm.targetAddress"
@@ -261,7 +281,7 @@
             内网地址端口受限制，公网地址端口自由
           </div>
         </el-form-item>
-        
+
         <el-form-item label="协议" prop="protocol">
           <el-select v-model="ruleForm.protocol" style="width: 100%">
             <el-option label="TCP" value="tcp" />
@@ -269,7 +289,7 @@
             <el-option label="TLS" value="tls" />
           </el-select>
         </el-form-item>
-        
+
         <el-form-item label="描述" prop="description">
           <el-input
             v-model="ruleForm.description"
@@ -279,7 +299,7 @@
           />
         </el-form-item>
       </el-form>
-      
+
       <template #footer>
         <el-button @click="showCreateDialog = false">取消</el-button>
         <el-button type="primary" @click="saveRule" :loading="saving">
@@ -295,7 +315,7 @@ import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useStore } from 'vuex'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Delete, Refresh } from '@element-plus/icons-vue'
+import { Plus, Delete, Refresh, InfoFilled } from '@element-plus/icons-vue'
 import api from '@/utils/api'
 
 export default {
@@ -303,7 +323,8 @@ export default {
   components: {
     Plus,
     Delete,
-    Refresh
+    Refresh,
+    InfoFilled
   },
   setup() {
     const route = useRoute()
@@ -321,7 +342,7 @@ export default {
     // 当前用户信息
     const currentUser = computed(() => store.getters['user/currentUser'])
     const isAdmin = computed(() => store.getters['user/isAdmin'])
-    
+
     // 目标用户ID（管理员查看其他用户时使用）
     const targetUserId = computed(() => {
       return isAdmin.value ? route.query.userId : currentUser.value?.id
@@ -374,15 +395,15 @@ export default {
       const ipv6Pattern = /^\[([0-9a-fA-F:]+)\]:\d{1,5}$/
       const domainPattern = /^[a-zA-Z0-9.-]+:\d{1,5}$/
 
-      if (!ipv4Pattern.test(ruleForm.targetAddress) && 
-          !ipv6Pattern.test(ruleForm.targetAddress) && 
+      if (!ipv4Pattern.test(ruleForm.targetAddress) &&
+          !ipv6Pattern.test(ruleForm.targetAddress) &&
           !domainPattern.test(ruleForm.targetAddress)) {
         ElMessage.warning('目标地址格式不正确')
         return
       }
 
       // 检查内网地址端口限制
-      const [address, port] = ruleForm.targetAddress.includes('[') 
+      const [address, port] = ruleForm.targetAddress.includes('[')
         ? [ruleForm.targetAddress.split(']:')[0] + ']', ruleForm.targetAddress.split(']:')[1]]
         : ruleForm.targetAddress.split(':')
 
@@ -399,7 +420,7 @@ export default {
     const checkPrivateIP = (address) => {
       // 移除IPv6的方括号
       const ip = address.replace(/[\\[\\]]/g, '')
-      
+
       // IPv4内网地址
       if (/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) {
         const parts = ip.split('.').map(Number)
@@ -411,17 +432,17 @@ export default {
           ip === 'localhost'
         )
       }
-      
+
       // IPv6内网地址
       if (ip.includes(':')) {
         return ip === '::1' || ip.startsWith('fc') || ip.startsWith('fd')
       }
-      
+
       // 域名检查
       if (ip === 'localhost') {
         return true
       }
-      
+
       return false
     }
 
@@ -442,16 +463,16 @@ export default {
               callback(new Error('请输入目标地址'))
               return
             }
-            
+
             const ipv4Pattern = /^(\d{1,3}\.){3}\d{1,3}:\d{1,5}$/
             const ipv6Pattern = /^\[([0-9a-fA-F:]+)\]:\d{1,5}$/
             const domainPattern = /^[a-zA-Z0-9.-]+:\d{1,5}$/
-            
+
             if (!ipv4Pattern.test(value) && !ipv6Pattern.test(value) && !domainPattern.test(value)) {
               callback(new Error('请输入正确的地址格式'))
               return
             }
-            
+
             callback()
           },
           trigger: 'blur'
@@ -467,18 +488,21 @@ export default {
       try {
         const params = targetUserId.value ? { userId: targetUserId.value } : {}
         const response = await api.get('/user-forward-rules', { params })
-        
+
         if (showGroupedView.value) {
           // 分组显示
-          groupedRules.value = response.data.groupedRules || []
+          groupedRules.value = (response.data.groupedRules || []).map(group => ({
+            ...group,
+            rules: group.rules.map(rule => ({ ...rule, switching: false }))
+          }))
           rules.value = []
         } else {
           // 单用户显示
-          rules.value = response.data.rules
+          rules.value = (response.data.rules || []).map(rule => ({ ...rule, switching: false }))
           userInfo.value = response.data.user
           groupedRules.value = []
         }
-        
+
         if (response.data.cleanedCount > 0) {
           ElMessage.warning(`清理了 ${response.data.cleanedCount} 个重复端口规则`)
         }
@@ -491,7 +515,7 @@ export default {
 
     const saveRule = async () => {
       if (!ruleFormRef.value) return
-      
+
       try {
         await ruleFormRef.value.validate()
       } catch {
@@ -512,7 +536,7 @@ export default {
           await api.post('/user-forward-rules', data)
           ElMessage.success('规则创建成功')
         }
-        
+
         showCreateDialog.value = false
         await loadRules()
       } catch (error) {
@@ -545,7 +569,7 @@ export default {
             type: 'warning'
           }
         )
-        
+
         await api.delete(`/user-forward-rules/${rule.id}`)
         ElMessage.success('规则删除成功')
         await loadRules()
@@ -556,19 +580,12 @@ export default {
       }
     }
 
-    const toggleRule = async (rule) => {
-      try {
-        await api.post(`/user-forward-rules/${rule.id}/toggle`)
-        ElMessage.success(`规则已${rule.isActive ? '启用' : '禁用'}`)
-      } catch (error) {
-        rule.isActive = !rule.isActive // 回滚状态
-        ElMessage.error('切换规则状态失败: ' + (error.response?.data?.message || error.message))
-      }
-    }
+    // 规则状态现在是只读的，不再支持手动切换
+    // 状态由用户配额、状态、端口范围等自动计算
 
     const batchDelete = async () => {
       if (selectedRules.value.length === 0) return
-      
+
       try {
         await ElMessageBox.confirm(
           `确定要删除选中的 ${selectedRules.value.length} 个规则吗？`,
@@ -579,7 +596,7 @@ export default {
             type: 'warning'
           }
         )
-        
+
         const ids = selectedRules.value.map(rule => rule.id)
         await api.post('/user-forward-rules/batch-delete', { ids })
         ElMessage.success('批量删除成功')
@@ -639,6 +656,53 @@ export default {
       return `${size.toFixed(unitIndex === 0 ? 0 : 1)}${units[unitIndex]}`
     }
 
+    // 获取规则状态说明
+    const getRuleStatusReason = (rule, group) => {
+      if (rule.isActive) {
+        return '规则已激活，正在转发流量'
+      }
+
+      // 检查各种禁用原因
+      const reasons = []
+
+      // 检查用户状态
+      if (group?.isExpired || userExpired.value) {
+        reasons.push('用户已过期')
+      }
+
+      // 检查用户是否被暂停
+      if (group?.userStatus === 'suspended' || userInfo.value?.userStatus === 'suspended') {
+        reasons.push('用户已被暂停')
+      }
+
+      // 检查用户是否被禁用
+      if (group?.isActive === false || userInfo.value?.isActive === false) {
+        reasons.push('用户已被禁用')
+      }
+
+      // 检查配额限制
+      if (group?.usagePercent > 100 || userInfo.value?.usagePercent > 100) {
+        reasons.push('用户流量配额已超限')
+      }
+
+      // 检查端口范围
+      if (group?.portRangeStart && group?.portRangeEnd) {
+        if (rule.sourcePort < group.portRangeStart || rule.sourcePort > group.portRangeEnd) {
+          reasons.push(`端口 ${rule.sourcePort} 超出允许范围 (${group.portRangeStart}-${group.portRangeEnd})`)
+        }
+      } else if (userInfo.value?.portRangeStart && userInfo.value?.portRangeEnd) {
+        if (rule.sourcePort < userInfo.value.portRangeStart || rule.sourcePort > userInfo.value.portRangeEnd) {
+          reasons.push(`端口 ${rule.sourcePort} 超出允许范围 (${userInfo.value.portRangeStart}-${userInfo.value.portRangeEnd})`)
+        }
+      }
+
+      if (reasons.length > 0) {
+        return `规则已禁用：${reasons.join('、')}`
+      }
+
+      return '规则已禁用（系统自动判断）'
+    }
+
     // 监听路由变化
     watch(() => route.query.userId, () => {
       loadRules()
@@ -669,14 +733,14 @@ export default {
       saveRule,
       editRule,
       deleteRule,
-      toggleRule,
       batchDelete,
       handleSelectionChange,
       handleGroupSelectionChange,
       resetForm,
       getProtocolType,
       validateTargetAddress,
-      formatTraffic
+      formatTraffic,
+      getRuleStatusReason
     }
   }
 }
@@ -799,6 +863,22 @@ export default {
 
 .traffic-detail .download {
   color: #67c23a;
+}
+
+.rule-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-info {
+  color: #909399;
+  cursor: help;
+  font-size: 14px;
+}
+
+.status-info:hover {
+  color: #409EFF;
 }
 
 .text-muted {

@@ -67,36 +67,32 @@ class EnvironmentChecker {
    * 检查 Gost 二进制文件
    */
   checkGostBinary() {
-    const gostPath = platformUtils.getGostExecutablePath(path.join(__dirname, '../bin'));
-    
+    // 🔧 使用统一的动态平台检测
+    const gostPath = platformUtils.getGostExecutablePath();
+
     if (fs.existsSync(gostPath)) {
       this.info.push(`✅ Gost 二进制文件: ${gostPath}`);
-      
-      // 检查执行权限
-      if (!isWindows()) {
-        try {
-          const stats = fs.statSync(gostPath);
-          const mode = stats.mode;
-          const isExecutable = (mode & parseInt('111', 8)) !== 0;
-          
-          if (isExecutable) {
-            this.info.push(`✅ Gost 执行权限: 正常`);
-          } else {
-            this.warnings.push(`⚠️ Gost 执行权限: 缺失，将自动修复`);
-            try {
-              fs.chmodSync(gostPath, '755');
-              this.info.push(`✅ Gost 执行权限: 已修复`);
-            } catch (error) {
-              this.issues.push(`❌ Gost 执行权限: 修复失败 - ${error.message}`);
-            }
+
+      // 使用统一的验证函数
+      try {
+        platformUtils.validateGostExecutable(gostPath);
+        this.info.push(`✅ Gost 二进制文件验证通过`);
+      } catch (error) {
+        this.warnings.push(`⚠️ Gost 验证失败: ${error.message}`);
+
+        // 尝试修复权限问题
+        if (!isWindows() && error.message.includes('执行权限')) {
+          try {
+            fs.chmodSync(gostPath, '755');
+            this.info.push(`✅ Gost 执行权限: 已修复`);
+          } catch (fixError) {
+            this.issues.push(`❌ Gost 执行权限: 修复失败 - ${fixError.message}`);
           }
-        } catch (error) {
-          this.warnings.push(`⚠️ 无法检查 Gost 执行权限: ${error.message}`);
         }
       }
     } else {
       this.issues.push(`❌ Gost 二进制文件不存在: ${gostPath}`);
-      this.info.push(`💡 解决方案: 运行 'npm run install-gost' 安装 Gost`);
+      this.info.push(`💡 解决方案: 确保 Gost 二进制文件已正确解压到对应平台目录`);
     }
   }
 
@@ -198,7 +194,7 @@ class EnvironmentChecker {
     } else {
       const firewallTools = ['ufw', 'firewall-cmd', 'iptables'];
       const availableTools = firewallTools.filter(tool => platformUtils.commandExists(tool));
-      
+
       if (availableTools.length > 0) {
         this.info.push(`✅ 防火墙工具: ${availableTools.join(', ')}`);
       } else {

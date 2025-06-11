@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Switch状态修复验证</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+        }
+        .error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .code {
+            background: #f1f3f4;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            margin: 10px 0;
+        }
+        .step {
+            margin: 15px 0;
+            padding: 10px;
+            border-left: 4px solid #007bff;
+            background: #f8f9fa;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        ul {
+            padding-left: 20px;
+        }
+        li {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔧 Switch状态修复验证指南</h1>
+    
+    <div class="container success">
+        <h2>✅ 修复完成</h2>
+        <p>Switch组件状态管理已经修复，现在可以正确处理安全校验失败的情况。</p>
+    </div>
+
+    <div class="container">
+        <h2>🔍 修复内容</h2>
+        <ul>
+            <li><strong>使用 :model-value 替代 v-model</strong> - 防止立即状态改变</li>
+            <li><strong>添加 switching 状态</strong> - 显示loading效果</li>
+            <li><strong>只有成功时才更新状态</strong> - 确保状态一致性</li>
+            <li><strong>失败时保持原状态</strong> - 避免视觉混乱</li>
+            <li><strong>详细错误提示</strong> - 根据错误类型显示不同消息</li>
+        </ul>
+    </div>
+
+    <div class="container warning">
+        <h2>🧪 测试步骤</h2>
+        <div class="step">
+            <strong>步骤 1:</strong> 确保test用户处于超配额状态
+            <div class="code">
+                # 在后端目录执行
+                node -e "
+                const { User } = require('./models');
+                User.findOne({ where: { username: 'test' } }).then(user => {
+                    const quotaBytes = user.trafficQuota * 1024 * 1024 * 1024;
+                    return user.update({ usedTraffic: quotaBytes * 1.1 });
+                }).then(() => console.log('✅ test用户已设置为超配额'));
+                "
+            </div>
+        </div>
+
+        <div class="step">
+            <strong>步骤 2:</strong> 登录test用户账户
+            <ul>
+                <li>用户名: test</li>
+                <li>密码: test123</li>
+            </ul>
+        </div>
+
+        <div class="step">
+            <strong>步骤 3:</strong> 进入"规则管理"页面
+        </div>
+
+        <div class="step">
+            <strong>步骤 4:</strong> 尝试开启任何被禁用的转发规则
+            <ul>
+                <li>点击Switch开关</li>
+                <li>观察Switch的行为</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="container success">
+        <h2>📊 预期行为</h2>
+        <ul>
+            <li>✅ <strong>点击时显示loading</strong> - Switch会显示转圈动画</li>
+            <li>✅ <strong>显示错误消息</strong> - 弹出详细的拒绝原因</li>
+            <li>✅ <strong>Switch保持关闭</strong> - 不会变为开启状态</li>
+            <li>✅ <strong>状态一致</strong> - 视觉状态与实际状态完全一致</li>
+        </ul>
+    </div>
+
+    <div class="container error">
+        <h2>❌ 修复前的问题</h2>
+        <ul>
+            <li>用户点击Switch时立即改变为开启状态</li>
+            <li>后端拒绝后显示错误，但Switch仍显示为开启</li>
+            <li>视觉状态与实际状态不一致</li>
+            <li>用户体验混乱</li>
+        </ul>
+    </div>
+
+    <div class="container">
+        <h2>💡 技术实现</h2>
+        <div class="code">
+// 修复前 (有问题的代码)
+&lt;el-switch v-model="row.isActive" @change="toggleRule(row)" /&gt;
+
+// 修复后 (正确的代码)
+&lt;el-switch 
+  :model-value="row.isActive"
+  @change="(value) => handleSwitchChange(row, value)"
+  :disabled="userExpired || row.switching"
+  :loading="row.switching"
+/&gt;
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>🔄 恢复测试环境</h2>
+        <p>测试完成后，可以恢复test用户的配额:</p>
+        <div class="code">
+            node -e "
+            const { User } = require('./models');
+            User.findOne({ where: { username: 'test' } }).then(user => {
+                return user.update({ usedTraffic: 0 });
+            }).then(() => console.log('✅ test用户配额已恢复'));
+            "
+        </div>
+    </div>
+
+    <div class="container success">
+        <h2>🎉 修复效果</h2>
+        <p>现在Switch组件能够正确处理安全校验失败的情况，提供一致的用户体验，完全解决了状态不同步的问题！</p>
+    </div>
+</body>
+</html>

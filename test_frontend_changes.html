@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>前端修改测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f7fa;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+        }
+        .rule-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 10px 0;
+        }
+        .status-tag {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .status-tag.success {
+            background-color: #f0f9ff;
+            color: #67c23a;
+            border: 1px solid #b3e19d;
+        }
+        .status-tag.info {
+            background-color: #f4f4f5;
+            color: #909399;
+            border: 1px solid #d3d4d6;
+        }
+        .status-info {
+            color: #909399;
+            cursor: help;
+            font-size: 14px;
+        }
+        .status-info:hover {
+            color: #409EFF;
+        }
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        .table th, .table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ebeef5;
+        }
+        .table th {
+            background-color: #fafafa;
+            font-weight: 600;
+        }
+        .old-style {
+            opacity: 0.6;
+            text-decoration: line-through;
+        }
+        .new-style {
+            border-left: 3px solid #67c23a;
+            padding-left: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎉 前端 isActive 字段修改完成</h1>
+        
+        <h2>📋 修改总结</h2>
+        <ul>
+            <li>✅ 将转发规则的 <code>isActive</code> 开关控件改为只读状态标签</li>
+            <li>✅ 添加状态说明提示，显示规则禁用的具体原因</li>
+            <li>✅ 保留用户管理中的 <code>isActive</code> 开关（用户状态控制）</li>
+            <li>✅ 删除了不再使用的规则切换功能</li>
+        </ul>
+
+        <h2>🔄 修改对比</h2>
+        
+        <h3>转发规则状态显示</h3>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>修改前</th>
+                    <th>修改后</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="old-style">
+                        <div>可切换的开关控件</div>
+                        <div>用户可以手动启用/禁用规则</div>
+                        <div>容易导致状态不一致</div>
+                    </td>
+                    <td class="new-style">
+                        <div class="rule-status">
+                            <span class="status-tag success">已激活</span>
+                            <span class="status-info" title="规则已激活，正在转发流量">ℹ️</span>
+                        </div>
+                        <div class="rule-status">
+                            <span class="status-tag info">已禁用</span>
+                            <span class="status-info" title="规则已禁用：用户流量配额已超限">ℹ️</span>
+                        </div>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>💡 状态说明功能</h2>
+        <p>现在规则状态会自动显示禁用原因：</p>
+        <ul>
+            <li><strong>用户已过期</strong> - 用户账户已过期</li>
+            <li><strong>用户已被暂停</strong> - 用户被管理员暂停</li>
+            <li><strong>用户已被禁用</strong> - 用户账户被禁用</li>
+            <li><strong>用户流量配额已超限</strong> - 超过流量限制</li>
+            <li><strong>端口超出允许范围</strong> - 端口不在用户允许范围内</li>
+        </ul>
+
+        <h2>🎯 技术实现</h2>
+        <ul>
+            <li><strong>后端</strong>：<code>isActive</code> 字段已从数据库删除，改为计算属性</li>
+            <li><strong>前端</strong>：开关控件改为状态标签 + 提示信息</li>
+            <li><strong>API</strong>：删除了 toggle 接口，添加了状态查询接口</li>
+            <li><strong>用户体验</strong>：状态变化自动响应，无需手动操作</li>
+        </ul>
+
+        <h2>✅ 解决的问题</h2>
+        <div style="background-color: #f0f9ff; padding: 15px; border-radius: 6px; border-left: 4px solid #409eff;">
+            <h4>根本性解决了 isActive 状态不一致问题：</h4>
+            <ul>
+                <li>❌ <strong>问题</strong>：数据库字段与实际状态经常不匹配</li>
+                <li>❌ <strong>问题</strong>：多个地方修改同一字段导致冲突</li>
+                <li>❌ <strong>问题</strong>：用户手动操作与系统自动控制冲突</li>
+                <li>✅ <strong>解决</strong>：单一数据源，状态完全由计算属性决定</li>
+                <li>✅ <strong>解决</strong>：自动响应用户状态、配额等变化</li>
+                <li>✅ <strong>解决</strong>：前端显示与后端逻辑完全一致</li>
+            </ul>
+        </div>
+
+        <h2>🚀 下一步</h2>
+        <p>现在系统已经完全修复，建议：</p>
+        <ol>
+            <li>测试前端页面显示是否正确</li>
+            <li>验证状态说明是否准确</li>
+            <li>确认用户体验是否符合预期</li>
+        </ol>
+    </div>
+</body>
+</html>

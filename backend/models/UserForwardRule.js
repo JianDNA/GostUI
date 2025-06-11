@@ -3,11 +3,13 @@ const { Model, DataTypes } = require('sequelize');
 module.exports = (sequelize) => {
   class UserForwardRule extends Model {
     static associate(models) {
-      // 定义关联
+      // 定义关联 - 规则属于用户
+      // 注意：belongsTo 关联不应该设置 onDelete，这由数据库外键约束处理
       UserForwardRule.belongsTo(models.User, {
         foreignKey: 'userId',
-        as: 'user',
-        onDelete: 'CASCADE'
+        as: 'user'
+        // 移除 onDelete: 'CASCADE' - 这在 belongsTo 中是危险的
+        // 级联删除应该由数据库外键约束处理，而不是 Sequelize 关联
       });
     }
 
@@ -15,7 +17,7 @@ module.exports = (sequelize) => {
     static isValidIPv4(ip) {
       const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
       if (!ipv4Regex.test(ip)) return false;
-      
+
       const parts = ip.split('.');
       return parts.every(part => {
         const num = parseInt(part, 10);
@@ -71,6 +73,85 @@ module.exports = (sequelize) => {
       }
 
       return null;
+    }
+
+    /**
+     * 计算规则是否应该激活（计算属性）
+     * 这是唯一的 isActive 判断逻辑，替代了数据库字段
+     * @returns {boolean} 规则是否应该激活
+     */
+    get isActive() {
+      return this.getComputedIsActive();
+    }
+
+    /**
+     * 计算规则是否应该激活（计算属性）
+     * 这是一个同步方法，用于快速判断基本状态
+     * @returns {boolean} 规则是否应该激活
+     */
+    getComputedIsActive() {
+      // 如果没有关联用户信息，默认激活（需要在查询时包含用户信息）
+      if (!this.user) {
+        return true;
+      }
+
+      const user = this.user;
+
+      // 1. 检查用户基本状态
+      if (!user.isActive || user.userStatus !== 'active') {
+        return false;
+      }
+
+      // 2. 检查用户是否过期（Admin用户不受限制）
+      if (user.role !== 'admin' && user.isExpired && user.isExpired()) {
+        return false;
+      }
+
+      // 3. 检查端口是否在用户允许范围内（Admin用户不受限制）
+      if (user.role !== 'admin' && !user.isPortInRange(this.sourcePort)) {
+        return false;
+      }
+
+      // 4. 配额检查由配额强制执行服务异步处理，这里先返回true
+      // 避免在模型层进行异步操作，保持计算属性的同步性
+
+      return true;
+    }
+
+    /**
+     * 异步检查规则是否应该激活（包含配额检查）
+     * @returns {Promise<boolean>} 规则是否应该激活
+     */
+    async getComputedIsActiveAsync() {
+      // 先进行同步检查
+      if (!this.getComputedIsActive()) {
+        return false;
+      }
+
+      // 如果没有用户信息，需要加载
+      if (!this.user) {
+        await this.reload({ include: [{ model: sequelize.models.User, as: 'user' }] });
+      }
+
+      // 检查配额状态
+      try {
+        const quotaManagementService = require('../services/quotaManagementService');
+        const quotaCheck = await quotaManagementService.checkUserQuotaStatus(this.userId);
+        return quotaCheck.allowed;
+      } catch (error) {
+        console.error('检查配额状态失败:', error);
+        return true; // 配额检查失败时默认允许，避免误禁用
+      }
+    }
+
+    /**
+     * 重写 toJSON 方法，确保包含计算属性
+     * @returns {Object} JSON 对象
+     */
+    toJSON() {
+      const values = Object.assign({}, this.get());
+      values.isActive = this.isActive;
+      return values;
     }
   }
 
@@ -139,12 +220,8 @@ module.exports = (sequelize) => {
       allowNull: false,
       comment: '转发协议'
     },
-    isActive: {
-      type: DataTypes.BOOLEAN,
-      defaultValue: true,
-      allowNull: false,
-      comment: '是否启用'
-    },
+    // isActive 字段已删除，改为计算属性
+    // 这样可以避免数据库状态不一致的问题
     description: {
       type: DataTypes.TEXT,
       allowNull: true,

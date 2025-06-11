@@ -21,10 +21,7 @@
           <el-icon><List /></el-icon>
           <span>规则管理</span>
         </el-menu-item>
-        <el-menu-item index="/stats">
-          <el-icon><TrendCharts /></el-icon>
-          <span>流量统计</span>
-        </el-menu-item>
+
         <el-menu-item v-if="canUseTrafficTest" index="/traffic-test">
           <el-icon><Connection /></el-icon>
           <span>🧪 API测试</span>

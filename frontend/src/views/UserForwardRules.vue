@@ -109,20 +109,12 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="流量统计 (双向)" width="140">
+          <el-table-column label="流量统计" width="120">
             <template #default="{ row }">
               <div v-if="row.trafficStats" class="traffic-stats">
                 <div class="traffic-value">
-                  <el-tooltip content="上行+下行总流量" placement="top">
+                  <el-tooltip content="总流量统计" placement="top">
                     <span>{{ formatTraffic(row.trafficStats.totalBytes || 0) }}</span>
-                  </el-tooltip>
-                </div>
-                <div class="traffic-detail">
-                  <el-tooltip content="上行流量 (客户端→服务器)" placement="top">
-                    <span class="upload">↑{{ formatTraffic(row.trafficStats.inputBytes || 0) }}</span>
-                  </el-tooltip>
-                  <el-tooltip content="下行流量 (服务器→客户端)" placement="top">
-                    <span class="download">↓{{ formatTraffic(row.trafficStats.outputBytes || 0) }}</span>
                   </el-tooltip>
                 </div>
               </div>
@@ -193,20 +185,12 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="流量统计 (双向)" width="140">
+        <el-table-column label="流量统计" width="120">
           <template #default="{ row }">
             <div v-if="row.trafficStats" class="traffic-stats">
               <div class="traffic-value">
-                <el-tooltip content="上行+下行总流量" placement="top">
+                <el-tooltip content="总流量统计" placement="top">
                   <span>{{ formatTraffic(row.trafficStats.totalBytes || 0) }}</span>
-                </el-tooltip>
-              </div>
-              <div class="traffic-detail">
-                <el-tooltip content="上行流量 (客户端→服务器)" placement="top">
-                  <span class="upload">↑{{ formatTraffic(row.trafficStats.inputBytes || 0) }}</span>
-                </el-tooltip>
-                <el-tooltip content="下行流量 (服务器→客户端)" placement="top">
-                  <span class="download">↓{{ formatTraffic(row.trafficStats.outputBytes || 0) }}</span>
                 </el-tooltip>
               </div>
             </div>
@@ -848,22 +832,7 @@ export default {
   font-size: 13px;
 }
 
-.traffic-detail {
-  font-size: 11px;
-  color: #909399;
-  margin-top: 2px;
-  display: flex;
-  gap: 8px;
-  justify-content: center;
-}
 
-.traffic-detail .upload {
-  color: #f56c6c;
-}
-
-.traffic-detail .download {
-  color: #67c23a;
-}
 
 .rule-status {
   display: flex;

@@ -195,14 +195,13 @@ router.get('/', auth, async (req, res) => {
       });
 
       // 为每个用户的规则添加流量统计
-      const { TrafficHourly } = require('../services/dbService').models;
-      const groupedRules = await Promise.all(users.map(async (user) => {
+      const groupedRules = users.map(user => {
         if (!user.forwardRules || user.forwardRules.length === 0) {
           return null; // 过滤掉没有规则的用户
         }
 
         // 为每个规则添加流量统计
-        const rulesWithStats = await Promise.all(user.forwardRules.map(async (rule) => {
+        const rulesWithStats = user.forwardRules.map(rule => {
           const ruleData = rule.toJSON();
 
           // 手动设置用户关联，确保 isActive 计算正确
@@ -214,70 +213,14 @@ router.get('/', auth, async (req, res) => {
           // 调试信息
           console.log(`🔍 规则 ${rule.name} isActive: ${rule.isActive}, 用户: ${user.username}, 状态: ${user.userStatus}`);
 
-          // 获取最近7天的流量统计
-          const last7Days = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-
-          const trafficStats = await TrafficHourly.findOne({
-            where: {
-              userId: rule.userId,
-              port: rule.sourcePort,
-              recordTime: {
-                [Op.gte]: last7Days
-              }
-            },
-            attributes: [
-              [require('../services/dbService').models.sequelize.fn('SUM', require('../services/dbService').models.sequelize.col('totalBytes')), 'totalBytes'],
-              [require('../services/dbService').models.sequelize.fn('SUM', require('../services/dbService').models.sequelize.col('inputBytes')), 'inputBytes'],
-              [require('../services/dbService').models.sequelize.fn('SUM', require('../services/dbService').models.sequelize.col('outputBytes')), 'outputBytes']
-            ]
-          });
-
-          // 获取总流量统计 (所有时间)
-          const totalStats = await TrafficHourly.findOne({
-            where: {
-              userId: rule.userId,
-              port: rule.sourcePort
-            },
-            attributes: [
-              [require('../services/dbService').models.sequelize.fn('SUM', require('../services/dbService').models.sequelize.col('totalBytes')), 'totalBytes'],
-              [require('../services/dbService').models.sequelize.fn('SUM', require('../services/dbService').models.sequelize.col('inputBytes')), 'inputBytes'],
-              [require('../services/dbService').models.sequelize.fn('SUM', require('../services/dbService').models.sequelize.col('outputBytes')), 'outputBytes']
-            ]
-          });
-
-          // 计算流量数据
-          const recent7DaysBytes = parseInt(trafficStats?.dataValues?.totalBytes) || 0;
-          const allTimeBytes = parseInt(totalStats?.dataValues?.totalBytes) || 0;
-          const ruleUsedTraffic = ruleData.usedTraffic || 0;
-
-          // 使用规则自身的 usedTraffic 字段作为主要数据源
-          const totalBytes = Math.max(ruleUsedTraffic, allTimeBytes);
-
-          // 添加流量统计信息
+          // 添加规则级流量统计信息
           ruleData.trafficStats = {
-            // 前端期望的顶级字段
-            totalBytes: totalBytes,
-            inputBytes: parseInt(totalStats?.dataValues?.inputBytes) || 0,
-            outputBytes: parseInt(totalStats?.dataValues?.outputBytes) || 0,
-            totalGB: (totalBytes / (1024 * 1024 * 1024)).toFixed(2),
-
-            // 详细统计
-            recent7Days: {
-              totalBytes: recent7DaysBytes,
-              inputBytes: parseInt(trafficStats?.dataValues?.inputBytes) || 0,
-              outputBytes: parseInt(trafficStats?.dataValues?.outputBytes) || 0,
-              totalGB: (recent7DaysBytes / (1024 * 1024 * 1024)).toFixed(2)
-            },
-            allTime: {
-              totalBytes: allTimeBytes,
-              inputBytes: parseInt(totalStats?.dataValues?.inputBytes) || 0,
-              outputBytes: parseInt(totalStats?.dataValues?.outputBytes) || 0,
-              totalGB: (allTimeBytes / (1024 * 1024 * 1024)).toFixed(2)
-            }
+            totalBytes: ruleData.usedTraffic || 0,
+            formattedTotal: formatBytes(ruleData.usedTraffic || 0)
           };
 
           return ruleData;
-        }));
+        });
 
         return {
           userId: user.id,
@@ -288,7 +231,7 @@ router.get('/', auth, async (req, res) => {
           isExpired: user.isExpired(),
           rules: rulesWithStats
         };
-      }));
+      });
 
       // 过滤掉 null 值（没有规则的用户）
       const filteredGroupedRules = groupedRules.filter(group => group !== null);
@@ -322,8 +265,7 @@ router.get('/', auth, async (req, res) => {
       });
 
       // 为每个规则添加流量统计
-      const { TrafficHourly } = require('../services/dbService').models;
-      const rulesWithStats = await Promise.all(rules.map(async (rule) => {
+      const rulesWithStats = rules.map(rule => {
         const ruleData = rule.toJSON();
 
         // 添加计算属性 isActive
@@ -332,70 +274,14 @@ router.get('/', auth, async (req, res) => {
         // 调试信息
         console.log(`🔍 单用户模式 - 规则 ${rule.name} isActive: ${rule.isActive}, 用户: ${rule.user?.username}`);
 
-        // 获取最近7天的流量统计
-        const last7Days = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-
-        const trafficStats = await TrafficHourly.findOne({
-          where: {
-            userId: rule.userId,
-            port: rule.sourcePort,
-            recordTime: {
-              [Op.gte]: last7Days
-            }
-          },
-          attributes: [
-            [require('../services/dbService').models.sequelize.fn('SUM', require('../services/dbService').models.sequelize.col('totalBytes')), 'totalBytes'],
-            [require('../services/dbService').models.sequelize.fn('SUM', require('../services/dbService').models.sequelize.col('inputBytes')), 'inputBytes'],
-            [require('../services/dbService').models.sequelize.fn('SUM', require('../services/dbService').models.sequelize.col('outputBytes')), 'outputBytes']
-          ]
-        });
-
-        // 获取总流量统计 (所有时间)
-        const totalStats = await TrafficHourly.findOne({
-          where: {
-            userId: rule.userId,
-            port: rule.sourcePort
-          },
-          attributes: [
-            [require('../services/dbService').models.sequelize.fn('SUM', require('../services/dbService').models.sequelize.col('totalBytes')), 'totalBytes'],
-            [require('../services/dbService').models.sequelize.fn('SUM', require('../services/dbService').models.sequelize.col('inputBytes')), 'inputBytes'],
-            [require('../services/dbService').models.sequelize.fn('SUM', require('../services/dbService').models.sequelize.col('outputBytes')), 'outputBytes']
-          ]
-        });
-
-        // 计算流量数据
-        const recent7DaysBytes = parseInt(trafficStats?.dataValues?.totalBytes) || 0;
-        const allTimeBytes = parseInt(totalStats?.dataValues?.totalBytes) || 0;
-        const ruleUsedTraffic = ruleData.usedTraffic || 0;
-
-        // 使用规则自身的 usedTraffic 字段作为主要数据源
-        const totalBytes = Math.max(ruleUsedTraffic, allTimeBytes);
-
-        // 添加流量统计信息
+        // 添加规则级流量统计信息
         ruleData.trafficStats = {
-          // 前端期望的顶级字段
-          totalBytes: totalBytes,
-          inputBytes: parseInt(totalStats?.dataValues?.inputBytes) || 0,
-          outputBytes: parseInt(totalStats?.dataValues?.outputBytes) || 0,
-          totalGB: (totalBytes / (1024 * 1024 * 1024)).toFixed(2),
-
-          // 详细统计
-          recent7Days: {
-            totalBytes: recent7DaysBytes,
-            inputBytes: parseInt(trafficStats?.dataValues?.inputBytes) || 0,
-            outputBytes: parseInt(trafficStats?.dataValues?.outputBytes) || 0,
-            totalGB: (recent7DaysBytes / (1024 * 1024 * 1024)).toFixed(2)
-          },
-          allTime: {
-            totalBytes: allTimeBytes,
-            inputBytes: parseInt(totalStats?.dataValues?.inputBytes) || 0,
-            outputBytes: parseInt(totalStats?.dataValues?.outputBytes) || 0,
-            totalGB: (allTimeBytes / (1024 * 1024 * 1024)).toFixed(2)
-          }
+          totalBytes: ruleData.usedTraffic || 0,
+          formattedTotal: formatBytes(ruleData.usedTraffic || 0)
         };
 
         return ruleData;
-      }));
+      });
 
       return res.json({
         rules: rulesWithStats,
@@ -526,12 +412,17 @@ router.post('/', auth, async (req, res) => {
       }]
     });
 
-    // 🔧 修复：创建规则后强制立即同步GOST配置
+    // 🚀 优化: 创建规则后清理相关缓存并同步
     try {
+      // 清理端口和用户相关缓存
+      const cacheCoordinator = require('../services/cacheCoordinator');
+      await cacheCoordinator.clearPortRelatedCache(createdRule.sourcePort, 'rule_create');
+      await cacheCoordinator.clearUserRelatedCache(createdRule.userId, 'rule_create');
+
+      // 强制同步GOST配置
       const gostSyncCoordinator = require('../services/gostSyncCoordinator');
       console.log(`➕ 创建规则 ${createdRule.name} (端口${createdRule.sourcePort})，触发强制同步`);
 
-      // 使用await等待同步完成，确保GOST立即更新
       const syncResult = await gostSyncCoordinator.requestSync('rule_create', true, 9);
 
       if (syncResult.success) {
@@ -540,8 +431,8 @@ router.post('/', auth, async (req, res) => {
         console.error(`❌ 创建规则后GOST同步失败: ${createdRule.name}`, syncResult.error);
       }
     } catch (error) {
-      console.error('创建规则后触发配置同步失败:', error);
-      // 即使同步失败，也不影响创建操作的成功响应
+      console.error('创建规则后处理失败:', error);
+      // 即使处理失败，也不影响创建操作的成功响应
     }
 
     res.status(201).json(createdRule);
@@ -655,12 +546,22 @@ router.put('/:id', auth, async (req, res) => {
       }]
     });
 
-    // 🔧 修复：更新规则后强制立即同步GOST配置
+    // 🚀 优化: 更新规则后清理相关缓存并同步
     try {
+      // 清理端口和用户相关缓存
+      const cacheCoordinator = require('../services/cacheCoordinator');
+      await cacheCoordinator.clearPortRelatedCache(updatedRule.sourcePort, 'rule_update');
+      await cacheCoordinator.clearUserRelatedCache(updatedRule.userId, 'rule_update');
+
+      // 如果端口发生变化，也清理旧端口的缓存
+      if (updateData.sourcePort && updateData.sourcePort !== originalRule.sourcePort) {
+        await cacheCoordinator.clearPortRelatedCache(originalRule.sourcePort, 'rule_update_old_port');
+      }
+
+      // 强制同步GOST配置
       const gostSyncCoordinator = require('../services/gostSyncCoordinator');
       console.log(`📝 更新规则 ${updatedRule.name} (端口${updatedRule.sourcePort})，触发强制同步`);
 
-      // 使用await等待同步完成，确保GOST立即更新
       const syncResult = await gostSyncCoordinator.requestSync('rule_update', true, 9);
 
       if (syncResult.success) {
@@ -669,8 +570,8 @@ router.put('/:id', auth, async (req, res) => {
         console.error(`❌ 更新规则后GOST同步失败: ${updatedRule.name}`, syncResult.error);
       }
     } catch (error) {
-      console.error('更新规则后触发配置同步失败:', error);
-      // 即使同步失败，也不影响更新操作的成功响应
+      console.error('更新规则后处理失败:', error);
+      // 即使处理失败，也不影响更新操作的成功响应
     }
 
     // 添加计算属性到返回数据
@@ -701,12 +602,17 @@ router.delete('/:id', auth, async (req, res) => {
 
     await rule.destroy();
 
-    // 🔧 修复：删除规则后强制立即同步GOST配置
+    // 🚀 优化: 删除规则后清理相关缓存并同步
     try {
+      // 清理端口和用户相关缓存
+      const cacheCoordinator = require('../services/cacheCoordinator');
+      await cacheCoordinator.clearPortRelatedCache(rule.sourcePort, 'rule_delete');
+      await cacheCoordinator.clearUserRelatedCache(rule.userId, 'rule_delete');
+
+      // 强制同步GOST配置
       const gostSyncCoordinator = require('../services/gostSyncCoordinator');
       console.log(`🗑️ 删除规则 ${rule.name} (端口${rule.sourcePort})，触发强制同步`);
 
-      // 使用await等待同步完成，确保GOST立即更新
       const syncResult = await gostSyncCoordinator.requestSync('rule_delete', true, 9);
 
       if (syncResult.success) {
@@ -715,8 +621,8 @@ router.delete('/:id', auth, async (req, res) => {
         console.error(`❌ 删除规则后GOST同步失败: ${rule.name}`, syncResult.error);
       }
     } catch (error) {
-      console.error('删除规则后触发配置同步失败:', error);
-      // 即使同步失败，也不影响删除操作的成功响应
+      console.error('删除规则后处理失败:', error);
+      // 即使处理失败，也不影响删除操作的成功响应
     }
 
     res.status(204).send();
@@ -847,5 +753,16 @@ router.post('/batch-delete', auth, async (req, res) => {
     res.status(500).json({ message: '批量删除规则失败', error: error.message });
   }
 });
+
+/**
+ * 格式化字节数显示
+ */
+function formatBytes(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
 
 module.exports = router;

@@ -15,8 +15,7 @@
  */
 
 const multiInstanceCacheService = require('./multiInstanceCacheService');
-const timeSeriesService = require('./timeSeriesService');
-const loggerService = require('./loggerService'); // 替换 InfluxDB
+const loggerService = require('./loggerService');
 const { models } = require('./dbService');
 const { User } = models;
 
@@ -415,9 +414,8 @@ class GostPluginService {
       // 流量限制将在后续版本中重新实现
       console.log(`📊 用户 ${userId} 流量已更新，当前增量: ${incrementalTotalBytes} 字节`);
 
-      // 🔧 修复：禁用缓冲区机制，避免重复累积
-      // 已经在上面直接更新了数据库和规则，不需要再缓冲
-      // this.bufferTrafficData(userId, port, incrementalInputBytes, incrementalOutputBytes);
+      // 🔧 重新启用流量缓冲机制，确保流量数据被记录到TrafficLog表
+      this.bufferTrafficData(userId, port, inputBytes, outputBytes);
 
       // 🔧 关键修复：使用用户级别的互斥锁，防止并发更新导致的竞态条件
       await this.updateUserTrafficWithLock(userId, incrementalTotalBytes);
@@ -438,7 +436,7 @@ class GostPluginService {
       try {
         const { UserForwardRule } = require('../models');
 
-        // 先检查规则是否存在
+        // 先检查规则是否存在，并加载完整的用户信息用于计算属性
         const rule = await UserForwardRule.findOne({
           where: {
             id: userInfo.ruleId
@@ -446,13 +444,36 @@ class GostPluginService {
           include: [{
             model: User,
             as: 'user',
-            attributes: ['id', 'isActive', 'userStatus', 'role']
+            attributes: ['id', 'username', 'isActive', 'userStatus', 'role', 'expiryDate', 'portRangeStart', 'portRangeEnd', 'trafficQuota', 'usedTraffic']
           }]
         });
 
-        // 检查规则是否通过计算属性激活
-        if (!rule || !rule.isActive) {
-          console.log(`⚠️ 规则 ${userInfo.ruleId} 不存在或未激活，跳过流量更新`);
+        if (!rule) {
+          console.log(`⚠️ 规则 ${userInfo.ruleId} 不存在，跳过流量更新`);
+          return;
+        }
+
+        // 🔧 修复：检查规则是否通过计算属性激活，但先确保用户信息完整
+        if (!rule.user) {
+          console.log(`⚠️ 规则 ${userInfo.ruleId} 缺少用户关联信息，跳过流量更新`);
+          return;
+        }
+
+        // 🔧 修复：转发规则流量统计应该记录实际产生的流量，不受配额限制影响
+        // 检查规则基本状态（用户状态、过期等），但不检查流量配额
+        const user = rule.user;
+
+        // 🔧 关键修复：即使用户状态是 suspended（因为超过配额），也要记录实际产生的流量
+        // 只有在用户被完全禁用（isActive=false）或过期时才跳过流量统计
+        const isBasicActive = user.isActive &&
+                             (user.role === 'admin' || !user.isExpired());
+
+        console.log(`🔍 [DEBUG] 规则 ${userInfo.ruleId} 基本状态检查: ${isBasicActive} (用户: ${user.username}, 状态: ${user.userStatus}, isActive: ${user.isActive})`);
+
+        // 🔧 关键修复：即使用户超过配额（suspended状态），也要记录实际产生的流量
+        // 只有在用户基本状态异常时才跳过（如用户被禁用、过期等）
+        if (!isBasicActive) {
+          console.log(`⚠️ 规则 ${userInfo.ruleId} 用户基本状态异常，跳过流量更新`);
           return;
         }
 
@@ -589,17 +610,20 @@ class GostPluginService {
   }
 
   /**
-   * 启动缓冲区刷新定时器 (已禁用，避免重复累积)
+   * 启动缓冲区刷新定时器
    */
   startBufferFlush() {
-    // 🔧 修复：禁用缓冲区刷新，避免重复累积流量数据
-    // 现在直接在 Service 级别处理增量计算和数据库更新
+    console.log(`⏰ 启动缓冲区刷新定时器，间隔: ${this.config.flushInterval}ms`);
 
-    console.log(`⏰ 缓冲区刷新已禁用，使用直接更新模式 (避免重复累积)`);
+    // 流量数据刷新定时器
+    this.flushTimer = setInterval(() => {
+      this.flushTrafficBuffer();
+    }, this.config.flushInterval);
 
-    // 保留定时器变量以避免错误
-    this.flushTimer = null;
-    this.speedFlushTimer = null;
+    // 网速数据刷新定时器
+    this.speedFlushTimer = setInterval(() => {
+      this.flushSpeedBuffer();
+    }, this.config.speedFlushInterval);
   }
 
   /**
@@ -675,14 +699,11 @@ class GostPluginService {
 
     while (retries < this.config.maxRetries) {
       try {
-        // 批量写入时序数据库
+        // 批量写入TrafficLog表
         for (const data of batch) {
-          await timeSeriesService.recordHourlyTraffic(
-            data.userId,
-            data.port,
-            data.inputBytes,
-            data.outputBytes
-          );
+
+          // 2. 写入TrafficLog表（详细日志）
+          await this.recordTrafficLog(data);
         }
 
         return; // 成功，退出重试循环
@@ -698,6 +719,40 @@ class GostPluginService {
           throw error; // 最后一次重试失败，抛出错误
         }
       }
+    }
+  }
+
+  /**
+   * 记录流量日志到TrafficLog表
+   * @param {Object} data - 流量数据
+   */
+  async recordTrafficLog(data) {
+    try {
+      const { TrafficLog, UserForwardRule } = require('../models');
+
+      // 查找对应的转发规则
+      const rule = await UserForwardRule.findOne({
+        where: {
+          userId: data.userId,
+          sourcePort: data.port
+        }
+      });
+
+      if (rule) {
+        await TrafficLog.create({
+          userId: data.userId,
+          ruleId: rule.id,
+          bytesIn: data.inputBytes,
+          bytesOut: data.outputBytes,
+          timestamp: new Date(),
+          sourceIP: null,
+          targetIP: null
+        });
+
+        console.log(`📝 记录流量日志: 用户${data.userId}, 端口${data.port}, 输入${data.inputBytes}字节, 输出${data.outputBytes}字节`);
+      }
+    } catch (error) {
+      console.error('❌ 记录流量日志失败:', error);
     }
   }
 
@@ -736,15 +791,8 @@ class GostPluginService {
     const speedData = Array.from(this.speedBuffer.values());
 
     try {
-      // 批量写入时序数据库
-      for (const data of speedData) {
-        await timeSeriesService.recordMinutelySpeed(
-          data.userId,
-          data.port,
-          data.inputRate,
-          data.outputRate
-        );
-      }
+      // 网速数据不再记录到时序数据库
+      console.log(`📊 跳过网速数据记录: ${speedData.length} 条记录`);
 
       // 清空缓冲区
       this.speedBuffer.clear();

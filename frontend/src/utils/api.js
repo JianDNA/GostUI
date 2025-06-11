@@ -94,34 +94,34 @@ export const traffic = {
 // 系统状态相关API
 export const system = {
   // 获取系统状态
-  getStatus: () => request.get('/api/system/status'),
+  getStatus: () => request.get('/system/status'),
 
   // 获取GOST状态
-  getGostStatus: () => request.get('/api/system/gost-status'),
+  getGostStatus: () => request.get('/system/gost-status'),
 
   // 重启GOST服务
-  restartGost: () => request.post('/api/system/restart-gost'),
+  restartGost: () => request.post('/system/restart-gost'),
 
   // 获取系统日志
-  getLogs: (params) => request.get('/api/system/logs', { params }),
+  getLogs: (params) => request.get('/system/logs', { params }),
 
   // 获取系统统计
-  getStats: () => request.get('/api/system/stats'),
+  getStats: () => request.get('/system/stats'),
 
   // 获取实时监控状态
-  getMonitorStatus: () => request.get('/api/system/monitor-status'),
+  getMonitorStatus: () => request.get('/system/monitor-status'),
 
   // 获取配额协调器状态
-  getQuotaStatus: () => request.get('/api/system/quota-status'),
+  getQuotaStatus: () => request.get('/system/quota-status'),
 
   // 获取同步协调器状态
-  getSyncStatus: () => request.get('/api/system/sync-status'),
+  getSyncStatus: () => request.get('/system/sync-status'),
 
   // 强制同步配置
-  forceSync: () => request.post('/api/system/force-sync'),
+  forceSync: () => request.post('/system/force-sync'),
 
   // 获取观察器状态
-  getObserverStatus: () => request.get('/api/system/observer-status')
+  getObserverStatus: () => request.get('/system/observer-status')
 }
 
 // 默认导出一个包含所有API的对象

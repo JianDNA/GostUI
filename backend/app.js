@@ -8,7 +8,6 @@ const { platformUtils } = require('./utils/platform');
 
 // 导入新的服务
 const multiInstanceCacheService = require('./services/multiInstanceCacheService');
-const timeSeriesService = require('./services/timeSeriesService'); // 替换 InfluxDB
 const gostPluginService = require('./services/gostPluginService');
 const gostHealthService = require('./services/gostHealthService');
 // const { realtimeMonitoringService } = require('./services/realtimeMonitoringService'); // 暂时禁用
@@ -30,8 +29,11 @@ app.use((err, req, res, next) => {
 });
 
 // 路由
+console.log('🚨🚨🚨 [BREAKPOINT] 注册 /api/auth 路由');
 app.use('/api/auth', require('./routes/auth'));
+console.log('🚨🚨🚨 [BREAKPOINT] 注册 /api/users 路由');
 app.use('/api/users', require('./routes/users'));
+console.log('🚨🚨🚨 [BREAKPOINT] 注册 /api/rules 路由');
 app.use('/api/rules', require('./routes/rules'));
 app.use('/api/user-forward-rules', require('./routes/userForwardRules'));
 // GOST 服务管理路由
@@ -106,13 +108,16 @@ app.get('/api/test-forward', (req, res) => {
       console.warn('⚠️ 多实例缓存服务初始化失败，将使用数据库回退:', error.message);
     }
 
+    // 🚀 新增: 初始化缓存协调器
     try {
-      // 初始化时序数据服务 (SQLite)
-      await timeSeriesService.initialize();
-      console.log('✅ 时序数据服务初始化成功');
+      const cacheCoordinator = require('./services/cacheCoordinator');
+      await cacheCoordinator.initialize();
+      console.log('✅ 缓存协调器初始化成功');
     } catch (error) {
-      console.warn('⚠️ 时序数据服务初始化失败，流量统计功能将受限:', error.message);
+      console.warn('⚠️ 缓存协调器初始化失败:', error.message);
     }
+
+
 
     // 2. 启动Web服务器
     const server = app.listen(PORT, () => {
@@ -210,8 +215,16 @@ app.get('/api/test-forward', (req, res) => {
         // 清理多实例缓存服务
         await multiInstanceCacheService.cleanup();
 
-        // 关闭时序数据服务
-        await timeSeriesService.close();
+        // 🚀 新增: 清理缓存协调器
+        try {
+          const cacheCoordinator = require('./services/cacheCoordinator');
+          cacheCoordinator.stop();
+          console.log('✅ 缓存协调器已停止');
+        } catch (error) {
+          console.warn('⚠️ 停止缓存协调器失败:', error.message);
+        }
+
+
 
         console.log('✅ 所有服务已清理完成');
       } catch (error) {

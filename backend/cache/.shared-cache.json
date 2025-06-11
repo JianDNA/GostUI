@@ -11,16 +11,16 @@
       "status": "active",
       "portRanges": [],
       "isActive": true,
-      "lastUpdate": 1749630313727
+      "lastUpdate": 1749655810026
     },
     "2": {
       "id": 2,
       "username": "test",
       "role": "user",
       "expiryDate": "2025-08-09T00:00:00.000Z",
-      "trafficQuota": 0.5,
-      "trafficLimitBytes": 536870912,
-      "usedTraffic": 0,
+      "trafficQuota": 1,
+      "trafficLimitBytes": 1073741824,
+      "usedTraffic": 676145916,
       "status": "active",
       "portRanges": [
         {
@@ -29,7 +29,33 @@
         }
       ],
       "isActive": true,
-      "lastUpdate": 1749630313727
+      "lastUpdate": 1749655810026
+    },
+    "4": {
+      "id": 4,
+      "username": "user2",
+      "role": "user",
+      "expiryDate": "2025-08-10T10:15:07.785Z",
+      "trafficQuota": 2,
+      "trafficLimitBytes": 2147483648,
+      "usedTraffic": 0,
+      "status": "active",
+      "portRanges": [],
+      "isActive": true,
+      "lastUpdate": 1749655810027
+    },
+    "5": {
+      "id": 5,
+      "username": "user3",
+      "role": "user",
+      "expiryDate": "2025-06-26T10:15:07.785Z",
+      "trafficQuota": 0.5,
+      "trafficLimitBytes": 536870912,
+      "usedTraffic": 0,
+      "status": "active",
+      "portRanges": [],
+      "isActive": true,
+      "lastUpdate": 1749655810027
     }
   },
   "portMapping": {
@@ -58,6 +84,6 @@
       "ruleName": "Admin Rule 2"
     }
   },
-  "lastUpdate": 1749630313728,
+  "lastUpdate": 1749655810027,
   "updatedBy": "0"
 }

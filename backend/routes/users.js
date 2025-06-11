@@ -43,36 +43,24 @@ router.get('/', auth, async (req, res) => {
       }]
     });
 
-    // 添加计算字段和流量统计
-    const { TrafficHourly } = require('../services/dbService').models;
-    const usersWithStatus = await Promise.all(users.map(async (user) => {
+    // 添加计算字段和流量统计（简化版）
+    const usersWithStatus = users.map(user => {
       const userData = user.toJSON();
 
       // 计算流量使用情况
       const trafficLimitBytes = userData.trafficQuota ? userData.trafficQuota * 1024 * 1024 * 1024 : 0;
       const usedTrafficBytes = userData.usedTraffic || 0;
 
-      // 获取最近7天的流量统计
-      const last7Days = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-
-      const recentTraffic = await TrafficHourly.findOne({
-        where: {
-          userId: user.id,
-          recordTime: {
-            [Op.gte]: last7Days
-          }
-        },
-        attributes: [
-          [require('../services/dbService').models.sequelize.fn('SUM', require('../services/dbService').models.sequelize.col('totalBytes')), 'totalBytes']
-        ]
-      });
-
       // 添加统计信息
       return {
         ...userData,
         isExpired: user.isExpired(),
         forwardRuleCount: user.forwardRules ? user.forwardRules.length : 0,
-        activeRuleCount: user.forwardRules ? user.forwardRules.filter(rule => rule.isActive).length : 0,
+        activeRuleCount: user.forwardRules ? user.forwardRules.filter(rule => {
+          // 为计算属性设置用户关联
+          rule.user = user;
+          return rule.isActive;
+        }).length : 0,
         trafficStats: {
           usedTrafficBytes,
           trafficLimitBytes,
@@ -87,12 +75,12 @@ router.get('/', auth, async (req, res) => {
           remainingGB: trafficLimitBytes > 0
             ? Math.max((trafficLimitBytes - usedTrafficBytes) / (1024 * 1024 * 1024), 0).toFixed(2)
             : 'Unlimited',
-          recent7DaysBytes: parseInt(recentTraffic?.dataValues?.totalBytes) || 0,
-          recent7DaysGB: ((parseInt(recentTraffic?.dataValues?.totalBytes) || 0) / (1024 * 1024 * 1024)).toFixed(2),
+          recent7DaysBytes: 0, // 简化：不再查询时序数据
+          recent7DaysGB: '0.00',
           status: userData.userStatus || 'active'
         }
       };
-    }));
+    });
 
     res.json(usersWithStatus);
   } catch (error) {
@@ -131,23 +119,7 @@ router.get('/:id', auth, async (req, res) => {
     const trafficLimitBytes = userData.trafficQuota ? userData.trafficQuota * 1024 * 1024 * 1024 : 0;
     const usedTrafficBytes = userData.usedTraffic || 0;
 
-    // 获取最近7天的流量统计
-    const { TrafficHourly } = require('../services/dbService').models;
-    const last7Days = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-
-    const recentTraffic = await TrafficHourly.findOne({
-      where: {
-        userId: user.id,
-        recordTime: {
-          [Op.gte]: last7Days
-        }
-      },
-      attributes: [
-        [require('../services/dbService').models.sequelize.fn('SUM', require('../services/dbService').models.sequelize.col('totalBytes')), 'totalBytes']
-      ]
-    });
-
-    // 返回用户信息和统计数据
+    // 返回用户信息和统计数据（简化版）
     res.json({
       success: true,
       data: {
@@ -173,8 +145,8 @@ router.get('/:id', auth, async (req, res) => {
           remainingGB: trafficLimitBytes > 0
             ? Math.max((trafficLimitBytes - usedTrafficBytes) / (1024 * 1024 * 1024), 0).toFixed(2)
             : 'Unlimited',
-          recent7DaysBytes: parseInt(recentTraffic?.dataValues?.totalBytes) || 0,
-          recent7DaysGB: ((parseInt(recentTraffic?.dataValues?.totalBytes) || 0) / (1024 * 1024 * 1024)).toFixed(2),
+          recent7DaysBytes: 0, // 简化：不再查询时序数据
+          recent7DaysGB: '0.00',
           status: userData.userStatus || 'active'
         }
       }
@@ -260,6 +232,14 @@ router.post('/', auth, async (req, res) => {
       trafficQuota: userData.trafficQuota
     });
 
+    // 🚀 新增: 用户创建后清理相关缓存
+    try {
+      const cacheCoordinator = require('../services/cacheCoordinator');
+      await cacheCoordinator.clearUserRelatedCache(user.id, 'user_create');
+    } catch (cacheError) {
+      console.warn('⚠️ 用户创建后清理缓存失败:', cacheError.message);
+    }
+
     // 返回用户信息（排除敏感字段）
     const { password, token, ...userResponse } = user.toJSON();
     res.status(201).json({
@@ -284,17 +264,38 @@ router.post('/', auth, async (req, res) => {
 
 // 更新用户（仅管理员可用）
 router.put('/:id', auth, async (req, res) => {
+  console.log('🚨🚨🚨 [BREAKPOINT] PUT /api/users/:id 路由被调用！');
+  console.log('🚨🚨🚨 [BREAKPOINT] 请求参数:', req.params);
+  console.log('🚨🚨🚨 [BREAKPOINT] 请求体:', req.body);
+  console.log('🚨🚨🚨 [BREAKPOINT] 用户信息:', req.user);
+
   try {
+    console.log('🔍 [DEBUG] ===== 开始用户更新流程 =====');
+    console.log('🔍 [DEBUG] 请求用户:', req.user.username, '角色:', req.user.role);
+    console.log('🔍 [DEBUG] 目标用户ID:', req.params.id);
+
     if (req.user.role !== 'admin') {
+      console.log('🔍 [DEBUG] 权限检查失败：非管理员用户');
       return res.status(403).json({ message: '没有权限访问' });
     }
 
+    console.log('🔍 [DEBUG] 开始查找用户...');
     const user = await User.findByPk(req.params.id);
     if (!user) {
+      console.log('🔍 [DEBUG] 用户不存在，ID:', req.params.id);
       return res.status(404).json({ message: '用户不存在' });
     }
 
+    console.log('🔍 [DEBUG] 找到用户:', {
+      id: user.id,
+      username: user.username,
+      userStatus: user.userStatus,
+      trafficQuota: user.trafficQuota,
+      usedTraffic: user.usedTraffic
+    });
+
     const updateData = req.body;
+    console.log('🔍 [DEBUG] 更新数据:', JSON.stringify(updateData, null, 2));
     console.log('Updating user with data:', updateData);
 
     // 如果是管理员账户，强制保持原用户名不变
@@ -443,32 +444,146 @@ router.put('/:id', auth, async (req, res) => {
     }
 
     // 更新用户信息
+    console.log('🔍 [DEBUG] 准备更新用户信息...');
+    console.log('🔍 [DEBUG] 更新前用户状态:', {
+      userStatus: user.userStatus,
+      trafficQuota: user.trafficQuota,
+      usedTraffic: user.usedTraffic
+    });
+
     await user.update(updateData);
 
-    // 🔧 关键修复：如果更新了流量配额或用户状态，立即触发GOST配置同步
-    if (updateData.trafficQuota !== undefined || updateData.userStatus !== undefined) {
+    console.log('🔍 [DEBUG] 用户信息更新完成');
+    console.log('🔍 [DEBUG] 更新后用户状态:', {
+      userStatus: user.userStatus,
+      trafficQuota: user.trafficQuota,
+      usedTraffic: user.usedTraffic
+    });
+
+    // 🔧 关键修复：如果更新了流量配额，检查并调整用户状态
+    console.log(`🔍 [DEBUG] 检查配额更新条件: updateData.trafficQuota = ${updateData.trafficQuota}`);
+    console.log(`🔍 [DEBUG] updateData.trafficQuota !== undefined = ${updateData.trafficQuota !== undefined}`);
+    if (updateData.trafficQuota !== undefined) {
+      console.log(`🔍 [DEBUG] 进入配额更新逻辑`);
       try {
-        console.log(`🔄 用户 ${user.id} 配额/状态更新，触发GOST配置同步...`);
+        const oldQuota = user.trafficQuota;
+        console.log(`🔄 用户 ${user.id} 流量配额更新: ${oldQuota}GB -> ${updateData.trafficQuota}GB`);
+
+        // 重新获取更新后的用户信息
+        await user.reload();
+        console.log(`🔍 [DEBUG] 用户信息已重新加载，当前状态: ${user.userStatus}`);
+
+        const currentUsedTraffic = user.usedTraffic || 0;
+        const newQuotaBytes = updateData.trafficQuota ? updateData.trafficQuota * 1024 * 1024 * 1024 : 0;
+
+        console.log(`📊 用户当前使用流量: ${formatBytes(currentUsedTraffic)}, 新配额: ${formatBytes(newQuotaBytes)}`);
+
+        let statusChanged = false;
+
+        if (newQuotaBytes > 0) {
+          console.log(`🔍 [DEBUG] 检查配额范围: ${currentUsedTraffic} <= ${newQuotaBytes} = ${currentUsedTraffic <= newQuotaBytes}`);
+          // 检查用户使用量是否在新配额范围内
+          if (currentUsedTraffic <= newQuotaBytes) {
+            // 使用量在配额范围内，确保用户状态为active
+            console.log(`🔍 [DEBUG] 用户状态检查: ${user.userStatus} === 'suspended' = ${user.userStatus === 'suspended'}`);
+            if (user.userStatus === 'suspended') {
+              console.log(`✅ 用户使用量 ${formatBytes(currentUsedTraffic)} 在新配额 ${formatBytes(newQuotaBytes)} 范围内，恢复用户状态`);
+              await user.update({ userStatus: 'active' });
+              console.log(`🔄 用户状态已从 suspended 恢复为 active`);
+              statusChanged = true;
+            } else {
+              console.log(`🔍 [DEBUG] 用户状态已经是 ${user.userStatus}，无需更改`);
+            }
+          } else {
+            // 使用量超过新配额，确保用户状态为suspended
+            console.log(`🔍 [DEBUG] 用户状态检查: ${user.userStatus} === 'active' = ${user.userStatus === 'active'}`);
+            if (user.userStatus === 'active') {
+              console.log(`⚠️ 用户使用量 ${formatBytes(currentUsedTraffic)} 超过新配额 ${formatBytes(newQuotaBytes)}，暂停用户`);
+              await user.update({ userStatus: 'suspended' });
+              console.log(`🔄 用户状态已从 active 更改为 suspended`);
+              statusChanged = true;
+            } else {
+              console.log(`🔍 [DEBUG] 用户状态已经是 ${user.userStatus}，无需更改`);
+            }
+          }
+        } else {
+          // 无限配额，确保用户状态为active
+          console.log(`🔍 [DEBUG] 无限配额，用户状态检查: ${user.userStatus} === 'suspended' = ${user.userStatus === 'suspended'}`);
+          if (user.userStatus === 'suspended') {
+            console.log(`✅ 用户配额设置为无限制，恢复用户状态`);
+            await user.update({ userStatus: 'active' });
+            console.log(`🔄 用户状态已从 suspended 恢复为 active`);
+            statusChanged = true;
+          }
+        }
+
+        console.log(`🔍 [DEBUG] 状态是否发生变化: ${statusChanged}`);
+
+        // 🚀 优化: 使用缓存协调器统一清理缓存
+        if (statusChanged) {
+          try {
+            const cacheCoordinator = require('../services/cacheCoordinator');
+            await cacheCoordinator.clearUserRelatedCache(user.id, 'quota_update');
+            console.log(`✅ 用户 ${user.id} 所有相关缓存已清理`);
+          } catch (cacheError) {
+            console.warn('⚠️ 清理用户缓存失败:', cacheError.message);
+          }
+        }
 
         // 强制触发GOST配置同步
         const gostConfigService = require('../services/gostConfigService');
         await gostConfigService.triggerSync('quota_update', true, 10);
 
-        console.log(`✅ 用户 ${user.id} 配额/状态更新后GOST配置同步成功`);
+        console.log(`✅ 用户 ${user.id} 配额更新后GOST配置同步成功`);
       } catch (error) {
-        console.error('配额/状态更新后同步GOST配置失败:', error);
+        console.error('配额更新后处理失败:', error);
+      }
+    } else if (updateData.userStatus !== undefined) {
+      // 如果只是更新了用户状态（非配额更新），也触发同步
+      console.log(`🔍 [DEBUG] 进入状态更新分支: updateData.userStatus = ${updateData.userStatus}`);
+      try {
+        console.log(`🔄 用户 ${user.id} 状态更新，触发GOST配置同步...`);
+
+        // 🚀 新增: 状态更新时也清理缓存
+        const cacheCoordinator = require('../services/cacheCoordinator');
+        await cacheCoordinator.clearUserRelatedCache(user.id, 'status_update');
+        console.log(`✅ 用户 ${user.id} 状态更新相关缓存已清理`);
+
+        // 强制触发GOST配置同步
+        const gostConfigService = require('../services/gostConfigService');
+        await gostConfigService.triggerSync('status_update', true, 10);
+
+        console.log(`✅ 用户 ${user.id} 状态更新后GOST配置同步成功`);
+      } catch (error) {
+        console.error('状态更新后同步GOST配置失败:', error);
+      }
+    } else {
+      console.log(`🔍 [DEBUG] 既没有配额更新也没有状态更新`);
+      console.log(`🔍 [DEBUG] updateData.trafficQuota = ${updateData.trafficQuota}`);
+      console.log(`🔍 [DEBUG] updateData.userStatus = ${updateData.userStatus}`);
+
+      // 🔍 [DEBUG] 检查是否有其他地方在处理这个逻辑
+      if (updateData.trafficQuota !== undefined || updateData.userStatus !== undefined) {
+        console.log(`🚨 [DEBUG] 警告：有配额或状态更新但没有进入对应分支！`);
+        console.log(`🚨 [DEBUG] 这可能是一个逻辑错误！`);
       }
     }
 
-    // 触发 Gost 配置同步（如果端口范围变化或清理了规则）
+    // 🚀 优化: 端口范围变化或清理规则时的缓存处理
     if (cleanedRulesCount > 0 || newPortRangeStart || newPortRangeEnd) {
       try {
+        // 清理用户相关缓存
+        const cacheCoordinator = require('../services/cacheCoordinator');
+        await cacheCoordinator.clearUserRelatedCache(user.id, 'port_range_update');
+        console.log(`✅ 用户 ${user.id} 端口范围更新相关缓存已清理`);
+
+        // 触发 Gost 配置同步
         const gostConfigService = require('../services/gostConfigService');
         gostConfigService.triggerSync().catch(error => {
           console.error('更新用户后同步配置失败:', error);
         });
       } catch (error) {
-        console.error('触发配置同步失败:', error);
+        console.error('端口范围更新后处理失败:', error);
       }
     }
 
@@ -510,6 +625,14 @@ router.delete('/:id', auth, async (req, res) => {
     // 不允许删除管理员
     if (user.username === 'admin') {
       return res.status(403).json({ message: '不能删除admin管理员账户' });
+    }
+
+    // 🚀 优化: 删除前先清理缓存
+    try {
+      const cacheCoordinator = require('../services/cacheCoordinator');
+      await cacheCoordinator.clearUserRelatedCache(user.id, 'user_delete');
+    } catch (cacheError) {
+      console.warn('⚠️ 删除用户前清理缓存失败:', cacheError.message);
     }
 
     // 删除用户（关联的转发规则会自动删除）
@@ -563,13 +686,19 @@ router.post('/:id/extend-expiry', auth, async (req, res) => {
 
     await user.update(updateData);
 
-    // 🔧 新增：触发强制同步，确保转发规则立即生效
+    // 🚀 优化: 延长过期时间时清理缓存并同步
     try {
+      // 清理用户相关缓存
+      const cacheCoordinator = require('../services/cacheCoordinator');
+      await cacheCoordinator.clearUserRelatedCache(user.id, 'expiry_extended');
+      console.log(`✅ 用户 ${user.id} 过期时间延长相关缓存已清理`);
+
+      // 触发强制同步，确保转发规则立即生效
       const gostSyncCoordinator = require('../services/gostSyncCoordinator');
       await gostSyncCoordinator.requestSync('user_expiry_extended', true, 9);
       console.log(`✅ 用户 ${user.username} 过期时间延长后，已触发强制同步`);
     } catch (syncError) {
-      console.error('延长过期时间后同步失败:', syncError);
+      console.error('延长过期时间后处理失败:', syncError);
     }
 
     const { password, token, ...userResponse } = user.toJSON();
@@ -772,13 +901,15 @@ router.post('/:id/reset-traffic', auth, async (req, res) => {
       const deletedCount = Array.isArray(deletedTrafficRecords) ? deletedTrafficRecords[0] : deletedTrafficRecords;
       console.log(`✅ 已清理 ${deletedCount || 0} 条历史流量记录`);
 
-      // 4. 清理用户缓存和重置流量统计 (关键步骤)
+      // 🚀 优化: 使用缓存协调器统一清理缓存和重置流量统计
       try {
-        const multiInstanceCacheService = require('../services/multiInstanceCacheService');
+        // 使用缓存协调器清理所有相关缓存
+        const cacheCoordinator = require('../services/cacheCoordinator');
+        await cacheCoordinator.clearUserRelatedCache(userId, 'traffic_reset');
+        console.log(`✅ 用户 ${userId} 所有相关缓存已清理`);
 
-        // 清理多实例缓存中的用户数据
-        multiInstanceCacheService.clearUserCache(userId);
-        console.log(`✅ 用户 ${userId} 多实例缓存已清理`);
+        // 额外的流量重置特定清理
+        const multiInstanceCacheService = require('../services/multiInstanceCacheService');
 
         // 重置缓存中的流量统计为 0
         await multiInstanceCacheService.resetUserTrafficCache(userId);
@@ -790,7 +921,6 @@ router.post('/:id/reset-traffic', auth, async (req, res) => {
         console.log(`✅ 用户累积值跟踪已清理`);
 
         // 🔧 关键修复：清理所有端口的累积统计
-        // 这是导致重复累积的根本原因
         gostPluginService.clearAllCumulativeStats();
         console.log(`✅ 所有累积统计已清理`);
 

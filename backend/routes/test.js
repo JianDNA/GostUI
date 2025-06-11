@@ -288,6 +288,80 @@ router.get('/status', (req, res) => {
 });
 
 /**
+ * 手动触发缓冲区刷新接口
+ * POST /api/test/flush-buffer
+ */
+router.post('/flush-buffer', async (req, res) => {
+  try {
+    console.log('🧪 手动触发缓冲区刷新...');
+
+    // 获取 GOST 插件服务实例
+    const gostPluginService = require('../services/gostPluginService');
+
+    // 检查缓冲区状态
+    const bufferSize = gostPluginService.trafficBuffer ? gostPluginService.trafficBuffer.size : 0;
+
+    console.log(`📊 当前缓冲区大小: ${bufferSize}`);
+
+    if (bufferSize === 0) {
+      return res.json({
+        message: '缓冲区为空，无需刷新',
+        bufferSize: 0,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // 手动触发刷新
+    await gostPluginService.flushTrafficBuffer();
+
+    console.log('✅ 手动缓冲区刷新完成');
+
+    res.json({
+      message: '缓冲区刷新完成',
+      flushedItems: bufferSize,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ 手动刷新缓冲区失败:', error);
+    res.status(500).json({
+      message: '手动刷新缓冲区失败',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 检查缓冲区状态接口
+ * GET /api/test/buffer-status
+ */
+router.get('/buffer-status', (req, res) => {
+  try {
+    const gostPluginService = require('../services/gostPluginService');
+
+    const bufferSize = gostPluginService.trafficBuffer ? gostPluginService.trafficBuffer.size : 0;
+    const speedBufferSize = gostPluginService.speedBuffer ? gostPluginService.speedBuffer.size : 0;
+
+    // 获取缓冲区内容（仅用于调试）
+    const bufferContents = gostPluginService.trafficBuffer ?
+      Array.from(gostPluginService.trafficBuffer.entries()).slice(0, 5) : [];
+
+    res.json({
+      message: '缓冲区状态',
+      trafficBufferSize: bufferSize,
+      speedBufferSize: speedBufferSize,
+      sampleBufferContents: bufferContents,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ 获取缓冲区状态失败:', error);
+    res.status(500).json({
+      message: '获取缓冲区状态失败',
+      error: error.message
+    });
+  }
+});
+
+/**
  * 流量测试帮助接口
  * GET /api/test/help
  */
@@ -322,6 +396,19 @@ router.get('/help', (req, res) => {
         expected: '生成 2.5MB 数据，GOST 应记录约 2.5MB 流量'
       }
     ],
+    debugging: [
+      {
+        name: '检查缓冲区状态',
+        url: 'http://localhost:3002/api/test/buffer-status',
+        description: '查看当前缓冲区大小和内容'
+      },
+      {
+        name: '手动刷新缓冲区',
+        url: 'http://localhost:3002/api/test/flush-buffer',
+        method: 'POST',
+        description: '手动触发缓冲区刷新到数据库'
+      }
+    ],
     monitoring: [
       '查看仪表盘流量统计变化',
       '检查用户流量使用量增长',
@@ -335,5 +422,95 @@ router.get('/help', (req, res) => {
     ]
   });
 });
+
+/**
+ * 🚀 延迟测试接口 - 简单响应 (模拟网页浏览)
+ * GET /api/test/latency
+ */
+router.get('/latency', (req, res) => {
+  try {
+    res.json({
+      message: '延迟测试响应',
+      timestamp: new Date().toISOString(),
+      server: 'backend',
+      port: process.env.PORT || 3000
+    });
+  } catch (error) {
+    console.error('延迟测试失败:', error);
+    res.status(500).json({ error: '延迟测试失败' });
+  }
+});
+
+/**
+ * 🚀 数据回传测试接口 (模拟文件下载)
+ * POST /api/test/echo
+ */
+router.post('/echo', async (req, res) => {
+  try {
+    const { data, delay = 0 } = req.body;
+
+    if (!data) {
+      return res.status(400).json({ error: '缺少测试数据' });
+    }
+
+    // 模拟处理延迟
+    if (delay > 0) {
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+
+    // 返回相同大小的数据 (模拟下载)
+    res.json({
+      message: '数据回传测试成功',
+      timestamp: new Date().toISOString(),
+      dataSize: data.length,
+      delay: delay,
+      echo: data // 回传数据
+    });
+  } catch (error) {
+    console.error('数据回传测试失败:', error);
+    res.status(500).json({ error: '数据回传测试失败' });
+  }
+});
+
+/**
+ * 🚀 生成指定大小的测试数据
+ * GET /api/test/generate/:size
+ */
+router.get('/generate/:size', async (req, res) => {
+  try {
+    const size = parseInt(req.params.size);
+
+    if (isNaN(size) || size <= 0 || size > 10 * 1024 * 1024) { // 最大10MB
+      return res.status(400).json({ error: '无效的数据大小 (1B - 10MB)' });
+    }
+
+    // 生成指定大小的测试数据
+    const testData = Buffer.alloc(size, 'T').toString('base64');
+
+    res.json({
+      message: '测试数据生成成功',
+      size: size,
+      sizeFormatted: formatBytes(size),
+      data: testData
+    });
+  } catch (error) {
+    console.error('生成测试数据失败:', error);
+    res.status(500).json({ error: '生成测试数据失败' });
+  }
+});
+
+// 辅助函数：格式化字节
+function formatBytes(bytes) {
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let size = bytes;
+  let unitIndex = 0;
+
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex++;
+  }
+
+  return `${size.toFixed(2)}${units[unitIndex]}`;
+}
 
 module.exports = router;

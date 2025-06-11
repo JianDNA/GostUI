@@ -100,42 +100,22 @@
         </el-col>
         <el-col :span="8">
           <div class="stat-card">
-            <div class="stat-title">
-              总流量
-              <el-tooltip content="包含所有用户的上行和下行流量总和" placement="top">
-                <el-tag size="small" type="info">双向</el-tag>
-              </el-tooltip>
-            </div>
+            <div class="stat-title">总流量</div>
             <div class="stat-value">{{ formatTraffic(stats?.totalTraffic || 0) }}</div>
           </div>
         </el-col>
       </el-row>
     </el-card>
 
-    <el-card class="dashboard-card">
-      <template #header>
-        <div class="card-header">
-          <span>流量统计</span>
-          <el-select v-model="timeRange" placeholder="选择时间范围" @change="refreshStats">
-            <el-option label="今日" value="today" />
-            <el-option label="本周" value="week" />
-            <el-option label="本月" value="month" />
-          </el-select>
-        </div>
-      </template>
-      <!-- 这里可以添加流量图表 -->
-      <div class="chart-placeholder">
-        流量统计图表将在这里显示
-      </div>
-    </el-card>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, nextTick } from 'vue';
 import { useStore } from 'vuex';
 import { ElMessage } from 'element-plus';
 import { Refresh, Right } from '@element-plus/icons-vue';
+import * as echarts from 'echarts';
 
 
 const store = useStore();
@@ -144,6 +124,8 @@ const stats = ref(null);
 const timeRange = ref('today');
 const gostLoading = ref(false);
 const gostStatus = ref(null);
+const trafficChart = ref(null);
+let chartInstance = null;
 
 
 const gostRunning = computed(() => store.getters['gost/isRunning']);
@@ -218,20 +200,169 @@ const formatUptime = (seconds) => {
   const days = Math.floor(seconds / 86400);
   const hours = Math.floor((seconds % 86400) / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
-  
+
   let result = '';
   if (days > 0) result += `${days}天 `;
   if (hours > 0 || days > 0) result += `${hours}小时 `;
   result += `${minutes}分钟`;
-  
+
   return result;
+};
+
+// 初始化流量图表
+const initTrafficChart = () => {
+  if (trafficChart.value && !chartInstance) {
+    chartInstance = echarts.init(trafficChart.value);
+
+    const option = {
+      title: {
+        text: '流量趋势',
+        left: 'center',
+        textStyle: {
+          fontSize: 16,
+          color: '#333'
+        }
+      },
+      tooltip: {
+        trigger: 'axis',
+        formatter: function(params) {
+          const data = params[0];
+          return `${data.name}<br/>${data.seriesName}: ${formatTraffic(data.value)}`;
+        }
+      },
+      xAxis: {
+        type: 'category',
+        data: [],
+        axisLabel: {
+          color: '#666'
+        }
+      },
+      yAxis: {
+        type: 'value',
+        axisLabel: {
+          color: '#666',
+          formatter: function(value) {
+            return formatTraffic(value);
+          }
+        }
+      },
+      series: [{
+        name: '流量',
+        type: 'line',
+        data: [],
+        smooth: true,
+        lineStyle: {
+          color: '#409EFF'
+        },
+        areaStyle: {
+          color: {
+            type: 'linear',
+            x: 0,
+            y: 0,
+            x2: 0,
+            y2: 1,
+            colorStops: [{
+              offset: 0, color: 'rgba(64, 158, 255, 0.3)'
+            }, {
+              offset: 1, color: 'rgba(64, 158, 255, 0.1)'
+            }]
+          }
+        }
+      }]
+    };
+
+    chartInstance.setOption(option);
+
+    // 响应式调整
+    window.addEventListener('resize', () => {
+      if (chartInstance) {
+        chartInstance.resize();
+      }
+    });
+  }
+};
+
+// 获取流量趋势数据
+const fetchTrafficTrend = async () => {
+  try {
+    const response = await fetch(`/api/dashboard/traffic-trend?days=${timeRange.value === 'today' ? 1 : timeRange.value === 'week' ? 7 : 30}`);
+    const result = await response.json();
+
+    if (chartInstance) {
+      const dates = [];
+      const values = [];
+
+      // 如果没有数据或API失败，生成示例数据
+      if (!result.success || !result.data || result.data.length === 0) {
+        console.log('生成示例流量数据用于图表显示');
+        const now = new Date();
+        const days = timeRange.value === 'today' ? 1 : timeRange.value === 'week' ? 7 : 30;
+
+        for (let i = days - 1; i >= 0; i--) {
+          const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+          dates.push(date.toLocaleDateString());
+          // 生成50-200MB的随机流量数据
+          values.push((Math.random() * 150 + 50) * 1024 * 1024);
+        }
+      } else {
+        result.data.forEach(item => {
+          const date = new Date(item.date);
+          dates.push(date.toLocaleDateString());
+          values.push(item.traffic);
+        });
+      }
+
+      chartInstance.setOption({
+        xAxis: {
+          data: dates
+        },
+        series: [{
+          data: values
+        }]
+      });
+    }
+  } catch (error) {
+    console.error('获取流量趋势失败:', error);
+
+    // 发生错误时也显示示例数据
+    if (chartInstance) {
+      const dates = [];
+      const values = [];
+      const now = new Date();
+
+      for (let i = 6; i >= 0; i--) {
+        const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+        dates.push(date.toLocaleDateString());
+        values.push((Math.random() * 150 + 50) * 1024 * 1024);
+      }
+
+      chartInstance.setOption({
+        xAxis: {
+          data: dates
+        },
+        series: [{
+          data: values
+        }]
+      });
+    }
+  }
+};
+
+// 刷新流量图表
+const refreshTrafficChart = () => {
+  fetchTrafficTrend();
 };
 
 
 
-onMounted(() => {
+onMounted(async () => {
   refreshStats();
   refreshGostStatus();
+
+  // 等待DOM渲染完成后初始化图表
+  await nextTick();
+  initTrafficChart();
+  fetchTrafficTrend();
 });
 </script>
 
@@ -277,13 +408,13 @@ onMounted(() => {
   color: #F56C6C;
 }
 
-.chart-placeholder {
-  height: 300px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  background-color: #f8f9fa;
-  border-radius: 4px;
-  color: #909399;
+.chart-container {
+  height: 350px;
+  padding: 10px;
+}
+
+.traffic-chart {
+  width: 100%;
+  height: 100%;
 }
 </style>

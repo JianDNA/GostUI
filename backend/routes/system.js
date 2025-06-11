@@ -57,14 +57,21 @@ router.get('/status', authenticateToken, async (req, res) => {
 router.get('/gost-status', authenticateToken, async (req, res) => {
   try {
     const gostHealthService = require('../services/gostHealthService');
+    const gostService = require('../services/gostService');
 
-    // 获取健康状态
+    // 获取真正的GOST进程状态
+    const gostStatus = await gostService.getStatus();
+
+    // 获取健康检查状态
     const healthStatus = gostHealthService.getHealthStatus();
 
     const status = {
-      isRunning: healthStatus.isRunning || false,
+      isRunning: gostStatus.isRunning || false,  // 使用真正的GOST进程状态
       healthyPorts: healthStatus.healthyPorts || [],
+      apiPort: '18080',
+      observerPort: '18081',
       healthStatus,
+      gostStatus,
       timestamp: new Date().toISOString()
     };
 

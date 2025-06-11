@@ -184,10 +184,5 @@
         "timeout": "10s"
       }
     }
-  ],
-  "api": {
-    "addr": ":18080",
-    "pathPrefix": "/api",
-    "accesslog": false
-  }
+  ]
 }

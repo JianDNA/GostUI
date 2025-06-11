@@ -17,6 +17,8 @@ module.exports = (sequelize) => {
         as: 'forwardRules',
         onDelete: 'CASCADE'  // ✅ 正确：删除用户时级联删除其转发规则
       });
+
+
     }
 
     // 比较密码

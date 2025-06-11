@@ -66,15 +66,6 @@ const routes = [
         }
       },
       {
-        path: '/stats',
-        name: 'Stats',
-        component: TrafficStats,
-        meta: {
-          requiresAuth: true,
-          title: '流量统计'
-        }
-      },
-      {
         path: '/gost-config',
         name: 'GostConfig',
         component: GostConfig,

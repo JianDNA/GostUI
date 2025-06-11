@@ -140,6 +140,9 @@ class GostHealthService {
       } else {
         console.log('✅ GOST 服务健康检查通过');
         this.restartAttempts = 0; // 重置重启计数
+
+        // 🔧 新增：定期验证配置同步状态
+        await this.verifyConfigurationSync(config);
       }
 
     } catch (error) {
@@ -396,6 +399,79 @@ class GostHealthService {
         }
       }, 2000);
     });
+  }
+
+  /**
+   * 🔧 新增：验证GOST配置同步状态
+   * 定期比较GOST实际运行服务与预期配置
+   */
+  async verifyConfigurationSync(expectedConfig) {
+    try {
+      // 每5次健康检查才执行一次配置同步验证（减少频率）
+      if (!this.configSyncCheckCounter) {
+        this.configSyncCheckCounter = 0;
+      }
+      this.configSyncCheckCounter++;
+
+      if (this.configSyncCheckCounter % 5 !== 0) {
+        return; // 跳过本次验证
+      }
+
+      console.log('🔍 开始验证GOST配置同步状态...');
+
+      // 获取GOST实际运行的配置
+      const gostService = require('./gostService');
+      const actualConfig = await gostService.getGostRunningConfig();
+
+      if (!actualConfig) {
+        console.warn('⚠️ 无法获取GOST实际运行配置，跳过同步验证');
+        return;
+      }
+
+      // 比较服务数量
+      const expectedServices = expectedConfig.services || [];
+      const actualServices = actualConfig.services || [];
+
+      if (expectedServices.length !== actualServices.length) {
+        console.warn(`⚠️ 配置同步异常: 期望 ${expectedServices.length} 个服务, 实际运行 ${actualServices.length} 个服务`);
+        await this.handleConfigSyncMismatch(expectedConfig, actualConfig);
+        return;
+      }
+
+      // 比较服务端口
+      const expectedPorts = expectedServices.map(s => s.addr.replace(':', '')).sort();
+      const actualPorts = actualServices.map(s => s.addr.replace(':', '')).sort();
+
+      const portsMatch = JSON.stringify(expectedPorts) === JSON.stringify(actualPorts);
+      if (!portsMatch) {
+        console.warn(`⚠️ 配置同步异常: 期望端口 [${expectedPorts.join(', ')}], 实际端口 [${actualPorts.join(', ')}]`);
+        await this.handleConfigSyncMismatch(expectedConfig, actualConfig);
+        return;
+      }
+
+      console.log(`✅ 配置同步验证通过: ${actualServices.length} 个服务, 端口 [${actualPorts.join(', ')}]`);
+
+    } catch (error) {
+      console.warn('⚠️ 配置同步验证失败:', error.message);
+    }
+  }
+
+  /**
+   * 🔧 新增：处理配置同步不匹配
+   */
+  async handleConfigSyncMismatch(expectedConfig, actualConfig) {
+    try {
+      console.log('🔧 检测到配置同步不匹配，尝试强制同步...');
+
+      // 触发强制配置同步
+      const gostSyncCoordinator = require('./gostSyncCoordinator');
+      await gostSyncCoordinator.requestSync('config_sync_mismatch', true, 8);
+
+      console.log('✅ 强制配置同步已触发');
+
+    } catch (error) {
+      console.error('❌ 处理配置同步不匹配失败:', error);
+    }
   }
 
   /**

@@ -50,17 +50,44 @@
         "userId": 2,
         "username": "test",
         "ruleId": 10,
-        "ruleName": "Test Rule 2",
-        "description": "[配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [紧急禁用: 超配额: 117.2%] [紧急禁用: 超配额: 117.2%] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用]"
+        "ruleName": "6443",
+        "description": ""
       }
     },
     {
-      "name": "forward-tcp-9080",
-      "addr": ":9080",
+      "name": "forward-tcp-15000",
+      "addr": ":15000",
       "observer": "observer-0",
       "handler": {
         "type": "tcp",
-        "chain": "chain-tcp-9080",
+        "chain": "chain-tcp-15000",
+        "observer": "observer-0",
+        "metadata": {
+          "observer.period": "5s",
+          "observer.resetTraffic": true
+        }
+      },
+      "listener": {
+        "type": "tcp"
+      },
+      "metadata": {
+        "enableStats": true,
+        "observer.period": "5s",
+        "observer.resetTraffic": true,
+        "userId": 2,
+        "username": "test",
+        "ruleId": 11,
+        "ruleName": "Test New Rule",
+        "description": null
+      }
+    },
+    {
+      "name": "forward-tcp-29080",
+      "addr": ":29080",
+      "observer": "observer-0",
+      "handler": {
+        "type": "tcp",
+        "chain": "chain-tcp-29080",
         "observer": "observer-0",
         "metadata": {
           "observer.period": "5s",
@@ -78,7 +105,7 @@
         "username": "admin",
         "ruleId": 5,
         "ruleName": "Admin Rule 2",
-        "description": null
+        "description": ""
       }
     }
   ],
@@ -116,10 +143,26 @@
       ]
     },
     {
-      "name": "chain-tcp-9080",
+      "name": "chain-tcp-15000",
       "hops": [
         {
           "name": "hop-2",
+          "nodes": [
+            {
+              "addr": "127.0.0.1:3000",
+              "connector": {
+                "type": "tcp"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "chain-tcp-29080",
+      "hops": [
+        {
+          "name": "hop-3",
           "nodes": [
             {
               "addr": "127.0.0.1:3000",

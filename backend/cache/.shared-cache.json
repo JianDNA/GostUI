@@ -7,17 +7,17 @@
       "expiryDate": null,
       "trafficQuota": null,
       "trafficLimitBytes": 0,
-      "usedTraffic": 1889288,
+      "usedTraffic": 106747989,
       "status": "active",
       "portRanges": [],
       "isActive": true,
-      "lastUpdate": 1749622534934
+      "lastUpdate": 1749630313727
     },
     "2": {
       "id": 2,
       "username": "test",
       "role": "user",
-      "expiryDate": null,
+      "expiryDate": "2025-08-09T00:00:00.000Z",
       "trafficQuota": 0.5,
       "trafficLimitBytes": 536870912,
       "usedTraffic": 0,
@@ -25,11 +25,11 @@
       "portRanges": [
         {
           "start": 2000,
-          "end": 6499
+          "end": 16500
         }
       ],
       "isActive": true,
-      "lastUpdate": 1749622534934
+      "lastUpdate": 1749630313727
     }
   },
   "portMapping": {
@@ -43,15 +43,21 @@
       "userId": 2,
       "username": "test",
       "ruleId": 10,
-      "ruleName": "Test Rule 2"
+      "ruleName": "6443"
     },
-    "9080": {
+    "15000": {
+      "userId": 2,
+      "username": "test",
+      "ruleId": 11,
+      "ruleName": "Test New Rule"
+    },
+    "29080": {
       "userId": 1,
       "username": "admin",
       "ruleId": 5,
       "ruleName": "Admin Rule 2"
     }
   },
-  "lastUpdate": 1749622534934,
+  "lastUpdate": 1749630313728,
   "updatedBy": "0"
 }

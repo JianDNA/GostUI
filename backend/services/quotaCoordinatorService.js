@@ -47,6 +47,36 @@ class QuotaCoordinatorService {
       // 执行实际的配额检查
       const result = await this.performQuotaCheck(userId, trigger);
 
+      // 🔧 新增：强制同步机制 - 关键场景必须立即生效
+      if (!result.allowed && result.needsRuleUpdate) {
+        console.log(`🚨 [配额协调] 触发强制同步: 用户 ${userId}, 原因: ${result.reason}`);
+
+        // 确定触发类型
+        let syncTrigger = 'user_violation';
+        if (result.reason.includes('user_expired')) {
+          syncTrigger = 'user_expired';
+        } else if (result.reason.includes('quota_exceeded')) {
+          syncTrigger = 'emergency_quota_disable';
+        } else if (result.reason.includes('user_inactive')) {
+          syncTrigger = 'user_suspended';
+        }
+
+        try {
+          const gostSyncCoordinator = require('./gostSyncCoordinator');
+
+          // 使用最高优先级和强制模式，确保立即生效
+          await gostSyncCoordinator.requestSync(
+            syncTrigger,
+            true, // 强制更新
+            10    // 最高优先级
+          );
+
+          console.log(`✅ [配额协调] 强制同步已触发: 用户 ${userId}, 类型: ${syncTrigger}`);
+        } catch (syncError) {
+          console.error(`❌ [配额协调] 强制同步失败: 用户 ${userId}`, syncError);
+        }
+      }
+
       // 缓存结果
       this.quotaStates.set(userId, result);
 

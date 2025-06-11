@@ -2,7 +2,7 @@
   "version": "1.0.0",
   "description": "Gost 端口安全策略配置",
   "lastUpdated": "2025-06-10",
-  
+
   "security": {
     "enablePortRestrictions": true,
     "allowPrivilegedPorts": false,
@@ -20,7 +20,7 @@
         {"start": 1, "end": 1023, "description": "特权端口范围"}
       ]
     },
-    
+
     "application": {
       "description": "应用服务端口",
       "ports": [3000, 8080, 8443, 9000, 9090],
@@ -30,22 +30,22 @@
         "excludeOwn": true
       }
     },
-    
+
     "database": {
       "description": "数据库服务端口",
       "ports": [3306, 5432, 6379, 27017, 1433, 1521, 5984, 9200, 9300]
     },
-    
+
     "monitoring": {
       "description": "监控和管理端口",
       "ports": [2375, 2376, 4243, 8086, 9090, 9093, 9100, 3000, 8080]
     },
-    
+
     "security": {
       "description": "安全相关端口",
       "ports": [389, 636, 88, 464, 749, 750, 751, 752, 754, 760]
     },
-    
+
     "development": {
       "description": "开发工具端口",
       "ports": [3001, 4000, 5000, 5173, 8000, 8081, 8082, 8083, 8084, 8085, 9229]
@@ -67,6 +67,16 @@
     ]
   },
 
+  "specialPorts": {
+    "description": "特殊端口配置",
+    "testing": {
+      "description": "测试专用端口，普通用户也可使用",
+      "ports": [6443],
+      "allowedRoles": ["user", "admin"],
+      "note": "这些端口专门用于测试目的"
+    }
+  },
+
   "specialRules": {
     "description": "特殊规则配置",
     "apiBypass": {
@@ -75,13 +85,13 @@
       "ports": [3000],
       "paths": ["/api", "/health", "/metrics"]
     },
-    
+
     "internalServices": {
       "description": "内部服务绕过限制",
       "enabled": true,
       "services": ["gost-health", "gost-api", "cache-sync"]
     },
-    
+
     "temporaryPorts": {
       "description": "临时端口分配",
       "enabled": true,
@@ -122,11 +132,12 @@
       "portReserved": "端口 {port} 是系统保留端口，不允许使用",
       "portInUse": "端口 {port} 已被其他服务占用",
       "portOutOfRange": "端口 {port} 超出允许范围 ({min}-{max})",
+      "portNotInUserRange": "端口 {port} 不在用户允许范围内。用户端口范围：{userRanges}，管理员端口范围：{adminRanges}",
       "quotaExceeded": "用户端口配额已满，最多允许 {max} 个端口",
       "privilegedPort": "端口 {port} 是特权端口，需要管理员权限",
       "invalidPort": "无效的端口号: {port}"
     },
-    
+
     "warnings": {
       "commonPort": "端口 {port} 是常用服务端口，建议使用其他端口",
       "developmentPort": "端口 {port} 通常用于开发环境，生产环境请谨慎使用"
@@ -140,7 +151,7 @@
       {"start": 20000, "end": 20999, "description": "安全端口范围2"},
       {"start": 30000, "end": 30999, "description": "安全端口范围3"}
     ],
-    
+
     "suggestions": {
       "web": [8888, 9999, 10080, 20080, 30080],
       "api": [10000, 20000, 30000],

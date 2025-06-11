@@ -292,8 +292,13 @@ class GostConfigService {
           await gostService.forceRestart(true);
           console.log('✅ GOST服务强制重启完成，所有连接已断开');
         } else {
-          // 使用原有的 updateConfig 方法（热加载），保持兼容性
-          await gostService.updateConfig(config);
+          // 🔧 传递触发信息给热加载方法
+          const hotReloadOptions = {
+            trigger: options.trigger || 'config_update',
+            force: options.force || false
+          };
+
+          await gostService.updateConfig(config, hotReloadOptions);
           console.log('Gost 服务配置更新成功');
         }
       } catch (gostError) {

@@ -78,6 +78,7 @@ module.exports = (sequelize) => {
     /**
      * 计算规则是否应该激活（计算属性）
      * 这是唯一的 isActive 判断逻辑，替代了数据库字段
+     * 包含所有检查：基本状态、过期时间、端口范围、流量配额
      * @returns {boolean} 规则是否应该激活
      */
     get isActive() {
@@ -86,13 +87,14 @@ module.exports = (sequelize) => {
 
     /**
      * 计算规则是否应该激活（计算属性）
-     * 这是一个同步方法，用于快速判断基本状态
+     * 这是一个同步方法，包含所有必要的检查
      * @returns {boolean} 规则是否应该激活
      */
     getComputedIsActive() {
-      // 如果没有关联用户信息，默认激活（需要在查询时包含用户信息）
+      // 如果没有关联用户信息，无法进行状态检查，返回 false
       if (!this.user) {
-        return true;
+        console.warn(`⚠️ 规则 ${this.name || this.id} 缺少用户关联信息，无法计算 isActive 状态`);
+        return false;
       }
 
       const user = this.user;
@@ -108,12 +110,14 @@ module.exports = (sequelize) => {
       }
 
       // 3. 检查端口是否在用户允许范围内（Admin用户不受限制）
-      if (user.role !== 'admin' && !user.isPortInRange(this.sourcePort)) {
+      if (user.role !== 'admin' && user.isPortInRange && !user.isPortInRange(this.sourcePort)) {
         return false;
       }
 
-      // 4. 配额检查由配额强制执行服务异步处理，这里先返回true
-      // 避免在模型层进行异步操作，保持计算属性的同步性
+      // 4. 检查流量配额（Admin用户不受限制）
+      if (user.role !== 'admin' && user.isTrafficExceeded && user.isTrafficExceeded()) {
+        return false;
+      }
 
       return true;
     }

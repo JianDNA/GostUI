@@ -85,20 +85,34 @@ class PortSecurityService {
       result.errors.push(this.formatMessage('privilegedPort', { port }));
     }
 
-    // 4. 保留端口检查
-    if (this.isReservedPort(port)) {
+    // 4. 保留端口检查（使用详细描述）
+    const reservedCheck = this.isReservedPort(port);
+    if (reservedCheck.reserved) {
       result.valid = false;
-      result.errors.push(this.formatMessage('portReserved', { port }));
+      result.errors.push(reservedCheck.detail);
     }
 
-    // 5. 端口范围检查
+    // 5. 端口范围检查（使用详细描述）
     if (!this.isInAllowedRange(port, userRole)) {
       result.valid = false;
-      result.errors.push(this.formatMessage('portOutOfRange', {
-        port,
-        min: this.config.security.portRangeMin,
-        max: this.config.security.portRangeMax
-      }));
+
+      // 生成更详细的错误信息，包含范围描述
+      const userRanges = this.config.allowedRanges.user.map(r =>
+        `${r.start}-${r.end}(${r.description})`
+      ).join(', ');
+      const adminRanges = this.config.allowedRanges.admin.map(r =>
+        `${r.start}-${r.end}(${r.description})`
+      ).join(', ');
+
+      // 检查是否为特殊端口但角色不匹配
+      const specialPorts = this.config.specialPorts;
+      if (specialPorts && specialPorts.testing && specialPorts.testing.ports.includes(port)) {
+        if (!specialPorts.testing.allowedRoles.includes(userRole)) {
+          result.errors.push(`端口 ${port} 是${specialPorts.testing.description}，但您的角色 (${userRole}) 无权使用。允许的角色：${specialPorts.testing.allowedRoles.join(', ')}`);
+        }
+      } else {
+        result.errors.push(`端口 ${port} 不在允许范围内。用户端口范围：${userRanges}；管理员端口范围：${adminRanges}`);
+      }
     }
 
     // 6. 端口占用检查
@@ -134,27 +148,44 @@ class PortSecurityService {
 
   /**
    * 检查是否为保留端口
+   * @param {number} port - 端口号
+   * @returns {Object} - {reserved: boolean, category: string, description: string, detail: string}
    */
   isReservedPort(port) {
     const reserved = this.config.reservedPorts;
 
     // 检查各类保留端口
-    for (const category of Object.values(reserved)) {
+    for (const [categoryName, category] of Object.entries(reserved)) {
       if (category.ports && category.ports.includes(port)) {
-        return true;
+        return {
+          reserved: true,
+          category: categoryName,
+          description: category.description,
+          detail: `端口 ${port} 是${category.description}，禁止用户使用`
+        };
       }
 
       // 检查端口范围
       if (category.ranges) {
         for (const range of category.ranges) {
           if (port >= range.start && port <= range.end) {
-            return true;
+            return {
+              reserved: true,
+              category: categoryName,
+              description: range.description || category.description,
+              detail: `端口 ${port} 属于${range.description || category.description}，禁止用户使用`
+            };
           }
         }
       }
     }
 
-    return false;
+    return {
+      reserved: false,
+      category: null,
+      description: null,
+      detail: null
+    };
   }
 
   /**
@@ -164,10 +195,31 @@ class PortSecurityService {
     const allowedRanges = this.config.allowedRanges;
     const ranges = allowedRanges[userRole] || allowedRanges.user;
 
+    // 首先检查常规端口范围
     for (const range of ranges) {
       if (port >= range.start && port <= range.end) {
         return true;
       }
+    }
+
+    // 检查特殊端口（如测试端口）
+    if (this.isSpecialPort(port, userRole)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * 检查是否为特殊端口（如测试端口）
+   */
+  isSpecialPort(port, userRole) {
+    const specialPorts = this.config.specialPorts;
+    if (!specialPorts) return false;
+
+    // 检查测试端口
+    if (specialPorts.testing && specialPorts.testing.ports.includes(port)) {
+      return specialPorts.testing.allowedRoles.includes(userRole);
     }
 
     return false;
@@ -223,13 +275,13 @@ class PortSecurityService {
     // 常用端口警告
     const commonPorts = [80, 443, 8080, 8443, 3000, 5000, 8000, 9000];
     if (commonPorts.includes(port)) {
-      result.warnings.push(this.formatMessage('commonPort', { port }));
+      result.warnings.push(this.formatWarningMessage('commonPort', { port }));
     }
 
     // 开发端口警告
     const devPorts = [3001, 4000, 5000, 5173, 8000, 8081, 9229];
     if (devPorts.includes(port)) {
-      result.warnings.push(this.formatMessage('developmentPort', { port }));
+      result.warnings.push(this.formatWarningMessage('developmentPort', { port }));
     }
 
     // 添加端口建议
@@ -258,6 +310,21 @@ class PortSecurityService {
   formatMessage(messageKey, params = {}) {
     const messages = this.config.messages?.errors || {};
     let message = messages[messageKey] || `未知错误: ${messageKey}`;
+
+    // 替换参数
+    for (const [key, value] of Object.entries(params)) {
+      message = message.replace(new RegExp(`\\{${key}\\}`, 'g'), value);
+    }
+
+    return message;
+  }
+
+  /**
+   * 格式化警告消息
+   */
+  formatWarningMessage(messageKey, params = {}) {
+    const messages = this.config.messages?.warnings || {};
+    let message = messages[messageKey] || `未知警告: ${messageKey}`;
 
     // 替换参数
     for (const [key, value] of Object.entries(params)) {

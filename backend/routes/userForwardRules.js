@@ -316,7 +316,7 @@ router.get('/', auth, async (req, res) => {
         include: [{
           model: User,
           as: 'user',
-          attributes: ['id', 'username', 'portRangeStart', 'portRangeEnd', 'expiryDate']
+          attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'portRangeStart', 'portRangeEnd', 'expiryDate', 'trafficQuota', 'usedTraffic']
         }],
         order: [['createdAt', 'DESC']]
       });
@@ -473,12 +473,13 @@ router.post('/', auth, async (req, res) => {
       });
     }
 
-    // 检查端口范围（保留原有逻辑作为备用）
-    if (user.role !== 'admin' && !user.isPortInRange(sourcePort)) {
-      return res.status(400).json({
-        message: `端口 ${sourcePort} 不在允许的端口范围内 (${user.portRangeStart}-${user.portRangeEnd})`
-      });
-    }
+    // 🔧 端口安全服务优先级高于用户端口范围，已在上面检查过，这里不再重复检查
+    // 注释掉原有的用户端口范围检查，以端口安全服务为准
+    // if (user.role !== 'admin' && !user.isPortInRange(sourcePort)) {
+    //   return res.status(400).json({
+    //     message: `端口 ${sourcePort} 不在允许的端口范围内 (${user.portRangeStart}-${user.portRangeEnd})`
+    //   });
+    // }
 
     // 验证目标地址
     try {
@@ -525,14 +526,22 @@ router.post('/', auth, async (req, res) => {
       }]
     });
 
-    // 触发 Gost 配置同步（使用统一协调器）
+    // 🔧 修复：创建规则后强制立即同步GOST配置
     try {
       const gostSyncCoordinator = require('../services/gostSyncCoordinator');
-      gostSyncCoordinator.requestSync('rule_create', false, 8).catch(error => {
-        console.error('创建规则后同步配置失败:', error);
-      });
+      console.log(`➕ 创建规则 ${createdRule.name} (端口${createdRule.sourcePort})，触发强制同步`);
+
+      // 使用await等待同步完成，确保GOST立即更新
+      const syncResult = await gostSyncCoordinator.requestSync('rule_create', true, 9);
+
+      if (syncResult.success) {
+        console.log(`✅ 创建规则后GOST同步成功: ${createdRule.name}`);
+      } else {
+        console.error(`❌ 创建规则后GOST同步失败: ${createdRule.name}`, syncResult.error);
+      }
     } catch (error) {
-      console.error('触发配置同步失败:', error);
+      console.error('创建规则后触发配置同步失败:', error);
+      // 即使同步失败，也不影响创建操作的成功响应
     }
 
     res.status(201).json(createdRule);
@@ -580,11 +589,34 @@ router.put('/:id', auth, async (req, res) => {
       return res.status(403).json({ message: '用户已过期，无法修改转发规则' });
     }
 
-    // 检查端口范围（如果修改了端口且目标用户非管理员）
-    if (sourcePort && rule.user.role !== 'admin' && !rule.user.isPortInRange(sourcePort)) {
-      return res.status(400).json({
-        message: `端口 ${sourcePort} 不在允许的端口范围内 (${rule.user.portRangeStart}-${rule.user.portRangeEnd})`
-      });
+    // 🔒 端口安全验证（如果修改了端口）
+    if (sourcePort && sourcePort !== rule.sourcePort) {
+      try {
+        const portValidation = await portSecurityService.validatePort(
+          sourcePort,
+          rule.user.role,
+          rule.userId
+        );
+
+        if (!portValidation.valid) {
+          return res.status(400).json({
+            message: '端口安全验证失败',
+            errors: portValidation.errors,
+            warnings: portValidation.warnings,
+            suggestions: portValidation.suggestions
+          });
+        }
+
+        // 如果有警告，记录到日志
+        if (portValidation.warnings.length > 0) {
+          console.log(`⚠️ 端口 ${sourcePort} 安全警告:`, portValidation.warnings);
+        }
+      } catch (portSecurityError) {
+        console.error('端口安全验证异常:', portSecurityError);
+        return res.status(500).json({
+          message: '端口安全验证服务异常，请稍后重试'
+        });
+      }
     }
 
     // 如果修改了端口，检查是否冲突
@@ -619,18 +651,26 @@ router.put('/:id', auth, async (req, res) => {
       include: [{
         model: User,
         as: 'user',
-        attributes: ['id', 'username', 'portRangeStart', 'portRangeEnd', 'expiryDate']
+        attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'portRangeStart', 'portRangeEnd', 'expiryDate', 'trafficQuota', 'usedTraffic']
       }]
     });
 
-    // 触发 Gost 配置同步（使用统一协调器）
+    // 🔧 修复：更新规则后强制立即同步GOST配置
     try {
       const gostSyncCoordinator = require('../services/gostSyncCoordinator');
-      gostSyncCoordinator.requestSync('rule_update', false, 8).catch(error => {
-        console.error('更新规则后同步配置失败:', error);
-      });
+      console.log(`📝 更新规则 ${updatedRule.name} (端口${updatedRule.sourcePort})，触发强制同步`);
+
+      // 使用await等待同步完成，确保GOST立即更新
+      const syncResult = await gostSyncCoordinator.requestSync('rule_update', true, 9);
+
+      if (syncResult.success) {
+        console.log(`✅ 更新规则后GOST同步成功: ${updatedRule.name}`);
+      } else {
+        console.error(`❌ 更新规则后GOST同步失败: ${updatedRule.name}`, syncResult.error);
+      }
     } catch (error) {
-      console.error('触发配置同步失败:', error);
+      console.error('更新规则后触发配置同步失败:', error);
+      // 即使同步失败，也不影响更新操作的成功响应
     }
 
     // 添加计算属性到返回数据
@@ -661,14 +701,22 @@ router.delete('/:id', auth, async (req, res) => {
 
     await rule.destroy();
 
-    // 触发 Gost 配置同步（使用统一协调器）
+    // 🔧 修复：删除规则后强制立即同步GOST配置
     try {
       const gostSyncCoordinator = require('../services/gostSyncCoordinator');
-      gostSyncCoordinator.requestSync('rule_delete', false, 8).catch(error => {
-        console.error('删除规则后同步配置失败:', error);
-      });
+      console.log(`🗑️ 删除规则 ${rule.name} (端口${rule.sourcePort})，触发强制同步`);
+
+      // 使用await等待同步完成，确保GOST立即更新
+      const syncResult = await gostSyncCoordinator.requestSync('rule_delete', true, 9);
+
+      if (syncResult.success) {
+        console.log(`✅ 删除规则后GOST同步成功: ${rule.name}`);
+      } else {
+        console.error(`❌ 删除规则后GOST同步失败: ${rule.name}`, syncResult.error);
+      }
     } catch (error) {
-      console.error('触发配置同步失败:', error);
+      console.error('删除规则后触发配置同步失败:', error);
+      // 即使同步失败，也不影响删除操作的成功响应
     }
 
     res.status(204).send();
@@ -773,15 +821,23 @@ router.post('/batch-delete', auth, async (req, res) => {
       where: { id: { [Op.in]: ids } }
     });
 
-    // 触发 Gost 配置同步
+    // 🔧 修复：批量删除规则后强制立即同步GOST配置
     if (deletedCount > 0) {
       try {
-        const gostConfigService = require('../services/gostConfigService');
-        gostConfigService.triggerSync().catch(error => {
-          console.error('批量删除规则后同步配置失败:', error);
-        });
+        const gostSyncCoordinator = require('../services/gostSyncCoordinator');
+        console.log(`🗑️ 批量删除 ${deletedCount} 个规则，触发强制同步`);
+
+        // 使用await等待同步完成，确保GOST立即更新
+        const syncResult = await gostSyncCoordinator.requestSync('batch_rule_delete', true, 9);
+
+        if (syncResult.success) {
+          console.log(`✅ 批量删除规则后GOST同步成功，删除数量: ${deletedCount}`);
+        } else {
+          console.error(`❌ 批量删除规则后GOST同步失败，删除数量: ${deletedCount}`, syncResult.error);
+        }
       } catch (error) {
-        console.error('触发配置同步失败:', error);
+        console.error('批量删除规则后触发配置同步失败:', error);
+        // 即使同步失败，也不影响删除操作的成功响应
       }
     }
 

@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
 const { User, UserForwardRule } = require('../models');
@@ -551,13 +551,32 @@ router.post('/:id/extend-expiry', auth, async (req, res) => {
     const newExpiry = new Date(currentExpiry);
     newExpiry.setMonth(newExpiry.getMonth() + months);
 
-    await user.update({ expiryDate: newExpiry });
+    // 🔧 修复：延长过期时间时，同时恢复用户状态
+    const updateData = { expiryDate: newExpiry };
+    const oldStatus = user.userStatus;
+
+    // 如果用户因为过期被暂停，恢复为active状态
+    if (user.userStatus === 'suspended' || user.userStatus === 'expired') {
+      updateData.userStatus = 'active';
+      console.log(`🔄 延长过期时间：用户状态从 ${oldStatus} 恢复为 active`);
+    }
+
+    await user.update(updateData);
+
+    // 🔧 新增：触发强制同步，确保转发规则立即生效
+    try {
+      const gostSyncCoordinator = require('../services/gostSyncCoordinator');
+      await gostSyncCoordinator.requestSync('user_expiry_extended', true, 9);
+      console.log(`✅ 用户 ${user.username} 过期时间延长后，已触发强制同步`);
+    } catch (syncError) {
+      console.error('延长过期时间后同步失败:', syncError);
+    }
 
     const { password, token, ...userResponse } = user.toJSON();
     res.json({
       ...userResponse,
       isExpired: user.isExpired(),
-      message: `成功延长 ${months} 个月，新过期时间：${newExpiry.toLocaleDateString()}`
+      message: `成功延长 ${months} 个月，新过期时间：${newExpiry.toLocaleDateString()}${oldStatus !== user.userStatus ? `，用户状态已从 ${oldStatus} 恢复为 ${user.userStatus}` : ''}`
     });
   } catch (error) {
     console.error('Extend user expiry error:', error);

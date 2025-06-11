@@ -1168,8 +1168,8 @@ class GostService {
     return null;
   }
 
-  // 🔥 新增：GOST热加载方法 (高性能，无重启)
-  async hotReloadConfig(newConfig) {
+  // 🔥 新增：GOST热加载方法 (高性能，无重启) - 增强版
+  async hotReloadConfig(newConfig, options = {}) {
     try {
       console.log('🔥 开始GOST热加载配置...');
 
@@ -1178,15 +1178,19 @@ class GostService {
       const configChanged = this.isConfigurationChanged(currentConfig, newConfig);
 
       // 强制更新模式：某些关键场景必须更新
-      const forceUpdate = process.env.FORCE_GOST_UPDATE === 'true';
+      const forceUpdate = process.env.FORCE_GOST_UPDATE === 'true' || options.force;
 
-      if (!configChanged && !forceUpdate) {
+      // 🔧 新增：用户过期等关键场景强制同步
+      const criticalScenarios = ['user_expired', 'emergency_quota_disable', 'traffic_reset'];
+      const isCriticalUpdate = options.trigger && criticalScenarios.includes(options.trigger);
+
+      if (!configChanged && !forceUpdate && !isCriticalUpdate) {
         console.log('📋 配置无变化，跳过热加载');
         return false;
       }
 
-      if (forceUpdate && !configChanged) {
-        console.log('🔥 强制更新模式，即使配置无变化也执行热加载');
+      if ((forceUpdate || isCriticalUpdate) && !configChanged) {
+        console.log(`🔥 ${isCriticalUpdate ? '关键场景' : '强制更新'}模式，即使配置无变化也执行热加载 (触发源: ${options.trigger || 'manual'})`);
       }
 
       console.log('📝 配置发生变化，执行热加载...');
@@ -1258,6 +1262,15 @@ class GostService {
           });
 
           if (success) {
+            // 🔧 新增：热加载后验证配置同步状态
+            const verificationResult = await this.verifyConfigSync(configWithAPI);
+            if (!verificationResult.success) {
+              console.warn('⚠️ 热加载后配置验证失败，强制重启GOST服务');
+              console.warn('验证失败原因:', verificationResult.reason);
+              await this.forceRestart(true);
+              return true;
+            }
+            console.log('✅ 热加载后配置验证通过');
             return true;
           } else {
             console.warn('⚠️ 热加载失败，强制重启GOST服务以确保配置生效');
@@ -1283,13 +1296,149 @@ class GostService {
     }
   }
 
+  // 🔧 新增：验证GOST实际运行状态与配置文件一致性
+  async verifyConfigSync(expectedConfig, maxRetries = 3) {
+    try {
+      console.log('🔍 开始验证GOST配置同步状态...');
+
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          // 等待一段时间让GOST完成配置加载
+          if (attempt > 1) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+
+          // 获取GOST实际运行的配置
+          const actualConfig = await this.getGostRunningConfig();
+          if (!actualConfig) {
+            console.warn(`⚠️ 验证尝试 ${attempt}/${maxRetries}: 无法获取GOST运行配置`);
+            continue;
+          }
+
+          // 比较服务数量
+          const expectedServices = expectedConfig.services || [];
+          const actualServices = actualConfig.services || [];
+
+          if (expectedServices.length !== actualServices.length) {
+            console.warn(`⚠️ 验证尝试 ${attempt}/${maxRetries}: 服务数量不匹配 - 期望: ${expectedServices.length}, 实际: ${actualServices.length}`);
+            if (attempt === maxRetries) {
+              return {
+                success: false,
+                reason: `服务数量不匹配: 期望 ${expectedServices.length}, 实际 ${actualServices.length}`
+              };
+            }
+            continue;
+          }
+
+          // 比较服务端口
+          const expectedPorts = expectedServices.map(s => s.addr.replace(':', '')).sort();
+          const actualPorts = actualServices.map(s => s.addr.replace(':', '')).sort();
+
+          const portsMatch = JSON.stringify(expectedPorts) === JSON.stringify(actualPorts);
+          if (!portsMatch) {
+            console.warn(`⚠️ 验证尝试 ${attempt}/${maxRetries}: 端口不匹配 - 期望: [${expectedPorts.join(', ')}], 实际: [${actualPorts.join(', ')}]`);
+            if (attempt === maxRetries) {
+              return {
+                success: false,
+                reason: `端口不匹配: 期望 [${expectedPorts.join(', ')}], 实际 [${actualPorts.join(', ')}]`
+              };
+            }
+            continue;
+          }
+
+          console.log(`✅ 验证成功 (尝试 ${attempt}/${maxRetries}): GOST配置已正确同步`);
+          console.log(`📊 同步状态: ${actualServices.length} 个服务, 端口: [${actualPorts.join(', ')}]`);
+          return { success: true };
+
+        } catch (error) {
+          console.warn(`⚠️ 验证尝试 ${attempt}/${maxRetries} 异常:`, error.message);
+          if (attempt === maxRetries) {
+            return {
+              success: false,
+              reason: `验证异常: ${error.message}`
+            };
+          }
+        }
+      }
+
+      return {
+        success: false,
+        reason: `验证失败: 超过最大重试次数 ${maxRetries}`
+      };
+
+    } catch (error) {
+      console.error('❌ 配置同步验证失败:', error);
+      return {
+        success: false,
+        reason: `验证异常: ${error.message}`
+      };
+    }
+  }
+
+  // 🔧 新增：获取GOST实际运行的配置
+  async getGostRunningConfig() {
+    try {
+      const http = require('http');
+
+      return new Promise((resolve, reject) => {
+        const options = {
+          hostname: 'localhost',
+          port: 18080,
+          path: '/api/config',
+          method: 'GET',
+          timeout: 3000
+        };
+
+        const req = http.request(options, (res) => {
+          let data = '';
+
+          res.on('data', (chunk) => {
+            data += chunk;
+          });
+
+          res.on('end', () => {
+            try {
+              if (res.statusCode === 200) {
+                const config = JSON.parse(data);
+                resolve(config);
+              } else {
+                console.warn(`获取GOST运行配置失败，状态码: ${res.statusCode}`);
+                resolve(null);
+              }
+            } catch (error) {
+              console.warn('解析GOST运行配置失败:', error.message);
+              resolve(null);
+            }
+          });
+        });
+
+        req.on('error', (error) => {
+          console.warn('获取GOST运行配置异常:', error.message);
+          resolve(null);
+        });
+
+        req.on('timeout', () => {
+          console.warn('获取GOST运行配置超时');
+          req.destroy();
+          resolve(null);
+        });
+
+        req.end();
+      });
+
+    } catch (error) {
+      console.warn('获取GOST运行配置异常:', error.message);
+      return null;
+    }
+  }
+
   // 更新配置文件（优化版本 - 使用热加载）
-  async updateConfig(newConfig) {
+  async updateConfig(newConfig, options = {}) {
     try {
       console.log('🔄 开始更新GOST配置...');
 
-      // 🔧 优先使用热加载
-      return await this.hotReloadConfig(newConfig);
+      // 🔧 优先使用热加载，传递选项参数
+      return await this.hotReloadConfig(newConfig, options);
 
     } catch (error) {
       console.error('❌ 更新GOST配置失败:', error);

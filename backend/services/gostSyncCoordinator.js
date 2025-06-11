@@ -116,7 +116,7 @@ class GostSyncCoordinator {
    * 检查是否应该跳过同步
    */
   shouldSkipSync(trigger) {
-    // 强制触发源不跳过（包括紧急配额禁用）
+    // 强制触发源不跳过（包括紧急配额禁用、规则CRUD操作）
     const forceTriggers = [
       'manual',
       'force',
@@ -124,7 +124,12 @@ class GostSyncCoordinator {
       'emergency_quota_disable',  // 🔧 确保紧急配额禁用永不被跳过
       'quota_reset',
       'rule_disable',
-      'rule_enable'
+      'rule_enable',
+      'rule_create',              // 🔧 确保规则创建永不被跳过
+      'rule_update',              // 🔧 确保规则更新永不被跳过
+      'rule_delete',              // 🔧 确保规则删除永不被跳过
+      'batch_rule_delete',        // 🔧 确保批量规则删除永不被跳过
+      'user_expiry_extended'      // 🔧 确保用户过期时间延长永不被跳过
     ];
     if (forceTriggers.includes(trigger)) {
       return false;
@@ -242,12 +247,17 @@ class GostSyncCoordinator {
       // 强制更新的关键场景
       const forceUpdateScenarios = [
         'emergency_quota_disable',
-        'traffic_reset',  // 🔧 添加流量重置场景
-        'quota_update',   // 🔧 添加配额更新场景
+        'traffic_reset',        // 🔧 添加流量重置场景
+        'quota_update',         // 🔧 添加配额更新场景
         'manual',
         'quota_reset',
         'rule_disable',
-        'rule_enable'
+        'rule_enable',
+        'rule_create',          // 🔧 添加规则创建场景
+        'rule_update',          // 🔧 添加规则更新场景
+        'rule_delete',          // 🔧 添加规则删除场景
+        'batch_rule_delete',    // 🔧 添加批量规则删除场景
+        'user_expiry_extended'  // 🔧 添加用户过期时间延长场景
       ];
 
       const shouldForceUpdate = request.force || forceUpdateScenarios.includes(request.trigger);
@@ -280,9 +290,16 @@ class GostSyncCoordinator {
       // 更新GOST服务
       if (needsForceRestart) {
         console.log(`🚨 [同步协调] ${request.trigger}：使用强制重启模式: ${request.id}`);
-        await gostConfigService.updateGostService(newConfig, { forceRestart: true });
+        await gostConfigService.updateGostService(newConfig, {
+          forceRestart: true,
+          trigger: request.trigger,
+          force: request.force
+        });
       } else {
-        await gostConfigService.updateGostService(newConfig);
+        await gostConfigService.updateGostService(newConfig, {
+          trigger: request.trigger,
+          force: request.force
+        });
       }
 
       console.log(`🔄 [同步协调] 配置已更新: ${request.id}, 服务数: ${newConfig.services.length}`);

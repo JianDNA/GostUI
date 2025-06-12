@@ -228,28 +228,44 @@
     <el-dialog
       :title="editingRule ? '编辑规则' : '创建规则'"
       v-model="showCreateDialog"
-      width="600px"
+      width="700px"
       @close="resetForm"
     >
       <el-form
         ref="ruleFormRef"
         :model="ruleForm"
         :rules="ruleRules"
-        label-width="100px"
+        label-width="120px"
       >
         <el-form-item label="规则名称" prop="name">
           <el-input v-model="ruleForm.name" placeholder="请输入规则名称" />
         </el-form-item>
 
+        <el-form-item label="监听地址" prop="listenAddressType">
+          <el-radio-group v-model="ruleForm.listenAddressType" @change="onListenAddressTypeChange">
+            <el-radio label="ipv4">IPv4 ({{ networkInfo.recommendedIPv4 || '127.0.0.1' }})</el-radio>
+            <el-radio label="ipv6" :disabled="!networkInfo.ipv6Supported">
+              IPv6 ({{ networkInfo.recommendedIPv6 || '::1' }})
+              <span v-if="!networkInfo.ipv6Supported" class="disabled-hint">系统不支持</span>
+            </el-radio>
+          </el-radio-group>
+          <div class="form-tip">
+            选择规则监听的网络协议类型。IPv4适用于大多数情况，IPv6需要系统支持。
+          </div>
+        </el-form-item>
+
         <el-form-item label="源端口" prop="sourcePort">
           <el-input-number
             v-model="ruleForm.sourcePort"
-            :min="currentUserPortRange.start || 1"
-            :max="currentUserPortRange.end || 65535"
+            :min="isAdmin ? 1 : (currentUserPortRange.start || 1)"
+            :max="isAdmin ? 65535 : (currentUserPortRange.end || 65535)"
             placeholder="请输入源端口"
             style="width: 100%"
           />
-          <div class="form-tip" v-if="currentUserPortRange.start && currentUserPortRange.end">
+          <div class="form-tip" v-if="isAdmin">
+            管理员权限：可使用任意端口 (1-65535)
+          </div>
+          <div class="form-tip" v-else-if="currentUserPortRange.start && currentUserPortRange.end">
             可用端口范围: {{ currentUserPortRange.start }}-{{ currentUserPortRange.end }}
           </div>
         </el-form-item>
@@ -257,12 +273,17 @@
         <el-form-item label="目标地址" prop="targetAddress">
           <el-input
             v-model="ruleForm.targetAddress"
-            placeholder="例如: 192.168.1.1:8080 或 [::1]:8080 或 example.com:80"
+            placeholder="例如: 8.8.8.8:80 或 example.com:80"
             @blur="validateTargetAddress"
           />
           <div class="form-tip">
-            支持 IPv4:端口、[IPv6]:端口 或 域名:端口 格式<br>
-            内网地址端口受限制，公网地址端口自由
+            支持 IPv4:端口、[IPv6]:端口 或 域名:端口 格式
+          </div>
+          <div class="form-tip" v-if="!isAdmin" style="color: #f56c6c;">
+            普通用户不能转发本地地址 (127.0.0.1, localhost, ::1)，请使用公网IPv4地址，如 8.8.8.8、1.1.1.1 等
+          </div>
+          <div class="form-tip" v-if="isAdmin" style="color: #67c23a;">
+            管理员权限：可以转发任何地址
           </div>
         </el-form-item>
 
@@ -300,7 +321,7 @@ import { useRoute } from 'vue-router'
 import { useStore } from 'vuex'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Delete, Refresh, InfoFilled } from '@element-plus/icons-vue'
-import api from '@/utils/api'
+import api, { networkConfig, portSecurity } from '@/utils/api'
 
 export default {
   name: 'UserForwardRules',
@@ -322,6 +343,12 @@ export default {
     const editingRule = ref(null)
     const userInfo = ref(null)
     const ruleFormRef = ref(null)
+    const networkInfo = ref({
+      ipv6Supported: false,
+      recommendedIPv4: '127.0.0.1',
+      recommendedIPv6: '::1',
+      supportedListenModes: ['ipv4']
+    })
 
     // 当前用户信息
     const currentUser = computed(() => store.getters['user/currentUser'])
@@ -363,12 +390,42 @@ export default {
       sourcePort: null,
       targetAddress: '',
       protocol: 'tcp',
-      description: ''
+      description: '',
+      listenAddressType: 'ipv4',
+      listenAddress: ''
     })
 
     const userExpired = computed(() => {
       return !isAdmin.value && (userInfo.value?.isExpired || false)
     })
+
+    // 加载网络配置信息
+    const loadNetworkInfo = async () => {
+      try {
+        const response = await networkConfig.getNetworkInfo()
+        if (response.data.success) {
+          networkInfo.value = response.data.data
+          console.log('网络配置信息:', networkInfo.value)
+        }
+      } catch (error) {
+        console.warn('获取网络配置失败:', error)
+        ElMessage.warning('获取网络配置失败，将使用默认配置')
+      }
+    }
+
+    // 监听地址类型变化处理
+    const onListenAddressTypeChange = (type) => {
+      if (type === 'ipv6') {
+        if (!networkInfo.value.ipv6Supported) {
+          ElMessage.warning('系统不支持IPv6，已切换回IPv4')
+          ruleForm.listenAddressType = 'ipv4'
+          return
+        }
+        ruleForm.listenAddress = networkInfo.value.recommendedIPv6 || '::1'
+      } else {
+        ruleForm.listenAddress = networkInfo.value.recommendedIPv4 || '127.0.0.1'
+      }
+    }
 
     // 验证目标地址
     const validateTargetAddress = () => {
@@ -437,7 +494,38 @@ export default {
       ],
       sourcePort: [
         { required: true, message: '请输入源端口', trigger: 'blur' },
-        { type: 'number', min: 1, max: 65535, message: '端口范围在 1-65535', trigger: 'blur' }
+        {
+          type: 'number',
+          min: 1,
+          max: 65535,
+          message: '端口范围在 1-65535',
+          trigger: 'blur'
+        },
+        {
+          validator: (rule, value, callback) => {
+            if (!value) {
+              callback(new Error('请输入源端口'))
+              return
+            }
+
+            // 管理员可以使用任意端口
+            if (isAdmin.value) {
+              callback()
+              return
+            }
+
+            // 普通用户需要检查端口范围
+            if (currentUserPortRange.value.start && currentUserPortRange.value.end) {
+              if (value < currentUserPortRange.value.start || value > currentUserPortRange.value.end) {
+                callback(new Error(`端口必须在允许范围内 (${currentUserPortRange.value.start}-${currentUserPortRange.value.end})`))
+                return
+              }
+            }
+
+            callback()
+          },
+          trigger: 'blur'
+        }
       ],
       targetAddress: [
         { required: true, message: '请输入目标地址', trigger: 'blur' },
@@ -458,6 +546,34 @@ export default {
             }
 
             callback()
+          },
+          trigger: 'blur'
+        },
+        {
+          validator: async (rule, value, callback) => {
+            if (!value) {
+              callback()
+              return
+            }
+
+            try {
+              // 🔧 调用后端API验证目标地址权限
+              const response = await portSecurity.validateTarget({
+                targetAddress: value,
+                userRole: isAdmin.value ? 'admin' : 'user'
+              })
+
+              if (response.data.success && !response.data.data.valid) {
+                const errors = response.data.data.errors || []
+                callback(new Error(errors.join('; ')))
+                return
+              }
+
+              callback()
+            } catch (error) {
+              console.warn('目标地址验证失败:', error)
+              callback() // 网络错误时不阻止提交，由后端最终验证
+            }
           },
           trigger: 'blur'
         }
@@ -537,7 +653,9 @@ export default {
         sourcePort: rule.sourcePort,
         targetAddress: rule.targetAddress,
         protocol: rule.protocol,
-        description: rule.description || ''
+        description: rule.description || '',
+        listenAddressType: rule.listenAddressType || 'ipv4',
+        listenAddress: rule.listenAddress || (rule.listenAddressType === 'ipv6' ? '::1' : '127.0.0.1')
       })
       showCreateDialog.value = true
     }
@@ -608,7 +726,9 @@ export default {
         sourcePort: null,
         targetAddress: '',
         protocol: 'tcp',
-        description: ''
+        description: '',
+        listenAddressType: 'ipv4',
+        listenAddress: networkInfo.value.recommendedIPv4 || '127.0.0.1'
       })
       if (ruleFormRef.value) {
         ruleFormRef.value.clearValidate()
@@ -692,8 +812,9 @@ export default {
       loadRules()
     })
 
-    onMounted(() => {
-      loadRules()
+    onMounted(async () => {
+      await loadNetworkInfo()
+      await loadRules()
     })
 
     return {
@@ -713,6 +834,7 @@ export default {
       ruleForm,
       ruleRules,
       ruleFormRef,
+      networkInfo,
       loadRules,
       saveRule,
       editRule,
@@ -724,7 +846,9 @@ export default {
       getProtocolType,
       validateTargetAddress,
       formatTraffic,
-      getRuleStatusReason
+      getRuleStatusReason,
+      loadNetworkInfo,
+      onListenAddressTypeChange
     }
   }
 }
@@ -820,6 +944,12 @@ export default {
   font-size: 12px;
   color: #909399;
   margin-top: 4px;
+}
+
+.disabled-hint {
+  font-size: 11px;
+  color: #c0c4cc;
+  margin-left: 4px;
 }
 
 .traffic-stats {

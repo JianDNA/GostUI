@@ -150,13 +150,27 @@
 </template>
 
 <script>
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
+import { useStore } from 'vuex'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '@/utils/api'
 
 export default {
   name: 'GostConfig',
   setup() {
+    const store = useStore()
+    const router = useRouter()
+
+    // 权限检查
+    const isAdmin = computed(() => store.getters['user/isAdmin'])
+
+    // 如果不是管理员，重定向到仪表板
+    if (!isAdmin.value) {
+      ElMessage.error('此功能仅限管理员使用')
+      router.push('/dashboard')
+      return {}
+    }
     const syncing = ref(false)
     const stats = reactive({
       generatedServices: 0,

@@ -4,11 +4,51 @@ const gostService = require('../services/gostService');
 const fs = require('fs');
 const path = require('path');
 const { getGostExecutablePath } = require('../utils/platform');
+const { auth, adminAuth } = require('../middleware/auth');
 
 /**
- * 获取 Go-Gost 运行状态，包含详细信息
+ * 获取 Go-Gost 基本状态信息 - 所有用户可访问
  */
-router.get('/status', async (req, res) => {
+router.get('/status/basic', auth, async (req, res) => {
+  try {
+    const status = await gostService.getStatus();
+
+    // 只返回基本状态信息，隐藏敏感信息
+    const basicStatus = {
+      isRunning: status.isRunning,
+      pid: status.isRunning ? '****' : null, // 隐藏真实PID
+      startTime: status.isRunning ? '****' : null, // 隐藏启动时间
+      portForwards: status.portForwards ? status.portForwards.map(pf => ({
+        name: '****', // 隐藏服务名称
+        protocol: pf.protocol,
+        localPort: pf.localPort,
+        targetHost: '****', // 隐藏目标主机
+        targetPort: '****', // 隐藏目标端口
+        status: pf.status
+      })) : [],
+      systemInfo: status.systemInfo ? {
+        uptime: status.isRunning ? '****' : null, // 隐藏运行时间
+        connections: status.isRunning ? '****' : null // 隐藏连接数
+      } : null
+    };
+
+    res.json({
+      success: true,
+      data: basicStatus
+    });
+  } catch (error) {
+    console.error('获取Gost基本状态失败:', error);
+    res.status(500).json({
+      success: false,
+      message: '获取Gost服务状态失败'
+    });
+  }
+});
+
+/**
+ * 获取 Go-Gost 运行状态，包含详细信息 - 仅管理员
+ */
+router.get('/status', auth, adminAuth, async (req, res) => {
   try {
     const status = await gostService.getStatus();
     const configPath = path.join(__dirname, '../config/gost-config.json');
@@ -46,9 +86,9 @@ router.get('/status', async (req, res) => {
 });
 
 /**
- * 获取当前配置
+ * 获取当前配置 - 仅管理员
  */
-router.get('/config', (req, res) => {
+router.get('/config', auth, adminAuth, (req, res) => {
   try {
     const configPath = path.join(__dirname, '../config/gost-config.json');
     if (!fs.existsSync(configPath)) {
@@ -74,9 +114,9 @@ router.get('/config', (req, res) => {
 });
 
 /**
- * 更新配置 - 热加载优化版
+ * 更新配置 - 热加载优化版 - 仅管理员
  */
-router.post('/config', async (req, res) => {
+router.post('/config', auth, adminAuth, async (req, res) => {
   try {
     const newConfig = req.body;
     const result = await gostService.updateConfig(newConfig);
@@ -96,9 +136,9 @@ router.post('/config', async (req, res) => {
 });
 
 /**
- * 启动服务 - 增强版
+ * 启动服务 - 增强版 - 仅管理员
  */
-router.post('/start', async (req, res) => {
+router.post('/start', auth, adminAuth, async (req, res) => {
   try {
     console.log('收到启动 Go-Gost 服务请求');
 
@@ -184,9 +224,9 @@ router.post('/start', async (req, res) => {
 });
 
 /**
- * 停止服务
+ * 停止服务 - 仅管理员
  */
-router.post('/stop', (req, res) => {
+router.post('/stop', auth, adminAuth, (req, res) => {
   try {
     gostService.stop();
     res.json({
@@ -203,9 +243,9 @@ router.post('/stop', (req, res) => {
 });
 
 /**
- * 重启服务 - 热加载优化版
+ * 重启服务 - 热加载优化版 - 仅管理员
  */
-router.post('/restart', async (req, res) => {
+router.post('/restart', auth, adminAuth, async (req, res) => {
   try {
     console.log('收到重启 Go-Gost 服务请求');
 

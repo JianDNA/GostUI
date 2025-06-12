@@ -15,14 +15,13 @@ class GostSyncCoordinator {
     this.lastSyncTime = null;
     this.lastConfigHash = null;
 
-    // 配置参数（优化紧急响应）
-    this.minSyncInterval = 10000; // 最小同步间隔：10秒（减少间隔以提高紧急响应）
+    // 🚀 从性能配置管理器获取配置参数
+    this.updateSyncConfig();
     this.maxQueueSize = 5; // 最大队列大小（减少队列）
     this.syncTimeout = 30000; // 同步超时：30秒
 
     // 定时器
     this.autoSyncTimer = null;
-    this.autoSyncInterval = 120000; // 120秒自动同步（进一步减少频率）
 
     // 智能同步控制
     this.recentActivity = 'low'; // 活跃度级别
@@ -44,6 +43,25 @@ class GostSyncCoordinator {
     };
 
     console.log('🔧 GOST同步协调器已初始化');
+  }
+
+  /**
+   * 🚀 新增: 更新同步配置
+   */
+  updateSyncConfig() {
+    try {
+      const performanceConfigManager = require('./performanceConfigManager');
+      const syncConfig = performanceConfigManager.getSyncConfig();
+
+      this.minSyncInterval = syncConfig.minSyncInterval || 10000;
+      this.autoSyncInterval = syncConfig.autoSyncInterval || 120000;
+
+      console.log(`🔧 [同步协调器] 配置已更新: 自动同步${this.autoSyncInterval / 1000}秒, 最小间隔${this.minSyncInterval / 1000}秒`);
+    } catch (error) {
+      console.warn('⚠️ [同步协调器] 更新配置失败，使用默认值:', error.message);
+      this.minSyncInterval = 10000;
+      this.autoSyncInterval = 120000;
+    }
   }
 
   /**
@@ -445,6 +463,13 @@ class GostSyncCoordinator {
         timestamp: req.timestamp
       }))
     };
+  }
+
+  /**
+   * 🚀 新增: 获取统计信息 (兼容性别名)
+   */
+  getStats() {
+    return this.getStatus();
   }
 
   /**

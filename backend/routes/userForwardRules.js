@@ -259,7 +259,7 @@ router.get('/', auth, async (req, res) => {
         include: [{
           model: User,
           as: 'user',
-          attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'portRangeStart', 'portRangeEnd', 'expiryDate', 'trafficQuota', 'usedTraffic']
+          attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'portRangeStart', 'portRangeEnd']
         }],
         order: [['createdAt', 'DESC']]
       });
@@ -305,7 +305,16 @@ router.get('/', auth, async (req, res) => {
 // 创建转发规则
 router.post('/', auth, async (req, res) => {
   try {
-    const { name, sourcePort, targetAddress, protocol, description, userId: targetUserId } = req.body;
+    const {
+      name,
+      sourcePort,
+      targetAddress,
+      protocol,
+      description,
+      userId: targetUserId,
+      listenAddress,
+      listenAddressType
+    } = req.body;
 
     // 验证必填字段
     if (!name || !sourcePort || !targetAddress) {
@@ -390,6 +399,39 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ message: `端口 ${sourcePort} 已被使用` });
     }
 
+    // 🔧 验证目标地址权限
+    const { portSecurityService } = require('../services/portSecurityService');
+    const targetValidation = await portSecurityService.validateTargetAddress(targetAddress, user.role);
+
+    if (!targetValidation.valid) {
+      return res.status(400).json({
+        message: '目标地址验证失败',
+        errors: targetValidation.errors,
+        warnings: targetValidation.warnings
+      });
+    }
+
+    // 验证监听地址配置
+    let finalListenAddress = listenAddress;
+    let finalListenAddressType = listenAddressType || 'ipv4';
+
+    // 如果没有提供监听地址，根据类型设置默认值
+    if (!finalListenAddress) {
+      if (finalListenAddressType === 'ipv6') {
+        // 检查系统是否支持IPv6
+        const { ipv6DetectionService } = require('../services/ipv6DetectionService');
+        const ipv6Supported = await ipv6DetectionService.isIPv6Supported();
+        if (!ipv6Supported) {
+          return res.status(400).json({
+            message: '系统不支持IPv6，请使用IPv4监听地址'
+          });
+        }
+        finalListenAddress = '::1';
+      } else {
+        finalListenAddress = '127.0.0.1';
+      }
+    }
+
     // 创建规则
     const { v4: uuidv4 } = require('uuid');
     const rule = await UserForwardRule.create({
@@ -400,7 +442,8 @@ router.post('/', auth, async (req, res) => {
       targetAddress,
       protocol: protocol || 'tcp',
       description,
-      isActive: true
+      listenAddress: finalListenAddress,
+      listenAddressType: finalListenAddressType
     });
 
     // 返回创建的规则（包含用户信息）
@@ -445,7 +488,15 @@ router.post('/', auth, async (req, res) => {
 // 更新转发规则
 router.put('/:id', auth, async (req, res) => {
   try {
-    const { name, sourcePort, targetAddress, protocol, description } = req.body;
+    const {
+      name,
+      sourcePort,
+      targetAddress,
+      protocol,
+      description,
+      listenAddress,
+      listenAddressType
+    } = req.body;
     // isActive 现在是计算属性，不能直接设置
 
     // 查找规则
@@ -525,24 +576,69 @@ router.put('/:id', auth, async (req, res) => {
       }
     }
 
+    // 🔧 如果更新了目标地址，验证目标地址权限
+    if (targetAddress && targetAddress !== rule.targetAddress) {
+      const { portSecurityService } = require('../services/portSecurityService');
+      const targetValidation = await portSecurityService.validateTargetAddress(targetAddress, user.role);
+
+      if (!targetValidation.valid) {
+        return res.status(400).json({
+          message: '目标地址验证失败',
+          errors: targetValidation.errors,
+          warnings: targetValidation.warnings
+        });
+      }
+    }
+
+    // 处理监听地址更新
+    let finalListenAddress = listenAddress;
+    let finalListenAddressType = listenAddressType;
+
+    // 如果提供了监听地址类型但没有地址，设置默认地址
+    if (finalListenAddressType && !finalListenAddress) {
+      if (finalListenAddressType === 'ipv6') {
+        // 检查系统是否支持IPv6
+        const { ipv6DetectionService } = require('../services/ipv6DetectionService');
+        const ipv6Supported = await ipv6DetectionService.isIPv6Supported();
+        if (!ipv6Supported) {
+          return res.status(400).json({
+            message: '系统不支持IPv6，请使用IPv4监听地址'
+          });
+        }
+        finalListenAddress = '::1';
+      } else {
+        finalListenAddress = '127.0.0.1';
+      }
+    }
+
     // isActive 现在是计算属性，不需要安全校验
     // 规则的激活状态由用户状态、配额等自动决定
 
     // 更新规则（不包括 isActive，因为它现在是计算属性）
-    await rule.update({
+    const updateData = {
       name: name || rule.name,
       sourcePort: sourcePort || rule.sourcePort,
       targetAddress: targetAddress || rule.targetAddress,
       protocol: protocol || rule.protocol,
       description: description !== undefined ? description : rule.description
-    });
+    };
+
+    // 只有在提供了监听地址相关参数时才更新
+    if (finalListenAddress !== undefined) {
+      updateData.listenAddress = finalListenAddress;
+    }
+    if (finalListenAddressType !== undefined) {
+      updateData.listenAddressType = finalListenAddressType;
+    }
+
+    await rule.update(updateData);
 
     // 返回更新后的规则
     const updatedRule = await UserForwardRule.findByPk(rule.id, {
       include: [{
         model: User,
         as: 'user',
-        attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'portRangeStart', 'portRangeEnd', 'expiryDate', 'trafficQuota', 'usedTraffic']
+        attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'portRangeStart', 'portRangeEnd']
       }]
     });
 
@@ -554,8 +650,8 @@ router.put('/:id', auth, async (req, res) => {
       await cacheCoordinator.clearUserRelatedCache(updatedRule.userId, 'rule_update');
 
       // 如果端口发生变化，也清理旧端口的缓存
-      if (updateData.sourcePort && updateData.sourcePort !== originalRule.sourcePort) {
-        await cacheCoordinator.clearPortRelatedCache(originalRule.sourcePort, 'rule_update_old_port');
+      if (updateData.sourcePort && updateData.sourcePort !== rule.sourcePort) {
+        await cacheCoordinator.clearPortRelatedCache(rule.sourcePort, 'rule_update_old_port');
       }
 
       // 强制同步GOST配置

@@ -6,8 +6,8 @@ const express = require('express');
 const router = express.Router();
 const { auth: authenticateToken, adminAuth: requireAdmin } = require('../middleware/auth');
 
-// 获取系统状态
-router.get('/status', authenticateToken, async (req, res) => {
+// 获取系统状态 (仅管理员)
+router.get('/status', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const realTimeTrafficMonitor = require('../services/realTimeTrafficMonitor');
     const quotaCoordinatorService = require('../services/quotaCoordinatorService');
@@ -53,8 +53,8 @@ router.get('/status', authenticateToken, async (req, res) => {
   }
 });
 
-// 获取GOST状态
-router.get('/gost-status', authenticateToken, async (req, res) => {
+// 获取GOST状态 (仅管理员)
+router.get('/gost-status', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const gostHealthService = require('../services/gostHealthService');
     const gostService = require('../services/gostService');
@@ -162,7 +162,18 @@ router.get('/stats', authenticateToken, async (req, res) => {
     const totalUsers = await User.count();
     const activeUsers = await User.count({ where: { role: 'user' } });
     const totalRules = await UserForwardRule.count();
-    const activeRules = await UserForwardRule.count({ where: { isActive: true } });
+    // 🔧 修复: 使用计算属性统计活跃规则
+    const allRules = await UserForwardRule.findAll({
+      include: [{
+        model: User,
+        as: 'user',
+        attributes: ['id', 'role', 'isActive', 'userStatus', 'expiryDate', 'portRangeStart', 'portRangeEnd', 'trafficQuota', 'usedTraffic']
+      }]
+    });
+    const activeRules = allRules.filter(rule => {
+      if (!rule.user) return false;
+      return rule.isActive; // 计算属性
+    }).length;
 
     // 获取流量统计
     const trafficStats = await User.findAll({
@@ -205,8 +216,8 @@ router.get('/stats', authenticateToken, async (req, res) => {
   }
 });
 
-// 获取实时监控状态
-router.get('/monitor-status', authenticateToken, async (req, res) => {
+// 获取实时监控状态 (仅管理员)
+router.get('/monitor-status', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const realTimeTrafficMonitor = require('../services/realTimeTrafficMonitor');
 
@@ -234,8 +245,8 @@ router.get('/monitor-status', authenticateToken, async (req, res) => {
   }
 });
 
-// 获取配额协调器状态
-router.get('/quota-status', authenticateToken, async (req, res) => {
+// 获取配额协调器状态 (仅管理员)
+router.get('/quota-status', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const quotaCoordinatorService = require('../services/quotaCoordinatorService');
 
@@ -258,8 +269,8 @@ router.get('/quota-status', authenticateToken, async (req, res) => {
   }
 });
 
-// 获取同步协调器状态
-router.get('/sync-status', authenticateToken, async (req, res) => {
+// 获取同步协调器状态 (仅管理员)
+router.get('/sync-status', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const gostSyncCoordinator = require('../services/gostSyncCoordinator');
 
@@ -305,8 +316,8 @@ router.post('/force-sync', authenticateToken, requireAdmin, async (req, res) => 
   }
 });
 
-// 获取观察器状态
-router.get('/observer-status', authenticateToken, async (req, res) => {
+// 获取观察器状态 (仅管理员)
+router.get('/observer-status', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const gostPluginService = require('../services/gostPluginService');
 

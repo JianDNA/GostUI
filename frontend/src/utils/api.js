@@ -46,6 +46,30 @@ export const rules = {
   toggleRule: (id) => request.post(`/rules/${id}/toggle`)
 }
 
+// 端口安全相关API
+export const portSecurity = {
+  // 验证端口
+  validatePort: (data) => request.post('/port-security/validate', data),
+  // 验证目标地址
+  validateTarget: (data) => request.post('/port-security/validate-target', data),
+  // 获取安全信息
+  getSecurityInfo: () => request.get('/port-security/info'),
+  // 获取可用端口建议
+  getAvailablePorts: (params) => request.get('/port-security/available-ports', { params })
+}
+
+// 网络配置相关API
+export const networkConfig = {
+  // 获取网络配置信息
+  getNetworkInfo: () => request.get('/network-config'),
+  // 检测IPv6支持
+  getIPv6Support: () => request.get('/network-config/ipv6-support'),
+  // 验证IP地址
+  validateAddress: (data) => request.post('/network-config/validate-address', data),
+  // 刷新网络配置缓存
+  refreshConfig: () => request.post('/network-config/refresh')
+}
+
 // 用户转发规则相关API
 export const userForwardRules = {
   // 获取用户转发规则列表
@@ -137,6 +161,8 @@ const api = {
   auth,
   users,
   rules,
+  portSecurity,
+  networkConfig,
   userForwardRules,
   gost,
   traffic,

@@ -75,6 +75,56 @@ module.exports = (sequelize) => {
       return null;
     }
 
+    // 获取完整的监听地址（包含端口）
+    getFullListenAddress() {
+      const address = this.listenAddress || '127.0.0.1';
+      const port = this.sourcePort;
+
+      if (this.listenAddressType === 'ipv6') {
+        // IPv6地址需要用方括号包围
+        return `[${address}]:${port}`;
+      } else {
+        // IPv4地址直接拼接
+        return `${address}:${port}`;
+      }
+    }
+
+    // 获取GOST配置格式的监听地址
+    getGostListenAddress() {
+      const address = this.listenAddress || '127.0.0.1';
+      const port = this.sourcePort;
+
+      // GOST配置格式：对于本地地址可以省略IP部分
+      if (address === '127.0.0.1' || address === '::1') {
+        return `:${port}`;
+      } else {
+        if (this.listenAddressType === 'ipv6') {
+          return `[${address}]:${port}`;
+        } else {
+          return `${address}:${port}`;
+        }
+      }
+    }
+
+    // 验证监听地址和类型的一致性
+    validateListenAddressConsistency() {
+      if (!this.listenAddress) return true;
+
+      const net = require('net');
+      const isIPv4 = net.isIPv4(this.listenAddress);
+      const isIPv6 = net.isIPv6(this.listenAddress);
+
+      if (this.listenAddressType === 'ipv4' && !isIPv4) {
+        throw new Error('监听地址类型设置为IPv4，但地址不是有效的IPv4格式');
+      }
+
+      if (this.listenAddressType === 'ipv6' && !isIPv6) {
+        throw new Error('监听地址类型设置为IPv6，但地址不是有效的IPv6格式');
+      }
+
+      return true;
+    }
+
     /**
      * 计算规则是否应该激活（计算属性）
      * 这是唯一的 isActive 判断逻辑，替代了数据库字段
@@ -239,6 +289,35 @@ module.exports = (sequelize) => {
       defaultValue: 0,
       allowNull: false,
       comment: '规则已使用流量 (字节)'
+    },
+    listenAddress: {
+      type: DataTypes.STRING(45), // 足够容纳IPv6地址
+      allowNull: true,
+      defaultValue: '127.0.0.1',
+      validate: {
+        isValidListenAddress(value) {
+          if (!value) return; // 允许为空，使用默认值
+
+          const net = require('net');
+          if (!net.isIP(value)) {
+            throw new Error('监听地址必须是有效的IPv4或IPv6地址');
+          }
+        }
+      },
+      comment: '监听地址 (IPv4或IPv6)'
+    },
+    listenAddressType: {
+      type: DataTypes.ENUM('ipv4', 'ipv6'),
+      allowNull: false,
+      defaultValue: 'ipv4',
+      validate: {
+        isValidType(value) {
+          if (!['ipv4', 'ipv6'].includes(value)) {
+            throw new Error('监听地址类型必须是 ipv4 或 ipv6');
+          }
+        }
+      },
+      comment: '监听地址类型'
     }
   }, {
     sequelize,
@@ -255,6 +334,18 @@ module.exports = (sequelize) => {
     ],
     hooks: {
       beforeValidate: async (rule, options) => {
+        // 验证监听地址和类型的一致性
+        rule.validateListenAddressConsistency();
+
+        // 如果没有设置监听地址，根据类型设置默认值
+        if (!rule.listenAddress) {
+          if (rule.listenAddressType === 'ipv6') {
+            rule.listenAddress = '::1';
+          } else {
+            rule.listenAddress = '127.0.0.1';
+          }
+        }
+
         // 验证用户是否存在
         if (rule.userId) {
           const { User } = sequelize.models;

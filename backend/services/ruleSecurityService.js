@@ -191,27 +191,27 @@ class RuleSecurityService {
       const user = rule.user;
       const sourcePort = rule.sourcePort;
 
-      // Admin用户不受端口限制
+      // 🔧 Admin用户不受任何端口限制，可以使用任何端口
       if (user.role === 'admin') {
         return { allowed: true, reason: 'admin_port_privilege' };
       }
 
-      // 检查端口范围
+      // 检查端口范围（仅对非admin用户）
       if (user.portRangeStart && user.portRangeEnd) {
         if (sourcePort < user.portRangeStart || sourcePort > user.portRangeEnd) {
-          return { 
-            allowed: false, 
-            reason: `端口 ${sourcePort} 超出允许范围 ${user.portRangeStart}-${user.portRangeEnd}` 
+          return {
+            allowed: false,
+            reason: `端口 ${sourcePort} 超出允许范围 ${user.portRangeStart}-${user.portRangeEnd}`
           };
         }
       }
 
-      // 检查危险端口
+      // 检查危险端口（仅对非admin用户）
       const dangerousPorts = [22, 80, 443, 8080, 3306, 5432, 6379, 27017];
       if (dangerousPorts.includes(sourcePort)) {
-        return { 
-          allowed: false, 
-          reason: `端口 ${sourcePort} 为系统保留端口，禁止使用` 
+        return {
+          allowed: false,
+          reason: `端口 ${sourcePort} 为系统保留端口，禁止使用`
         };
       }
 

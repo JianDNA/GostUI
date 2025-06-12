@@ -237,14 +237,25 @@ const switchMode = (mode) => {
 const getCurrentUser = async () => {
   try {
     const response = await api.get('/users/me')
-    currentUser.value = response.data
+    if (response.data && response.data.data) {
+      currentUser.value = response.data.data
+    } else {
+      currentUser.value = response.data
+    }
 
     // 如果是普通用户，获取其转发规则
     if (!isAdmin.value) {
       await getUserForwardRules()
     }
   } catch (error) {
-    ElMessage.error('获取用户信息失败')
+    console.error('获取用户信息失败:', error)
+    ElMessage.error('获取用户信息失败: ' + (error.response?.data?.message || error.message))
+    // 设置一个默认的用户对象以防止后续错误
+    currentUser.value = {
+      id: 'unknown',
+      username: 'unknown',
+      role: 'user'
+    }
   }
 }
 
@@ -339,6 +350,12 @@ const executeTest = async (size) => {
     return
   }
 
+  // 检查用户信息是否已加载
+  if (!currentUser.value) {
+    ElMessage.error('用户信息未加载，请刷新页面重试')
+    return
+  }
+
   testing.value = true
   const startTime = new Date()
 
@@ -356,8 +373,8 @@ const executeTest = async (size) => {
       headers: {
         'Authorization': `Bearer ${token}`,
         'X-Test-Mode': 'port-specific',
-        'X-User-ID': currentUser.value.id.toString(),
-        'X-Username': currentUser.value.username,
+        'X-User-ID': currentUser.value.id?.toString() || 'unknown',
+        'X-Username': currentUser.value.username || 'unknown',
         'Accept': 'application/json',
         'Cache-Control': 'no-cache'
       },

@@ -70,14 +70,26 @@ class SimplifiedCacheService {
         attributes: ['id', 'username', 'role', 'expiryDate', 'trafficQuota', 'usedTraffic']
       });
 
-      // 获取活跃规则
-      const rules = await UserForwardRule.findAll({
-        where: { isActive: true },
+      // 🔧 修复: 获取所有规则，然后使用计算属性过滤活跃规则
+      const allRules = await UserForwardRule.findAll({
         include: [{
           model: User,
           as: 'user',
-          attributes: ['id', 'username']
+          attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'expiryDate', 'portRangeStart', 'portRangeEnd', 'trafficQuota', 'usedTraffic']
         }]
+      });
+
+      // 🔧 修复: 使用计算属性过滤活跃规则
+      const rules = allRules.filter(rule => {
+        if (!rule.user) return false;
+
+        // 手动计算 isActive 状态
+        const user = rule.user;
+        const isUserActive = user.isActive && user.userStatus === 'active';
+        const isNotExpired = !user.expiryDate || new Date(user.expiryDate) > new Date();
+        const hasTrafficQuota = !user.trafficQuota || (user.usedTraffic || 0) < (user.trafficQuota * 1024 * 1024 * 1024);
+
+        return isUserActive && isNotExpired && hasTrafficQuota;
       });
 
       // 更新用户缓存

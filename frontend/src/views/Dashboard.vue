@@ -11,13 +11,13 @@
             <el-button link @click="refreshGostStatus">
               <el-icon><Refresh /></el-icon>
             </el-button>
-            <el-button type="success" size="small" @click="startGost" v-if="!gostRunning">
+            <el-button type="success" size="small" @click="startGost" v-if="!gostRunning && isAdmin">
               启动服务
             </el-button>
-            <el-button type="danger" size="small" @click="stopGost" v-else>
+            <el-button type="danger" size="small" @click="stopGost" v-if="gostRunning && isAdmin">
               停止服务
             </el-button>
-            <el-button type="primary" size="small" @click="restartGost">
+            <el-button type="primary" size="small" @click="restartGost" v-if="isAdmin">
               重启服务
             </el-button>
           </div>
@@ -35,13 +35,13 @@
         <el-col :span="8" v-if="gostRunning">
           <div class="stat-card">
             <div class="stat-title">进程ID</div>
-            <div class="stat-value">{{ gostStatus?.pid || 'N/A' }}</div>
+            <div class="stat-value">{{ isAdmin ? (gostStatus?.pid || 'N/A') : '****' }}</div>
           </div>
         </el-col>
         <el-col :span="8" v-if="gostRunning && gostSystemInfo">
           <div class="stat-card">
             <div class="stat-title">运行时间</div>
-            <div class="stat-value">{{ formatUptime(gostSystemInfo.uptime) }}</div>
+            <div class="stat-value">{{ isAdmin ? formatUptime(gostSystemInfo.uptime) : '****' }}</div>
           </div>
         </el-col>
       </el-row>
@@ -56,21 +56,29 @@
         </div>
       </template>
       <el-table :data="gostPortForwards" stripe style="width: 100%" v-loading="gostLoading">
-        <el-table-column prop="name" label="名称" />
+        <el-table-column label="名称">
+          <template #default="scope">
+            {{ isAdmin ? scope.row.name : '****' }}
+          </template>
+        </el-table-column>
         <el-table-column prop="protocol" label="协议" />
         <el-table-column label="转发规则">
           <template #default="scope">
             <el-tag type="primary">
-              {{ scope.row.sourcePort }}
+              {{ scope.row.sourcePort || scope.row.localPort }}
               <el-icon><Right /></el-icon>
-              {{ scope.row.targetHost }}:{{ scope.row.targetPort }}
+              {{ isAdmin ? `${scope.row.targetHost}:${scope.row.targetPort}` : '****:****' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="sourcePort" label="源端口" width="80" />
+        <el-table-column label="源端口" width="80">
+          <template #default="scope">
+            {{ scope.row.sourcePort || scope.row.localPort }}
+          </template>
+        </el-table-column>
         <el-table-column label="目标地址" width="150">
           <template #default="scope">
-            {{ scope.row.targetHost }}:{{ scope.row.targetPort }}
+            {{ isAdmin ? `${scope.row.targetHost}:${scope.row.targetPort}` : '****:****' }}
           </template>
         </el-table-column>
       </el-table>
@@ -89,7 +97,7 @@
         <el-col :span="8">
           <div class="stat-card">
             <div class="stat-title">活跃用户</div>
-            <div class="stat-value">{{ stats?.activeUsers || 0 }}</div>
+            <div class="stat-value">{{ isAdmin ? (stats?.activeUsers || 0) : '****' }}</div>
           </div>
         </el-col>
         <el-col :span="8">
@@ -101,13 +109,27 @@
         <el-col :span="8">
           <div class="stat-card">
             <div class="stat-title">总流量</div>
-            <div class="stat-value">{{ formatTraffic(stats?.totalTraffic || 0) }}</div>
+            <div class="stat-value">{{ isAdmin ? formatTraffic(stats?.totalTraffic || 0) : '****' }}</div>
           </div>
         </el-col>
       </el-row>
     </el-card>
 
-  </div>
+    <el-card class="dashboard-card" v-if="false">
+      <template #header>
+        <div class="card-header">
+          <span>流量统计</span>
+          <el-select v-model="timeRange" placeholder="选择时间范围" @change="refreshTrafficChart">
+            <el-option label="今日" value="today" />
+            <el-option label="本周" value="week" />
+            <el-option label="本月" value="month" />
+          </el-select>
+        </div>
+      </template>
+      <div class="chart-container">
+        <div ref="trafficChart" class="traffic-chart"></div>
+      </div>
+    </el-card>  </div>
 </template>
 
 <script setup>
@@ -131,6 +153,7 @@ let chartInstance = null;
 const gostRunning = computed(() => store.getters['gost/isRunning']);
 const gostPortForwards = computed(() => store.getters['gost/portForwards']);
 const gostSystemInfo = computed(() => store.getters['gost/systemInfo']);
+const isAdmin = computed(() => store.getters['user/isAdmin']);
 
 const refreshStats = async () => {
   try {

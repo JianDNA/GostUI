@@ -270,4 +270,39 @@ router.get('/user-usage/:userId', async (req, res) => {
   }
 });
 
+/**
+ * 验证目标地址
+ * POST /api/port-security/validate-target
+ */
+router.post('/validate-target', async (req, res) => {
+  try {
+    const { targetAddress, userRole = 'user' } = req.body;
+
+    if (!targetAddress) {
+      return res.status(400).json({
+        success: false,
+        error: '目标地址不能为空'
+      });
+    }
+
+    const result = await portSecurityService.validateTargetAddress(targetAddress, userRole);
+
+    res.json({
+      success: true,
+      data: {
+        targetAddress,
+        userRole,
+        ...result
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ 验证目标地址失败:', error);
+    res.status(500).json({
+      success: false,
+      error: '验证目标地址失败'
+    });
+  }
+});
+
 module.exports = router;

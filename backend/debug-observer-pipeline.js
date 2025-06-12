@@ -88,10 +88,20 @@ async function debugObserverPipeline() {
       console.log(`  ${user.username} (ID:${user.id}): ${formatBytes(user.usedTraffic || 0)} / ${user.trafficQuota || 'unlimited'}GB, 活跃:${user.isActive}`);
     });
 
-    // 检查转发规则
-    const rules = await UserForwardRule.findAll({
-      where: { isActive: true },
+    // 🔧 修复: 检查转发规则 - 使用计算属性
+    const allRules = await UserForwardRule.findAll({
+      include: [{
+        model: User,
+        as: 'user',
+        attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'expiryDate', 'portRangeStart', 'portRangeEnd', 'trafficQuota', 'usedTraffic']
+      }],
       attributes: ['id', 'name', 'sourcePort', 'userId', 'usedTraffic']
+    });
+
+    // 使用计算属性过滤活跃规则
+    const rules = allRules.filter(rule => {
+      if (!rule.user) return false;
+      return rule.isActive; // 这是计算属性
     });
 
     console.log('\n📋 活跃转发规则:');

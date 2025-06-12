@@ -14,11 +14,12 @@ const { models } = require('../services/dbService');
 const { User, UserForwardRule } = models;
 const multiInstanceCacheService = require('../services/multiInstanceCacheService');
 const { Op } = require('sequelize');
+const { auth } = require('../middleware/auth');
 
 /**
  * 获取仪表盘概览数据
  */
-router.get('/overview', async (req, res) => {
+router.get('/overview', auth, async (req, res) => {
   try {
     console.log('📊 获取仪表盘概览数据...');
 
@@ -64,23 +65,25 @@ router.get('/overview', async (req, res) => {
       databaseStatus: 'connected'
     };
 
-    // 5. 格式化数据
+    // 5. 格式化数据 - 根据用户权限返回不同信息
+    const isAdmin = req.user.role === 'admin';
+
     const overview = {
       users: {
-        total: totalUsers || 0,
-        active: activeUsers || 0,
-        admin: adminUsers || 0,
-        quotaExceeded: quotaExceededUsers || 0
+        total: isAdmin ? (totalUsers || 0) : '****',
+        active: isAdmin ? (activeUsers || 0) : '****',
+        admin: isAdmin ? (adminUsers || 0) : '****',
+        quotaExceeded: isAdmin ? (quotaExceededUsers || 0) : '****'
       },
       rules: {
-        total: totalRules || 0,
+        total: totalRules || 0, // 规则总数对所有用户可见
         activePorts: activePorts || 0
       },
       traffic: {
-        total24h: totalTraffic24h || 0,
-        totalUsed: totalUsedTraffic || 0,
-        totalQuota: totalQuota || 0,
-        activeUsers24h: activeUsers24h || 0
+        total24h: isAdmin ? (totalTraffic24h || 0) : '****',
+        totalUsed: isAdmin ? (totalUsedTraffic || 0) : '****',
+        totalQuota: isAdmin ? (totalQuota || 0) : '****',
+        activeUsers24h: isAdmin ? (activeUsers24h || 0) : '****'
       },
       system: systemStatus
     };
@@ -101,9 +104,16 @@ router.get('/overview', async (req, res) => {
 });
 
 /**
- * 获取流量趋势数据 (最近7天)
+ * 获取流量趋势数据 (最近7天) - 仅管理员
  */
-router.get('/traffic-trend', async (req, res) => {
+router.get('/traffic-trend', auth, async (req, res) => {
+  // 检查管理员权限
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({
+      success: false,
+      message: '权限不足，只有管理员可以查看流量趋势'
+    });
+  }
   try {
     const { days = 7 } = req.query;
     console.log(`📈 获取最近 ${days} 天的流量趋势数据...`);
@@ -157,9 +167,16 @@ router.get('/traffic-trend', async (req, res) => {
 });
 
 /**
- * 获取用户流量排行 (Top 10)
+ * 获取用户流量排行 (Top 10) - 仅管理员
  */
-router.get('/traffic-ranking', async (req, res) => {
+router.get('/traffic-ranking', auth, async (req, res) => {
+  // 检查管理员权限
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({
+      success: false,
+      message: '权限不足，只有管理员可以查看用户流量排行'
+    });
+  }
   try {
     const { limit = 10, days = 7 } = req.query;
     console.log(`🏆 获取用户流量排行 Top ${limit}...`);
@@ -203,9 +220,16 @@ router.get('/traffic-ranking', async (req, res) => {
 });
 
 /**
- * 获取实时系统状态
+ * 获取实时系统状态 - 仅管理员
  */
-router.get('/system-status', async (req, res) => {
+router.get('/system-status', auth, async (req, res) => {
+  // 检查管理员权限
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({
+      success: false,
+      message: '权限不足，只有管理员可以查看系统状态'
+    });
+  }
   try {
     console.log('🔍 获取实时系统状态...');
 

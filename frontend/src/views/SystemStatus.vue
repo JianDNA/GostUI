@@ -180,11 +180,22 @@
 <script setup>
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useStore } from 'vuex'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Refresh, Monitor, Setting, Connection, RefreshRight, View } from '@element-plus/icons-vue'
 import api from '@/utils/api'
 
 const store = useStore()
+const router = useRouter()
+
+// 权限检查
+const isAdmin = computed(() => store.getters['user/isAdmin'])
+
+// 如果不是管理员，重定向到仪表板
+if (!isAdmin.value) {
+  ElMessage.error('此功能仅限管理员使用')
+  router.push('/dashboard')
+}
 
 const loading = ref(false)
 const gostLoading = ref(false)

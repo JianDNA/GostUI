@@ -14,13 +14,8 @@ class MultiInstanceCacheService {
     this.memoryCache = new Map();
     this.portUserMapping = new Map();
 
-    // 缓存配置
-    this.config = {
-      cacheTTL: 2 * 60 * 1000, // 2分钟（多实例环境下缩短TTL）
-      syncInterval: 30 * 1000, // 30秒同步一次
-      lockTimeout: 5000, // 文件锁超时
-      maxRetries: 3
-    };
+    // 🚀 从性能配置管理器获取缓存配置
+    this.updateConfig();
 
     // 缓存文件路径（放在临时目录，避免触发 nodemon 重启）
     this.cacheDir = path.join(__dirname, '../cache');
@@ -36,6 +31,34 @@ class MultiInstanceCacheService {
     this.instanceId = process.env.PM2_INSTANCE_ID || process.env.NODE_APP_INSTANCE || '0';
 
     console.log(`💾 多实例缓存服务初始化 (PID: ${this.processId}, Instance: ${this.instanceId})`);
+  }
+
+  /**
+   * 🚀 新增: 更新配置
+   */
+  updateConfig() {
+    try {
+      const performanceConfigManager = require('./performanceConfigManager');
+      const cacheConfig = performanceConfigManager.getCacheConfig();
+      const syncConfig = performanceConfigManager.getSyncConfig();
+
+      this.config = {
+        cacheTTL: cacheConfig.multiInstanceCacheTTL || (2 * 60 * 1000),
+        syncInterval: syncConfig.multiInstanceSyncInterval || (30 * 1000),
+        lockTimeout: 5000, // 文件锁超时
+        maxRetries: 3
+      };
+
+      console.log(`🔧 [多实例缓存] 配置已更新: TTL${this.config.cacheTTL / 1000}秒, 同步间隔${this.config.syncInterval / 1000}秒`);
+    } catch (error) {
+      console.warn('⚠️ [多实例缓存] 更新配置失败，使用默认值:', error.message);
+      this.config = {
+        cacheTTL: 2 * 60 * 1000,
+        syncInterval: 30 * 1000,
+        lockTimeout: 5000,
+        maxRetries: 3
+      };
+    }
   }
 
   /**
@@ -468,6 +491,36 @@ class MultiInstanceCacheService {
 
     if (cleanedCount > 0) {
       console.log(`🧹 实例 ${this.instanceId} 已清理 ${cleanedCount} 个过期缓存条目`);
+    }
+  }
+
+  /**
+   * 🚀 新增: 停止同步定时器
+   */
+  stopSync() {
+    if (this.syncTimer) {
+      clearInterval(this.syncTimer);
+      this.syncTimer = null;
+      console.log('🛑 [多实例缓存] 同步定时器已停止');
+    }
+
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+      console.log('🛑 [多实例缓存] 清理定时器已停止');
+    }
+  }
+
+  /**
+   * 🚀 新增: 启动同步定时器
+   */
+  startSync() {
+    if (!this.syncTimer) {
+      this.startSyncTimer();
+    }
+
+    if (!this.cleanupTimer) {
+      this.startCleanupTimer();
     }
   }
 

@@ -1,0 +1,170 @@
+{
+  "version": "1.0.0",
+  "lastUpdated": "2025-06-11T18:11:31.396Z",
+  "lastUpdatedBy": "admin",
+  "description": "管理员切换到自动模式",
+  "systemMode": {
+    "isSimpleMode": false
+  },
+  "gostPlugins": {
+    "authTimeout": 5,
+    "observerTimeout": 10,
+    "limiterTimeout": 5,
+    "observerPeriod": 30,
+    "observerAsyncProcessing": true
+  },
+  "cacheConfig": {
+    "authCacheTimeout": 600000,
+    "limiterCacheTimeout": 300000,
+    "multiInstanceCacheTTL": 120000
+  },
+  "syncConfig": {
+    "autoSyncInterval": 300000,
+    "healthCheckInterval": 120000
+  },
+  "presets": {
+    "highPerformance": {
+      "name": "高性能模式",
+      "description": "追求最佳转发性能，适合高并发场景",
+      "config": {
+        "systemMode": {
+          "isSimpleMode": true
+        },
+        "gostPlugins": {
+          "authTimeout": 3,
+          "observerTimeout": 15,
+          "limiterTimeout": 3,
+          "observerPeriod": 120,
+          "observerAsyncProcessing": true,
+          "disableQuotaEnforcement": true,
+          "disableConfigSync": true,
+          "batchDatabaseOperations": true
+        },
+        "cacheConfig": {
+          "authCacheTimeout": 900000,
+          "limiterCacheTimeout": 600000,
+          "multiInstanceCacheTTL": 300000
+        }
+      }
+    },
+    "balanced": {
+      "name": "平衡模式",
+      "description": "性能和功能的平衡，适合大多数场景",
+      "config": {
+        "systemMode": {
+          "isSimpleMode": false
+        },
+        "gostPlugins": {
+          "authTimeout": 5,
+          "observerTimeout": 10,
+          "limiterTimeout": 5
+        },
+        "cacheConfig": {
+          "authCacheTimeout": 600000,
+          "limiterCacheTimeout": 300000,
+          "multiInstanceCacheTTL": 120000
+        },
+        "syncConfig": {
+          "autoSyncInterval": 300000,
+          "healthCheckInterval": 120000
+        }
+      }
+    },
+    "highAvailability": {
+      "name": "高可用模式",
+      "description": "追求最佳稳定性和实时性，适合关键业务",
+      "config": {
+        "systemMode": {
+          "isSimpleMode": false
+        },
+        "gostPlugins": {
+          "authTimeout": 10,
+          "observerTimeout": 15,
+          "limiterTimeout": 10
+        },
+        "cacheConfig": {
+          "authCacheTimeout": 300000,
+          "limiterCacheTimeout": 180000,
+          "multiInstanceCacheTTL": 60000
+        },
+        "syncConfig": {
+          "autoSyncInterval": 120000,
+          "healthCheckInterval": 60000,
+          "cacheCoordinatorSyncInterval": 15000
+        }
+      }
+    }
+  },
+  "parameterHelp": {
+    "systemMode": {
+      "isSimpleMode": {
+        "name": "单击模式",
+        "description": "启用后禁用所有自动化功能(认证器、观察器、限制器、自动同步等)，需要管理员手动重启GOST来同步配置",
+        "impact": "极高 - 完全改变系统行为",
+        "recommendation": "高性能场景或调试时使用"
+      }
+    },
+    "gostPlugins": {
+      "authTimeout": {
+        "name": "认证器超时",
+        "description": "用户认证的最大等待时间，过短可能导致认证失败，过长会增加连接建立延迟",
+        "unit": "秒",
+        "range": "1-60",
+        "impact": "中等 - 影响连接建立速度",
+        "recommendation": "一般场景5秒，高性能场景3秒，高延迟网络10秒"
+      },
+      "observerTimeout": {
+        "name": "观察器超时",
+        "description": "流量统计的最大等待时间，由于是异步处理，不直接影响转发性能",
+        "unit": "秒",
+        "range": "1-60",
+        "impact": "低 - 仅影响统计准确性",
+        "recommendation": "一般设置10-15秒即可"
+      },
+      "limiterTimeout": {
+        "name": "限制器超时",
+        "description": "流量限制检查的最大等待时间，直接影响每次数据传输的延迟",
+        "unit": "秒",
+        "range": "1-60",
+        "impact": "高 - 直接影响转发性能",
+        "recommendation": "高性能场景3秒，一般场景5秒，严格限制场景10秒"
+      }
+    },
+    "cacheConfig": {
+      "authCacheTimeout": {
+        "name": "认证器缓存时间",
+        "description": "用户认证结果的缓存时间，越长性能越好但用户状态变更的实时性越差",
+        "unit": "毫秒",
+        "range": "60000-3600000 (1-60分钟)",
+        "impact": "中等 - 影响认证性能和实时性",
+        "recommendation": "高性能15分钟，平衡10分钟，高实时性5分钟"
+      },
+      "limiterCacheTimeout": {
+        "name": "限制器缓存时间",
+        "description": "用户配额检查结果的缓存时间，影响流量限制的实时性",
+        "unit": "毫秒",
+        "range": "30000-1800000 (30秒-30分钟)",
+        "impact": "高 - 影响限制器性能和配额实时性",
+        "recommendation": "高性能10分钟，平衡5分钟，严格限制3分钟"
+      }
+    },
+    "syncConfig": {
+      "autoSyncInterval": {
+        "name": "自动同步间隔",
+        "description": "配置自动同步的时间间隔，越短响应越快但CPU消耗越大",
+        "unit": "毫秒",
+        "range": "60000-3600000 (1-60分钟)",
+        "impact": "中等 - 影响配置更新速度和系统负载",
+        "recommendation": "高响应2分钟，平衡5分钟，低负载10分钟"
+      },
+      "healthCheckInterval": {
+        "name": "健康检查间隔",
+        "description": "GOST服务健康检查的时间间隔，影响故障检测速度",
+        "unit": "毫秒",
+        "range": "30000-600000 (30秒-10分钟)",
+        "impact": "低 - 影响故障检测速度",
+        "recommendation": "关键业务1分钟，一般业务2分钟，低要求5分钟"
+      }
+    }
+  }
+}

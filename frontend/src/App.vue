@@ -6,7 +6,17 @@
 
 <script>
   export default {
-    name: 'App'
+    name: 'App',
+    async created() {
+      // 应用启动时初始化用户状态
+      if (this.$store.getters['user/token']) {
+        try {
+          await this.$store.dispatch('user/initializeAuth');
+        } catch (error) {
+          console.error('Failed to initialize auth on app start:', error);
+        }
+      }
+    }
   };
 </script>
 

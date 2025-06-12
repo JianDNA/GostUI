@@ -98,6 +98,20 @@ class QuotaCoordinatorService {
    */
   async performQuotaCheck(userId, trigger) {
     try {
+      // 🔧 检查单机模式配置
+      const performanceConfigManager = require('./performanceConfigManager');
+      const pluginConfig = performanceConfigManager.getGostPluginConfig();
+
+      // ✅ 只有在单机模式下才禁用配额强制执行，自动模式下正常执行
+      if (pluginConfig.disableQuotaEnforcement) {
+        console.log(`📊 [单机模式] 配额协调器跳过配额强制执行 (用户${userId}, 触发源: ${trigger})`);
+        return {
+          allowed: true,
+          reason: 'quota_enforcement_disabled_single_click_mode',
+          singleClickMode: true
+        };
+      }
+
       // 获取用户信息
       const user = await User.findByPk(userId, {
         attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'trafficQuota', 'usedTraffic', 'expiryDate']

@@ -13,12 +13,8 @@ class GostAuthService {
     this.userDataCache = new Map();    // 用户数据缓存
     this.authResultCache = new Map();  // 认证结果缓存
 
-    // 🚀 优化2: 延长缓存时间 (生产环境数据变化不频繁)
-    this.cacheExpiry = {
-      portMapping: 5 * 60 * 1000,  // 5分钟 (端口映射很少变化)
-      userData: 3 * 60 * 1000,     // 3分钟 (用户数据偶尔变化)
-      authResult: 2 * 60 * 1000    // 2分钟 (认证结果缓存)
-    };
+    // 🚀 优化2: 从配置管理器获取缓存时间
+    this.updateCacheConfig();
 
     // 🚀 优化3: 预热缓存配置
     this.preloadConfig = {
@@ -40,6 +36,31 @@ class GostAuthService {
     this.startCleanupTimer();
 
     console.log('🚀 [认证器] 高性能缓存系统已启动');
+  }
+
+  /**
+   * 🚀 新增: 更新缓存配置
+   */
+  updateCacheConfig() {
+    try {
+      const performanceConfigManager = require('./performanceConfigManager');
+      const cacheConfig = performanceConfigManager.getCacheConfig();
+
+      this.cacheExpiry = {
+        portMapping: 5 * 60 * 1000,  // 5分钟 (端口映射很少变化)
+        userData: 3 * 60 * 1000,     // 3分钟 (用户数据偶尔变化)
+        authResult: cacheConfig.authCacheTimeout || (2 * 60 * 1000)  // 从配置获取
+      };
+
+      console.log(`🔧 [认证器] 缓存配置已更新: 认证结果缓存${this.cacheExpiry.authResult / 1000}秒`);
+    } catch (error) {
+      console.warn('⚠️ [认证器] 更新缓存配置失败，使用默认值:', error.message);
+      this.cacheExpiry = {
+        portMapping: 5 * 60 * 1000,
+        userData: 3 * 60 * 1000,
+        authResult: 2 * 60 * 1000
+      };
+    }
   }
 
   /**

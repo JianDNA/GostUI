@@ -25,17 +25,22 @@ async function resetTestPassword() {
     
     console.log(`✅ 找到test用户 (ID: ${testUser.id})`);
     
-    // 生成新密码的哈希
-    console.log('🔐 生成密码哈希...');
-    const saltRounds = 10;
-    const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
-    
-    // 更新用户密码
+    // 直接使用明文密码，让模型自动加密
     console.log('💾 更新数据库...');
-    await testUser.update({ password: hashedPassword });
-    
-    console.log('');
-    console.log('🎉 密码重置成功！');
+    await testUser.update({ password: newPassword });
+
+    // 验证密码是否正确设置
+    console.log('🔍 验证新密码...');
+    const updatedUser = await User.findOne({ where: { username: 'test' } });
+    const isValid = await updatedUser.comparePassword(newPassword);
+
+    if (isValid) {
+      console.log('');
+      console.log('🎉 密码重置成功！');
+    } else {
+      console.log('❌ 密码验证失败，请检查设置');
+      process.exit(1);
+    }
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('📋 登录信息:');
     console.log(`   用户名: test`);

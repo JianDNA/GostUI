@@ -58,9 +58,10 @@ const actions = {
 
   async getCurrentUser({ commit }) {
     try {
-      const { data } = await request.get('/users/me');
-      commit('SET_CURRENT_USER', data);
-      return data;
+      const response = await request.get('/users/me');
+      const userData = response.data.success ? response.data.data : response.data;
+      commit('SET_CURRENT_USER', userData);
+      return userData;
     } catch (error) {
       console.error('Get current user error:', error);
       throw error;

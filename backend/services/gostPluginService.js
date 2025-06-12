@@ -64,8 +64,20 @@ class GostPluginService {
     this.flushTimer = null;
     this.speedFlushTimer = null;
 
+    // 🔧 新增：批量数据库操作缓冲区
+    this.batchTrafficBuffer = new Map(); // key: userId, value: { totalBytes, lastUpdate }
+    this.batchFlushTimer = null;
+    this.batchFlushInterval = 15000; // 🔧 修复：15秒批量刷新一次（更频繁）
+    this.maxBatchSize = 10; // 🔧 修复：降低批量大小到10个用户
+    this.maxUserTrafficAccumulation = 50 * 1024 * 1024; // 🔧 新增：单用户最大累积50MB就强制刷新
+
     // 启动缓冲区刷新
     this.startBufferFlush();
+
+    // 🔧 延迟启动批量刷新定时器，确保方法已定义
+    setImmediate(() => {
+      this.startBatchFlushTimer();
+    });
 
     console.log('🚀 GOST 插件服务已启动，配置:', this.config);
   }
@@ -417,20 +429,51 @@ class GostPluginService {
       // 🔧 重新启用流量缓冲机制，确保流量数据被记录到TrafficLog表
       this.bufferTrafficData(userId, port, inputBytes, outputBytes);
 
-      // 🔧 关键修复：使用用户级别的互斥锁，防止并发更新导致的竞态条件
-      await this.updateUserTrafficWithLock(userId, incrementalTotalBytes);
+      // 🔧 检查是否启用配额强制执行
+      const performanceConfig = require('./performanceConfigManager');
+      const pluginConfig = performanceConfig.getGostPluginConfig();
 
-      // 🔧 Phase 2: 流量更新后的配额管理
-      this.clearLimiterCacheForUser(userId);
+      // ✅ 只有在单机模式下才禁用配额强制执行，自动模式下正常执行
+      if (pluginConfig.disableQuotaEnforcement) {
+        // 🔧 单机模式：仅统计流量，不执行配额强制
+        console.log(`📊 [单机模式] 仅统计流量，跳过配额强制执行 (用户${userId}, 增量: ${(incrementalTotalBytes / 1024 / 1024).toFixed(1)}MB)`);
 
-      // 🔧 关键修复：强制刷新用户缓存，确保限制器能立即获取最新数据
-      await this.forceRefreshUserCache(userId);
+        if (pluginConfig.batchDatabaseOperations) {
+          // 🔧 批量数据库操作优化
+          this.batchUpdateUserTraffic(userId, incrementalTotalBytes);
+        } else {
+          // 🔧 异步更新流量统计，不阻塞转发
+          setImmediate(async () => {
+            try {
+              await this.updateUserTrafficWithLock(userId, incrementalTotalBytes);
+            } catch (error) {
+              console.error(`❌ 流量统计更新失败 (用户${userId}):`, error);
+            }
+          });
+        }
+      } else {
+        // ✅ 自动模式：完整的配额管理（保持原有逻辑不变）
+        setImmediate(async () => {
+          try {
+            // 🔧 关键修复：使用用户级别的互斥锁，防止并发更新导致的竞态条件
+            await this.updateUserTrafficWithLock(userId, incrementalTotalBytes);
 
-      // 🔧 Phase 2: 使用统一配额协调器检查，避免并发冲突
-      this.triggerUnifiedQuotaCheck(userId);
+            // 🔧 Phase 2: 流量更新后的配额管理
+            this.clearLimiterCacheForUser(userId);
 
-      // 🔧 新增：立即检查配额状态，不等待异步处理
-      await this.immediateQuotaCheck(userId, incrementalTotalBytes);
+            // 🔧 关键修复：强制刷新用户缓存，确保限制器能立即获取最新数据
+            await this.forceRefreshUserCache(userId);
+
+            // 🔧 Phase 2: 使用统一配额协调器检查，避免并发冲突
+            this.triggerUnifiedQuotaCheck(userId);
+
+            // 🔧 新增：立即检查配额状态，不等待异步处理
+            await this.immediateQuotaCheck(userId, incrementalTotalBytes);
+          } catch (error) {
+            console.error(`❌ 异步流量处理失败 (用户${userId}):`, error);
+          }
+        });
+      }
 
       // 更新规则级别的流量统计 (使用增量)
       try {
@@ -624,6 +667,147 @@ class GostPluginService {
     this.speedFlushTimer = setInterval(() => {
       this.flushSpeedBuffer();
     }, this.config.speedFlushInterval);
+  }
+
+  /**
+   * 🔧 新增：启动批量数据库操作定时器
+   */
+  startBatchFlushTimer() {
+    this.batchFlushTimer = setInterval(() => {
+      this.flushBatchTrafficBuffer();
+    }, this.batchFlushInterval);
+
+    console.log(`⏰ 启动批量数据库刷新定时器，间隔: ${this.batchFlushInterval}ms`);
+  }
+
+  /**
+   * 🔧 新增：批量更新用户流量（单击模式优化）
+   * @param {number} userId - 用户ID
+   * @param {number} incrementalBytes - 增量流量字节数
+   */
+  batchUpdateUserTraffic(userId, incrementalBytes) {
+    try {
+      // 累积到批量缓冲区
+      if (this.batchTrafficBuffer.has(userId)) {
+        const existing = this.batchTrafficBuffer.get(userId);
+        existing.totalBytes += incrementalBytes;
+        existing.lastUpdate = Date.now();
+      } else {
+        this.batchTrafficBuffer.set(userId, {
+          totalBytes: incrementalBytes,
+          lastUpdate: Date.now()
+        });
+      }
+
+      const currentUserTotal = this.batchTrafficBuffer.get(userId).totalBytes;
+      console.log(`📊 [批量模式] 用户 ${userId} 流量累积: +${(incrementalBytes / 1024 / 1024).toFixed(1)}MB, 总累积: ${(currentUserTotal / 1024 / 1024).toFixed(1)}MB`);
+
+      // 🔧 修复：检查多个刷新条件
+      let shouldFlush = false;
+      let flushReason = '';
+
+      // 条件1：缓冲区用户数达到最大大小
+      if (this.batchTrafficBuffer.size >= this.maxBatchSize) {
+        shouldFlush = true;
+        flushReason = `缓冲区用户数已满(${this.batchTrafficBuffer.size}/${this.maxBatchSize})`;
+      }
+
+      // 条件2：单用户流量累积过多
+      if (currentUserTotal >= this.maxUserTrafficAccumulation) {
+        shouldFlush = true;
+        flushReason = `用户${userId}流量累积过多(${(currentUserTotal / 1024 / 1024).toFixed(1)}MB)`;
+      }
+
+      // 条件3：数据过期（超过30秒未刷新）
+      const oldestData = Math.min(...Array.from(this.batchTrafficBuffer.values()).map(data => data.lastUpdate));
+      if (Date.now() - oldestData > 30000) {
+        shouldFlush = true;
+        flushReason = '数据过期(超过30秒)';
+      }
+
+      if (shouldFlush) {
+        console.log(`🔄 [批量模式] 立即刷新: ${flushReason}`);
+        this.flushBatchTrafficBuffer();
+      }
+    } catch (error) {
+      console.error(`❌ 批量流量缓冲失败 (用户${userId}):`, error);
+    }
+  }
+
+  /**
+   * 🔧 新增：刷新批量流量缓冲区
+   */
+  async flushBatchTrafficBuffer() {
+    if (this.batchTrafficBuffer.size === 0) {
+      return;
+    }
+
+    const startTime = Date.now();
+    const bufferSize = this.batchTrafficBuffer.size;
+
+    console.log(`🔄 [批量模式] 开始批量刷新 ${bufferSize} 个用户的流量数据`);
+
+    // 获取缓冲区数据并立即清空
+    const batchData = Array.from(this.batchTrafficBuffer.entries());
+    this.batchTrafficBuffer.clear();
+
+    try {
+      // 批量更新数据库
+      await this.processBatchTrafficUpdates(batchData);
+
+      console.log(`✅ [批量模式] 流量数据批量刷新完成: ${bufferSize}个用户, 耗时${Date.now() - startTime}ms`);
+    } catch (error) {
+      console.error('❌ [批量模式] 批量刷新流量数据失败:', error);
+
+      // 错误恢复：将数据重新加入缓冲区
+      batchData.forEach(([userId, data]) => {
+        if (this.batchTrafficBuffer.has(userId)) {
+          this.batchTrafficBuffer.get(userId).totalBytes += data.totalBytes;
+        } else {
+          this.batchTrafficBuffer.set(userId, data);
+        }
+      });
+    }
+  }
+
+  /**
+   * 🔧 新增：处理批量流量更新
+   * @param {Array} batchData - 批量数据 [[userId, {totalBytes, lastUpdate}], ...]
+   */
+  async processBatchTrafficUpdates(batchData) {
+    const { User } = require('../models');
+
+    // 构建批量更新的SQL
+    const updates = batchData.map(([userId, data]) => ({
+      id: userId,
+      increment: data.totalBytes
+    }));
+
+    // 使用事务进行批量更新
+    const { sequelize } = require('./dbService');
+    const transaction = await sequelize.transaction();
+
+    try {
+      // 批量更新用户流量
+      for (const update of updates) {
+        await User.increment(
+          { usedTraffic: update.increment },
+          {
+            where: { id: update.id },
+            transaction
+          }
+        );
+
+        console.log(`📊 [批量更新] 用户 ${update.id} 流量增加: ${(update.increment / 1024 / 1024).toFixed(1)}MB`);
+      }
+
+      await transaction.commit();
+      console.log(`✅ [批量更新] 成功更新 ${updates.length} 个用户的流量数据`);
+
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
+    }
   }
 
   /**

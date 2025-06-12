@@ -79,28 +79,38 @@ class PortSecurityService {
       return result; // 如果禁用限制，直接返回有效
     }
 
-    // 3. 特权端口检查
-    if (port < 1024 && !this.config.security.allowPrivilegedPorts && userRole !== 'admin') {
+    // 🔧 管理员权限：admin用户可以使用任何端口，跳过所有限制检查
+    if (userRole === 'admin') {
+      // 仍然检查端口占用，但跳过其他限制
+      const isInUse = await this.isPortInUse(port);
+      if (isInUse) {
+        result.valid = false;
+        result.errors.push(this.formatMessage('portInUse', { port }));
+      } else {
+        result.warnings.push(`管理员权限：可以使用端口 ${port}`);
+      }
+      return result;
+    }
+
+    // 3. 特权端口检查（仅对非admin用户）
+    if (port < 1024 && !this.config.security.allowPrivilegedPorts) {
       result.valid = false;
       result.errors.push(this.formatMessage('privilegedPort', { port }));
     }
 
-    // 4. 保留端口检查（使用详细描述）
+    // 4. 保留端口检查（仅对非admin用户）
     const reservedCheck = this.isReservedPort(port);
     if (reservedCheck.reserved) {
       result.valid = false;
       result.errors.push(reservedCheck.detail);
     }
 
-    // 5. 端口范围检查（使用详细描述）
+    // 5. 端口范围检查（仅对非admin用户）
     if (!this.isInAllowedRange(port, userRole)) {
       result.valid = false;
 
       // 生成更详细的错误信息，包含范围描述
       const userRanges = this.config.allowedRanges.user.map(r =>
-        `${r.start}-${r.end}(${r.description})`
-      ).join(', ');
-      const adminRanges = this.config.allowedRanges.admin.map(r =>
         `${r.start}-${r.end}(${r.description})`
       ).join(', ');
 
@@ -111,7 +121,7 @@ class PortSecurityService {
           result.errors.push(`端口 ${port} 是${specialPorts.testing.description}，但您的角色 (${userRole}) 无权使用。允许的角色：${specialPorts.testing.allowedRoles.join(', ')}`);
         }
       } else {
-        result.errors.push(`端口 ${port} 不在允许范围内。用户端口范围：${userRanges}；管理员端口范围：${adminRanges}`);
+        result.errors.push(`端口 ${port} 不在允许范围内。用户端口范围：${userRanges}`);
       }
     }
 
@@ -396,6 +406,196 @@ class PortSecurityService {
     }
 
     return count;
+  }
+
+  /**
+   * 验证目标地址是否允许访问
+   * @param {string} targetAddress - 目标地址 (IP:端口 或 [IPv6]:端口)
+   * @param {string} userRole - 用户角色 (user/admin)
+   * @returns {Promise<{valid: boolean, errors: string[], warnings: string[]}>}
+   */
+  async validateTargetAddress(targetAddress, userRole = 'user') {
+    const result = {
+      valid: true,
+      errors: [],
+      warnings: []
+    };
+
+    if (!targetAddress) {
+      result.valid = false;
+      result.errors.push('目标地址不能为空');
+      return result;
+    }
+
+    // 解析目标地址
+    const parsedTarget = this.parseTargetAddress(targetAddress);
+    if (!parsedTarget) {
+      result.valid = false;
+      result.errors.push('目标地址格式无效，请使用 IP:端口 格式');
+      return result;
+    }
+
+    const { ip, port } = parsedTarget;
+
+    // 验证端口范围
+    if (port < 1 || port > 65535) {
+      result.valid = false;
+      result.errors.push(`目标端口 ${port} 无效，必须在 1-65535 范围内`);
+    }
+
+    // 🔧 Admin用户可以访问任何地址
+    if (userRole === 'admin') {
+      result.warnings.push('管理员权限：可以转发任何地址');
+      return result;
+    }
+
+    // 🔧 非Admin用户只能转发公网IPv4地址
+    const addressCheck = this.checkAddressType(ip);
+
+    if (!addressCheck.isPublicIPv4) {
+      result.valid = false;
+
+      if (addressCheck.isLocalhost) {
+        result.errors.push('普通用户不能转发本地地址 (127.0.0.1, localhost, ::1)');
+      } else if (addressCheck.isPrivateNetwork) {
+        result.errors.push(`普通用户不能转发内网地址 (${ip})`);
+      } else if (addressCheck.isIPv6) {
+        result.errors.push('普通用户不能转发IPv6地址，请使用公网IPv4地址');
+      } else if (addressCheck.isReserved) {
+        result.errors.push(`普通用户不能转发保留地址 (${ip})`);
+      } else {
+        result.errors.push(`普通用户只能转发公网IPv4地址，当前地址 ${ip} 不被允许`);
+      }
+
+      result.errors.push('提示：请使用公网IPv4地址，如 8.8.8.8、1.1.1.1 等');
+    }
+
+    return result;
+  }
+
+  /**
+   * 解析目标地址
+   * @param {string} targetAddress - 目标地址
+   * @returns {Object|null} - {ip, port} 或 null
+   */
+  parseTargetAddress(targetAddress) {
+    try {
+      // IPv4:port 格式
+      if (targetAddress.includes('.') && !targetAddress.includes('[')) {
+        const parts = targetAddress.split(':');
+        if (parts.length === 2) {
+          const ip = parts[0].trim();
+          const port = parseInt(parts[1].trim(), 10);
+          return { ip, port };
+        }
+      }
+
+      // [IPv6]:port 格式
+      if (targetAddress.includes('[')) {
+        const match = targetAddress.match(/^\[([0-9a-fA-F:]+)\]:(\d+)$/);
+        if (match) {
+          return { ip: match[1], port: parseInt(match[2], 10) };
+        }
+      }
+
+      // 域名:port 格式
+      if (targetAddress.includes(':')) {
+        const parts = targetAddress.split(':');
+        if (parts.length === 2) {
+          const ip = parts[0].trim();
+          const port = parseInt(parts[1].trim(), 10);
+          // 简单验证域名格式
+          if (ip.match(/^[a-zA-Z0-9.-]+$/)) {
+            return { ip, port };
+          }
+        }
+      }
+
+      return null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
+   * 检查地址类型
+   * @param {string} ip - IP地址或域名
+   * @returns {Object} - 地址类型信息
+   */
+  checkAddressType(ip) {
+    const net = require('net');
+
+    const result = {
+      isLocalhost: false,
+      isPrivateNetwork: false,
+      isIPv6: false,
+      isReserved: false,
+      isPublicIPv4: false,
+      isDomain: false
+    };
+
+    // 检查是否为域名
+    if (!net.isIP(ip)) {
+      // 检查localhost域名
+      if (ip.toLowerCase() === 'localhost') {
+        result.isLocalhost = true;
+        return result;
+      }
+
+      // 其他域名暂时允许（实际部署时可能需要DNS解析检查）
+      result.isDomain = true;
+      result.isPublicIPv4 = true; // 假设域名指向公网地址
+      return result;
+    }
+
+    // IPv6地址
+    if (net.isIPv6(ip)) {
+      result.isIPv6 = true;
+
+      // 检查IPv6本地地址
+      if (ip === '::1' || ip.toLowerCase().startsWith('fe80:')) {
+        result.isLocalhost = true;
+      }
+
+      return result;
+    }
+
+    // IPv4地址
+    if (net.isIPv4(ip)) {
+      const parts = ip.split('.').map(Number);
+
+      // 本地地址
+      if (ip === '127.0.0.1' || parts[0] === 127) {
+        result.isLocalhost = true;
+        return result;
+      }
+
+      // 私有网络地址
+      if (
+        (parts[0] === 10) || // 10.0.0.0/8
+        (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) || // 172.16.0.0/12
+        (parts[0] === 192 && parts[1] === 168) // 192.168.0.0/16
+      ) {
+        result.isPrivateNetwork = true;
+        return result;
+      }
+
+      // 保留地址
+      if (
+        (parts[0] === 0) || // 0.0.0.0/8
+        (parts[0] === 169 && parts[1] === 254) || // 169.254.0.0/16 (链路本地)
+        (parts[0] >= 224 && parts[0] <= 239) || // 224.0.0.0/4 (多播)
+        (parts[0] >= 240) // 240.0.0.0/4 (保留)
+      ) {
+        result.isReserved = true;
+        return result;
+      }
+
+      // 公网IPv4地址
+      result.isPublicIPv4 = true;
+    }
+
+    return result;
   }
 }
 

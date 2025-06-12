@@ -47,6 +47,8 @@ app.use('/api/test', require('./routes/test'));
 app.use('/api/quota', require('./routes/quota')); // 配额管理路由（完整版）
 app.use('/api/port-security', require('./routes/portSecurity')); // 端口安全验证路由
 app.use('/api/system', require('./routes/system')); // 系统状态API路由
+app.use('/api/performance-config', require('./routes/performanceConfig')); // 性能配置管理路由
+app.use('/api/network-config', require('./routes/networkConfig')); // 网络配置检测路由
 
 // 添加简单的健康检查接口
 app.get('/api/health', (req, res) => {
@@ -108,11 +110,34 @@ app.get('/api/test-forward', (req, res) => {
       console.warn('⚠️ 多实例缓存服务初始化失败，将使用数据库回退:', error.message);
     }
 
-    // 🚀 新增: 初始化缓存协调器
+    // 🚀 新增: 初始化性能配置管理器
     try {
-      const cacheCoordinator = require('./services/cacheCoordinator');
-      await cacheCoordinator.initialize();
-      console.log('✅ 缓存协调器初始化成功');
+      const performanceConfigManager = require('./services/performanceConfigManager');
+      await performanceConfigManager.initialize();
+      console.log('✅ 性能配置管理器初始化成功');
+    } catch (error) {
+      console.warn('⚠️ 性能配置管理器初始化失败:', error.message);
+    }
+
+    // 🚀 新增: 初始化系统模式管理器
+    try {
+      const systemModeManager = require('./services/systemModeManager');
+      await systemModeManager.initialize();
+      console.log('✅ 系统模式管理器初始化成功');
+    } catch (error) {
+      console.warn('⚠️ 系统模式管理器初始化失败:', error.message);
+    }
+
+    // 🚀 新增: 初始化缓存协调器 (根据模式决定是否启动)
+    try {
+      const systemModeManager = require('./services/systemModeManager');
+      if (!systemModeManager.isSimpleMode()) {
+        const cacheCoordinator = require('./services/cacheCoordinator');
+        await cacheCoordinator.initialize();
+        console.log('✅ 缓存协调器初始化成功');
+      } else {
+        console.log('🎛️ 单击模式下跳过缓存协调器初始化');
+      }
     } catch (error) {
       console.warn('⚠️ 缓存协调器初始化失败:', error.message);
     }

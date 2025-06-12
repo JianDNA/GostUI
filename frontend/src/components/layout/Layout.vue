@@ -21,14 +21,26 @@
           <el-icon><List /></el-icon>
           <span>规则管理</span>
         </el-menu-item>
+        <el-menu-item index="/profile">
+          <el-icon><UserFilled /></el-icon>
+          <span>个人信息</span>
+        </el-menu-item>
 
         <el-menu-item v-if="canUseTrafficTest" index="/traffic-test">
           <el-icon><Connection /></el-icon>
           <span>🧪 API测试</span>
         </el-menu-item>
-        <el-menu-item v-if="isAdmin" index="/system-status">
+        <el-menu-item v-if="isAdmin" index="/gost-config">
           <el-icon><Setting /></el-icon>
+          <span>Gost配置</span>
+        </el-menu-item>
+        <el-menu-item v-if="isAdmin" index="/system-status">
+          <el-icon><Monitor /></el-icon>
           <span>系统状态</span>
+        </el-menu-item>
+        <el-menu-item v-if="isAdmin" index="/performance-config">
+          <el-icon><Tools /></el-icon>
+          <span>性能配置</span>
         </el-menu-item>
 
       </el-menu>
@@ -53,7 +65,7 @@
 <script setup>
 import { computed } from 'vue';
 import { useStore } from 'vuex';
-import { Monitor, User, List, TrendCharts, Connection, Setting } from '@element-plus/icons-vue';
+import { Monitor, User, UserFilled, List, TrendCharts, Connection, Setting, Tools } from '@element-plus/icons-vue';
 import Navbar from './Navbar.vue';
 
 const store = useStore();

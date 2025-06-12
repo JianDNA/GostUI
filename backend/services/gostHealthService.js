@@ -12,7 +12,8 @@ const { getGostExecutablePath, validateGostExecutable, isWindows, getGostExecuta
 class GostHealthService {
   constructor() {
     this.isRunning = false;
-    this.checkInterval = 30000; // 30秒检查一次
+    // 🚀 从性能配置管理器获取检查间隔
+    this.updateConfig();
     this.healthTimer = null;
     this.gostProcess = null;
     this.restartAttempts = 0;
@@ -22,6 +23,23 @@ class GostHealthService {
     // GOST 配置路径
     this.configPath = path.join(__dirname, '../config/gost-config.json');
     this.gostBinaryPath = getGostExecutablePath();
+  }
+
+  /**
+   * 🚀 新增: 更新配置
+   */
+  updateConfig() {
+    try {
+      const performanceConfigManager = require('./performanceConfigManager');
+      const syncConfig = performanceConfigManager.getSyncConfig();
+
+      this.checkInterval = syncConfig.healthCheckInterval || 30000;
+
+      console.log(`🔧 [健康检查] 配置已更新: 检查间隔${this.checkInterval / 1000}秒`);
+    } catch (error) {
+      console.warn('⚠️ [健康检查] 更新配置失败，使用默认值:', error.message);
+      this.checkInterval = 30000;
+    }
   }
 
   /**

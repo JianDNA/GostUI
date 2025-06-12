@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const gostConfigService = require('../services/gostConfigService');
-const { auth } = require('../middleware/auth');
+const { auth, adminAuth } = require('../middleware/auth');
 
 // 🔒 生产环境安全中间件
 const productionSafetyMiddleware = (req, res, next) => {
@@ -29,9 +29,9 @@ const productionSafetyMiddleware = (req, res, next) => {
 };
 
 /**
- * 生成当前的 Gost 配置（基于数据库中的有效规则）
+ * 生成当前的 Gost 配置（基于数据库中的有效规则）- 仅管理员
  */
-router.get('/generate', auth, async (req, res) => {
+router.get('/generate', auth, adminAuth, async (req, res) => {
   try {
     const config = await gostConfigService.generateGostConfig();
     res.json({
@@ -50,9 +50,9 @@ router.get('/generate', auth, async (req, res) => {
 });
 
 /**
- * 获取当前持久化的配置
+ * 获取当前持久化的配置 - 仅管理员
  */
-router.get('/current', auth, async (req, res) => {
+router.get('/current', auth, adminAuth, async (req, res) => {
   try {
     const config = await gostConfigService.getCurrentPersistedConfig();
     res.json({
@@ -71,17 +71,10 @@ router.get('/current', auth, async (req, res) => {
 });
 
 /**
- * 手动同步配置
+ * 手动同步配置 - 仅管理员
  */
-router.post('/sync', auth, productionSafetyMiddleware, async (req, res) => {
+router.post('/sync', auth, adminAuth, productionSafetyMiddleware, async (req, res) => {
   try {
-    // 检查权限 - 只有管理员可以手动同步
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: '权限不足，只有管理员可以执行此操作'
-      });
-    }
 
     const gostSyncCoordinator = require('../services/gostSyncCoordinator');
     const result = await gostSyncCoordinator.requestSync('manual_admin', true, 10);
@@ -103,17 +96,10 @@ router.post('/sync', auth, productionSafetyMiddleware, async (req, res) => {
 });
 
 /**
- * 启动自动同步
+ * 启动自动同步 - 仅管理员
  */
-router.post('/auto-sync/start', auth, async (req, res) => {
+router.post('/auto-sync/start', auth, adminAuth, async (req, res) => {
   try {
-    // 检查权限 - 只有管理员可以控制自动同步
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: '权限不足，只有管理员可以执行此操作'
-      });
-    }
 
     gostConfigService.startAutoSync();
     res.json({
@@ -131,17 +117,10 @@ router.post('/auto-sync/start', auth, async (req, res) => {
 });
 
 /**
- * 停止自动同步
+ * 停止自动同步 - 仅管理员
  */
-router.post('/auto-sync/stop', auth, async (req, res) => {
+router.post('/auto-sync/stop', auth, adminAuth, async (req, res) => {
   try {
-    // 检查权限 - 只有管理员可以控制自动同步
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: '权限不足，只有管理员可以执行此操作'
-      });
-    }
 
     gostConfigService.stopAutoSync();
     res.json({
@@ -159,9 +138,9 @@ router.post('/auto-sync/stop', auth, async (req, res) => {
 });
 
 /**
- * 获取配置统计信息
+ * 获取配置统计信息 - 仅管理员
  */
-router.get('/stats', auth, async (req, res) => {
+router.get('/stats', auth, adminAuth, async (req, res) => {
   try {
     const stats = await gostConfigService.getConfigStats();
     res.json({
@@ -180,9 +159,9 @@ router.get('/stats', auth, async (req, res) => {
 });
 
 /**
- * 比较当前配置与生成的配置
+ * 比较当前配置与生成的配置 - 仅管理员
  */
-router.get('/compare', auth, productionSafetyMiddleware, async (req, res) => {
+router.get('/compare', auth, adminAuth, productionSafetyMiddleware, async (req, res) => {
   try {
     const generatedConfig = await gostConfigService.generateGostConfig();
     const currentConfig = await gostConfigService.getCurrentPersistedConfig();
@@ -210,9 +189,9 @@ router.get('/compare', auth, productionSafetyMiddleware, async (req, res) => {
 });
 
 /**
- * 获取同步协调器状态
+ * 获取同步协调器状态 - 仅管理员
  */
-router.get('/sync-status', auth, async (req, res) => {
+router.get('/sync-status', auth, adminAuth, async (req, res) => {
   try {
     const gostSyncCoordinator = require('../services/gostSyncCoordinator');
     const status = gostSyncCoordinator.getStatus();
@@ -233,9 +212,9 @@ router.get('/sync-status', auth, async (req, res) => {
 });
 
 /**
- * 获取实时流量监控状态
+ * 获取实时流量监控状态 - 仅管理员
  */
-router.get('/realtime-monitor-status', auth, async (req, res) => {
+router.get('/realtime-monitor-status', auth, adminAuth, async (req, res) => {
   try {
     const realTimeTrafficMonitor = require('../services/realTimeTrafficMonitor');
     const status = realTimeTrafficMonitor.getMonitoringStatus();

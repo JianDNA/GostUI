@@ -39,10 +39,15 @@ const mutations = {
 };
 
 const actions = {
-  async fetchStatus({ commit }) {
+  async fetchStatus({ commit, rootGetters }) {
     try {
       commit('SET_LOADING', true);
-      const response = await request.get('/gost/status');
+
+      // 根据用户权限选择不同的API端点
+      const isAdmin = rootGetters['user/isAdmin'];
+      const endpoint = isAdmin ? '/gost/status' : '/gost/status/basic';
+
+      const response = await request.get(endpoint);
       commit('SET_STATUS', response.data.data);
       return response.data.data;
     } catch (error) {

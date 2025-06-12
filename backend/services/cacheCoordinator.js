@@ -11,12 +11,11 @@
 
 class CacheCoordinator {
   constructor() {
-    this.config = {
-      syncInterval: 30 * 1000,        // 30秒同步一次
-      healthCheckInterval: 60 * 1000, // 60秒健康检查
-      maxSyncRetries: 3,              // 最大重试次数
-      syncTimeout: 10 * 1000          // 同步超时时间
-    };
+    // 🚀 从性能配置管理器获取配置
+    this.updateConfig();
+
+    this.config.maxSyncRetries = 3;              // 最大重试次数
+    this.config.syncTimeout = 10 * 1000;        // 同步超时时间
     
     this.stats = {
       syncCount: 0,
@@ -31,6 +30,29 @@ class CacheCoordinator {
     this.isInitialized = false;
     
     console.log('🎯 [缓存协调器] 初始化');
+  }
+
+  /**
+   * 🚀 新增: 更新配置
+   */
+  updateConfig() {
+    try {
+      const performanceConfigManager = require('./performanceConfigManager');
+      const syncConfig = performanceConfigManager.getSyncConfig();
+
+      this.config = {
+        syncInterval: syncConfig.cacheCoordinatorSyncInterval || (30 * 1000),
+        healthCheckInterval: syncConfig.healthCheckInterval || (60 * 1000)
+      };
+
+      console.log(`🔧 [缓存协调器] 配置已更新: 同步间隔${this.config.syncInterval / 1000}秒, 健康检查${this.config.healthCheckInterval / 1000}秒`);
+    } catch (error) {
+      console.warn('⚠️ [缓存协调器] 更新配置失败，使用默认值:', error.message);
+      this.config = {
+        syncInterval: 30 * 1000,
+        healthCheckInterval: 60 * 1000
+      };
+    }
   }
 
   /**

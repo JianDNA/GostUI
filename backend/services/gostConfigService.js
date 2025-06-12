@@ -138,24 +138,42 @@ class GostConfigService {
         });
       }
 
-      // 生成 Gost 配置，包含插件支持
+      // 🚀 从性能配置管理器获取插件配置
+      const performanceConfigManager = require('./performanceConfigManager');
+      const systemModeManager = require('./systemModeManager');
+      const pluginConfig = performanceConfigManager.getGostPluginConfig();
+      const isSimpleMode = systemModeManager.isSimpleMode();
+
+      // 生成 Gost 配置
       const gostConfig = {
         services: [],
-        chains: [],
-        // 🔧 端口转发模式不支持认证器插件
-        // 添加观测器插件
-        observers: [
-          {
-            name: "observer-0",
-            plugin: {
-              type: "http",
-              addr: "http://localhost:3000/api/gost-plugin/observer",
-              timeout: "10s"
-            }
-          }
-        ],
-        // 🔧 端口转发模式不支持限制器插件
+        chains: []
       };
+
+      // 🔧 修复: 始终添加观察器插件以支持流量统计
+      gostConfig.observers = [
+        {
+          name: "observer-0",
+          plugin: {
+            type: "http",
+            addr: "http://localhost:3000/api/gost-plugin/observer",
+            timeout: pluginConfig.observerTimeout || "10s"
+          }
+        }
+      ];
+
+      // 🔧 添加API配置以支持热加载
+      gostConfig.api = {
+        addr: ":18080",
+        pathPrefix: "/api",
+        accesslog: false
+      };
+
+      // 🎛️ 只有在自动模式下才添加其他插件
+      if (!isSimpleMode) {
+        // 🔧 端口转发模式暂不支持认证器和限制器插件
+        // 但保留配置结构以备将来使用
+      }
 
       // 为每个转发规则创建服务和链
       allRules.forEach((rule, index) => {
@@ -164,19 +182,17 @@ class GostConfigService {
 
         console.log(`🔧 创建服务: ${serviceName} (用户: ${rule.username}, 端口: ${rule.sourcePort} -> ${rule.targetAddress})`);
 
-        // 🔧 Phase 2: 创建服务，包含完整的插件支持
+        // 🔧 Phase 2: 创建服务，包含完整的插件支持和IPv6监听地址支持
         const service = {
           name: serviceName,
-          addr: `:${rule.sourcePort}`,
-          observer: "observer-0",  // 服务级别的观察器
+          addr: rule.getGostListenAddress ? rule.getGostListenAddress() : `:${rule.sourcePort}`, // 🔧 支持IPv6监听地址
+          observer: "observer-0",  // 🔧 尝试服务级别的观察器
           handler: {
             type: rule.protocol,  // 🔧 恢复为端口转发模式（TCP/UDP）
             chain: chainName,
-            // 🔧 只保留观察器，移除认证器和限制器（端口转发不支持）
-            observer: "observer-0",   // 流量统计
             metadata: {
-              // Handler 级别的观察器配置
-              "observer.period": "5s",
+              // Handler 级别的观察器配置 - 使用动态配置
+              "observer.period": pluginConfig.observerPeriod || "30s",  // 🔧 性能优化：使用配置文件中的周期
               "observer.resetTraffic": true,  // 🔧 关键：启用增量流量模式
             }
           },
@@ -186,15 +202,18 @@ class GostConfigService {
           metadata: {
             // 启用统计功能
             enableStats: true,
-            // 观测器配置 - 优化为5秒周期
-            "observer.period": "5s",
+            // 观测器配置 - 使用动态配置
+            "observer.period": pluginConfig.observerPeriod || "30s",  // 🔧 性能优化：使用配置文件中的周期
             "observer.resetTraffic": true,  // 🔧 关键修复：启用增量流量模式
             // 用户和规则信息
             userId: rule.userId,
             username: rule.username,
             ruleId: rule.ruleId,
             ruleName: rule.name,
-            description: rule.description
+            description: rule.description,
+            // 🔧 新增：监听地址信息
+            listenAddress: rule.listenAddress,
+            listenAddressType: rule.listenAddressType
           }
         };
 
@@ -319,6 +338,16 @@ class GostConfigService {
   async syncConfig() {
     try {
       console.log('开始同步 Gost 配置...');
+
+      // 🔧 检查是否在单击模式下禁用配置同步
+      const performanceConfigManager = require('./performanceConfigManager');
+      const pluginConfig = performanceConfigManager.getGostPluginConfig();
+
+      // ✅ 只有在单击模式下才禁用配置同步，自动模式下正常执行
+      if (pluginConfig.disableConfigSync) {
+        console.log('📊 [单击模式] 配置同步已禁用，跳过GOST配置同步');
+        return { updated: false, config: null, reason: 'sync_disabled_single_click_mode' };
+      }
 
       // 生成新配置
       const newConfig = await this.generateGostConfig();

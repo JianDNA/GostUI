@@ -7,20 +7,20 @@
       "expiryDate": null,
       "trafficQuota": null,
       "trafficLimitBytes": 0,
-      "usedTraffic": 106747989,
+      "usedTraffic": 1180489913,
       "status": "active",
       "portRanges": [],
       "isActive": true,
-      "lastUpdate": 1749655810026
+      "lastUpdate": 1749739916779
     },
     "2": {
       "id": 2,
       "username": "test",
       "role": "user",
       "expiryDate": "2025-08-09T00:00:00.000Z",
-      "trafficQuota": 1,
-      "trafficLimitBytes": 1073741824,
-      "usedTraffic": 676145916,
+      "trafficQuota": 0.5,
+      "trafficLimitBytes": 536870912,
+      "usedTraffic": 104859884,
       "status": "active",
       "portRanges": [
         {
@@ -29,7 +29,7 @@
         }
       ],
       "isActive": true,
-      "lastUpdate": 1749655810026
+      "lastUpdate": 1749739916779
     },
     "4": {
       "id": 4,
@@ -42,7 +42,7 @@
       "status": "active",
       "portRanges": [],
       "isActive": true,
-      "lastUpdate": 1749655810027
+      "lastUpdate": 1749739916779
     },
     "5": {
       "id": 5,
@@ -55,7 +55,7 @@
       "status": "active",
       "portRanges": [],
       "isActive": true,
-      "lastUpdate": 1749655810027
+      "lastUpdate": 1749739916779
     }
   },
   "portMapping": {
@@ -77,13 +77,13 @@
       "ruleId": 11,
       "ruleName": "Test New Rule"
     },
-    "29080": {
+    "29082": {
       "userId": 1,
       "username": "admin",
       "ruleId": 5,
-      "ruleName": "Admin Rule 2"
+      "ruleName": "Admin Rule 23"
     }
   },
-  "lastUpdate": 1749655810027,
+  "lastUpdate": 1749739916780,
   "updatedBy": "0"
 }

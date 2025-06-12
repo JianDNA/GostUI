@@ -738,6 +738,8 @@ class GostService {
         const error = data.toString().trim();
         console.error(`Go-Gost stderr: ${error}`);
 
+        // 🔧 注释：GOST日志解析由观察器插件处理
+
         // 特殊处理常见错误
         if (error.includes('address already in use')) {
           console.error('错误: 端口已被占用。请检查是否有其他进程正在使用该端口。');

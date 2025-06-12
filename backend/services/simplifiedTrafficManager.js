@@ -230,7 +230,6 @@ class SimplifiedTrafficManager {
         include: [{
           model: UserForwardRule,
           as: 'forwardRules',
-          where: { isActive: true },
           required: false
         }]
       });
@@ -264,7 +263,13 @@ class SimplifiedTrafficManager {
           continue;
         }
 
-        for (const rule of user.forwardRules) {
+        // 🔧 修复: 使用计算属性过滤活跃规则
+        const activeRules = user.forwardRules.filter(rule => {
+          rule.user = user; // 设置用户关联
+          return rule.isActive; // 计算属性
+        });
+
+        for (const rule of activeRules) {
           const serviceName = `forward-tcp-${rule.sourcePort}`;
 
           const service = {
@@ -380,120 +385,6 @@ class SimplifiedTrafficManager {
       throw error;
     }
   }
-
-  /**
-   * 触发配置更新
-   */
-  async triggerConfigUpdate(reason = 'manual') {
-    if (this.isUpdating) {
-      console.log(`⏳ 配置更新中，加入队列 (原因: ${reason})`);
-      this.updateQueue.push(reason);
-      return;
-    }
-
-    try {
-      this.isUpdating = true;
-      console.log(`🔄 触发配置更新 (原因: ${reason})`);
-
-      // 重新生成配置
-      const result = await this.generateConfiguration();
-
-      // 热重载GOST配置
-      await this.reloadGostConfig();
-
-      console.log(`✅ 配置更新完成: ${result.userCount}用户, ${result.ruleCount}规则`);
-
-      // 处理队列中的更新请求
-      if (this.updateQueue.length > 0) {
-        const nextReason = this.updateQueue.shift();
-        setTimeout(() => this.triggerConfigUpdate(nextReason), 1000);
-      }
-
-    } catch (error) {
-      console.error('❌ 配置更新失败:', error);
-      throw error;
-    } finally {
-      this.isUpdating = false;
-    }
-  }
-
-  /**
-   * 热重载GOST配置
-   */
-  async reloadGostConfig() {
-    try {
-      console.log('🔥 热重载GOST配置...');
-
-      // 使用GOST API进行热重载
-      const response = await fetch('http://localhost:18080/config', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: await fs.readFile(this.configPath, 'utf8')
-      });
-
-      if (response.ok) {
-        console.log('✅ GOST配置热重载成功');
-      } else {
-        console.log('⚠️ GOST热重载失败，尝试重启服务...');
-        await gostService.restart();
-      }
-
-    } catch (error) {
-      console.log('⚠️ GOST热重载异常，尝试重启服务:', error.message);
-      await gostService.restart();
-    }
-  }
-
-  /**
-   * 获取用户状态
-   */
-  async getUserStatus(userId) {
-    try {
-      const user = await User.findByPk(userId, {
-        include: [{
-          model: UserForwardRule,
-          as: 'forwardRules'
-        }]
-      });
-
-      if (!user) {
-        throw new Error('用户不存在');
-      }
-
-      const quotaBytes = user.trafficQuota * 1024 * 1024 * 1024;
-      const usedBytes = user.usedTraffic || 0;
-      const usagePercentage = (usedBytes / quotaBytes) * 100;
-
-      const activeRules = user.forwardRules.filter(r => r.isActive);
-      const inactiveRules = user.forwardRules.filter(r => !r.isActive);
-
-      return {
-        userId: user.id,
-        username: user.username,
-        quota: user.trafficQuota,
-        quotaMB: user.trafficQuota * 1024,
-        used: usedBytes,
-        usedMB: usedBytes / (1024 * 1024),
-        usagePercentage,
-        remaining: quotaBytes - usedBytes,
-        remainingMB: (quotaBytes - usedBytes) / (1024 * 1024),
-        rules: {
-          total: user.forwardRules.length,
-          active: activeRules.length,
-          inactive: inactiveRules.length
-        }
-      };
-
-    } catch (error) {
-      console.error('❌ 获取用户状态失败:', error);
-      throw error;
-    }
-  }
-}
-
-module.exports = new SimplifiedTrafficManager();
 
   /**
    * 触发配置更新

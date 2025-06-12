@@ -10,11 +10,12 @@ const Login = () => import('@/views/Login.vue');
 const Dashboard = () => import('@/views/Dashboard.vue');
 const UserManagement = () => import('@/views/UserManagement.vue');
 const UserForwardRules = () => import('@/views/UserForwardRules.vue');
-const TrafficStats = () => import('@/views/TrafficStats.vue');
 const GostConfig = () => import('@/views/GostConfig.vue');
 
 const AdvancedTrafficTest = () => import('@/views/AdvancedTrafficTest.vue');
 const SystemStatus = () => import('@/views/SystemStatus.vue');
+const PerformanceConfig = () => import('@/views/admin/PerformanceConfig.vue');
+const Profile = () => import('@/views/Profile.vue');
 
 const routes = [
   {
@@ -94,6 +95,25 @@ const routes = [
           requiresAuth: true,
           requiresAdmin: true,
           title: '系统状态'
+        }
+      },
+      {
+        path: '/performance-config',
+        name: 'PerformanceConfig',
+        component: PerformanceConfig,
+        meta: {
+          requiresAuth: true,
+          requiresAdmin: true,
+          title: '性能配置'
+        }
+      },
+      {
+        path: '/profile',
+        name: 'Profile',
+        component: Profile,
+        meta: {
+          requiresAuth: true,
+          title: '个人信息'
         }
       }
     ]

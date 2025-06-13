@@ -306,10 +306,13 @@
 
         <el-form-item label="协议" prop="protocol">
           <el-select v-model="ruleForm.protocol" style="width: 100%">
-            <el-option label="TCP" value="tcp" />
-            <el-option label="UDP" value="udp" />
-            <el-option label="TLS" value="tls" />
+            <el-option label="TCP" value="tcp" :disabled="disabledProtocols.includes('tcp')" />
+            <el-option label="UDP" value="udp" :disabled="disabledProtocols.includes('udp')" />
+            <el-option label="TLS" value="tls" :disabled="disabledProtocols.includes('tls')" />
           </el-select>
+          <div class="form-tip warning-tip" v-if="disabledProtocols.length > 0">
+            注意：管理员已禁用以下协议：{{ disabledProtocols.join(', ').toUpperCase() }}
+          </div>
         </el-form-item>
 
         <el-form-item label="描述" prop="description">
@@ -366,6 +369,9 @@ export default {
       recommendedIPv6: '::1',
       supportedListenModes: ['ipv4']
     })
+
+    // 禁用协议列表
+    const disabledProtocols = ref([])
 
     // 当前用户信息
     const currentUser = computed(() => store.getters['user/currentUser'])
@@ -456,6 +462,20 @@ export default {
       } catch (error) {
         console.warn('获取网络配置失败:', error)
         ElMessage.warning('获取网络配置失败，将使用默认配置')
+      }
+    }
+    
+    // 加载禁用协议列表
+    const loadDisabledProtocols = async () => {
+      try {
+        const response = await api.get('/system-config/disabledProtocols')
+        if (response.data.success && response.data.data) {
+          disabledProtocols.value = response.data.data.value || []
+          console.log('禁用协议列表:', disabledProtocols.value)
+        }
+      } catch (error) {
+        console.warn('获取禁用协议列表失败:', error)
+        disabledProtocols.value = [] // 默认不禁用任何协议
       }
     }
 
@@ -694,6 +714,12 @@ export default {
       } catch {
         return
       }
+      
+      // 检查协议是否被禁用
+      if (disabledProtocols.value.includes(ruleForm.protocol)) {
+        ElMessage.error(`无法创建规则：协议 ${ruleForm.protocol.toUpperCase()} 已被管理员禁用`)
+        return
+      }
 
       saving.value = true
       try {
@@ -794,11 +820,22 @@ export default {
 
     const resetForm = () => {
       editingRule.value = null
+      
+      // 选择默认协议（优先选择未被禁用的协议）
+      let defaultProtocol = 'tcp';
+      if (disabledProtocols.value.includes('tcp')) {
+        if (!disabledProtocols.value.includes('udp')) {
+          defaultProtocol = 'udp';
+        } else if (!disabledProtocols.value.includes('tls')) {
+          defaultProtocol = 'tls';
+        }
+      }
+      
       Object.assign(ruleForm, {
         name: '',
         sourcePort: null,
         targetAddress: '',
-        protocol: 'tcp',
+        protocol: defaultProtocol,
         description: '',
         listenAddressType: 'ipv4',
         listenAddress: networkInfo.value.recommendedIPv4 || '127.0.0.1'
@@ -841,6 +878,11 @@ export default {
 
       // 检查各种禁用原因
       const reasons = []
+
+      // 检查协议是否被禁用
+      if (disabledProtocols.value.includes(rule.protocol)) {
+        reasons.push(`协议 ${rule.protocol.toUpperCase()} 已被管理员禁用`)
+      }
 
       // 检查用户状态
       if (group?.isExpired || userExpired.value) {
@@ -942,6 +984,7 @@ export default {
     onMounted(async () => {
       console.log('组件加载，当前用户ID:', targetUserId.value);
       await loadNetworkInfo();
+      await loadDisabledProtocols();
       await loadRules();
       
       // 调试信息
@@ -992,7 +1035,8 @@ export default {
       loadNetworkInfo,
       onListenAddressTypeChange,
       parseAdditionalPorts,
-      isPrivateTargetAddress
+      isPrivateTargetAddress,
+      disabledProtocols
     }
   }
 }
@@ -1097,21 +1141,24 @@ export default {
   padding: 4px 8px;
   border-radius: 4px;
   border: 1px solid #d9ecff;
-  margin-top: 8px;
-  display: block;
-  margin-bottom: 4px;
+}
+
+/* 警告提示样式 */
+.warning-tip {
+  color: #E6A23C !important;
+  background-color: #fdf6ec;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #faecd8;
 }
 
 /* 成功提示样式 */
 .success-tip {
-  color: #67c23a !important;
+  color: #67C23A !important;
   background-color: #f0f9eb;
   padding: 4px 8px;
   border-radius: 4px;
   border: 1px solid #e1f3d8;
-  margin-top: 8px;
-  display: block;
-  margin-bottom: 4px;
 }
 
 .disabled-hint {

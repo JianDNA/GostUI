@@ -147,7 +147,8 @@ class GostSyncCoordinator {
       'rule_update',              // 🔧 确保规则更新永不被跳过
       'rule_delete',              // 🔧 确保规则删除永不被跳过
       'batch_rule_delete',        // 🔧 确保批量规则删除永不被跳过
-      'user_expiry_extended'      // 🔧 确保用户过期时间延长永不被跳过
+      'user_expiry_extended',     // 🔧 确保用户过期时间延长永不被跳过
+      'protocol_config_update'    // 🚀 确保协议配置更新永不被跳过
     ];
     if (forceTriggers.includes(trigger)) {
       return false;

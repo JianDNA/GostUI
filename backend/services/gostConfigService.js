@@ -143,6 +143,10 @@ class GostConfigService {
       const systemModeManager = require('./systemModeManager');
       const pluginConfig = performanceConfigManager.getGostPluginConfig();
       const isSimpleMode = systemModeManager.isSimpleMode();
+      
+      // 获取禁用协议列表
+      const { SystemConfig } = models;
+      const disabledProtocols = await SystemConfig.getValue('disabledProtocols', []);
 
       // 生成 Gost 配置
       const gostConfig = {
@@ -177,6 +181,12 @@ class GostConfigService {
 
       // 为每个转发规则创建服务和链
       allRules.forEach((rule, index) => {
+        // 检查协议是否被禁用
+        if (disabledProtocols.includes(rule.protocol)) {
+          console.log(`🚫 跳过被禁用的协议 ${rule.protocol} 的规则: ${rule.name} (用户: ${rule.username}, 端口: ${rule.sourcePort})`);
+          return; // 跳过此规则
+        }
+        
         const serviceName = `forward-${rule.protocol}-${rule.sourcePort}`;
         const chainName = `chain-${rule.protocol}-${rule.sourcePort}`;
 

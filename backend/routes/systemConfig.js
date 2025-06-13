@@ -1,353 +1,145 @@
-/**
- * 系统配置管理路由
- * 提供GOST性能参数配置和单机模式管理
- */
-
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { auth } = require('../middleware/auth');
 const { SystemConfig } = require('../models');
 
-/**
- * 获取当前系统配置
- * GET /api/system-config
- */
-router.get('/', requireAuth, requireAdmin, async (req, res) => {
+// 获取系统配置
+router.get('/', auth, async (req, res) => {
   try {
-    const config = await SystemConfig.getCurrentConfig();
+    // 只允许管理员访问
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: '没有权限访问系统配置' });
+    }
+
+    // 获取所有配置
+    const configs = await SystemConfig.findAll({
+      order: [['category', 'ASC'], ['key', 'ASC']]
+    });
+
+    // 转换为对象格式，按类别分组
+    const configsByCategory = {};
     
+    for (const config of configs) {
+      if (!configsByCategory[config.category]) {
+        configsByCategory[config.category] = {};
+      }
+      
+      try {
+        configsByCategory[config.category][config.key] = JSON.parse(config.value);
+      } catch (e) {
+        configsByCategory[config.category][config.key] = config.value;
+      }
+    }
+
     res.json({
       success: true,
-      data: config,
-      message: '获取系统配置成功'
+      data: configsByCategory
     });
   } catch (error) {
     console.error('获取系统配置失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '获取系统配置失败',
-      error: error.message
-    });
+    res.status(500).json({ message: '获取系统配置失败', error: error.message });
   }
 });
 
-/**
- * 更新系统配置
- * PUT /api/system-config
- */
-router.put('/', requireAuth, requireAdmin, async (req, res) => {
+// 获取特定配置
+router.get('/:key', auth, async (req, res) => {
   try {
-    const {
-      isSimpleMode,
-      authTimeout,
-      observerTimeout,
-      limiterTimeout,
-      authCacheTimeout,
-      limiterCacheTimeout,
-      multiInstanceCacheTTL,
-      autoSyncInterval,
-      minSyncInterval,
-      cacheCoordinatorSyncInterval,
-      healthCheckInterval,
-      multiInstanceSyncInterval,
-      description
-    } = req.body;
-
-    // 验证参数
-    const errors = [];
+    const { key } = req.params;
     
-    if (authTimeout !== undefined && (authTimeout < 1 || authTimeout > 60)) {
-      errors.push('认证器超时时间必须在1-60秒之间');
-    }
-    
-    if (observerTimeout !== undefined && (observerTimeout < 1 || observerTimeout > 60)) {
-      errors.push('观察器超时时间必须在1-60秒之间');
-    }
-    
-    if (limiterTimeout !== undefined && (limiterTimeout < 1 || limiterTimeout > 60)) {
-      errors.push('限制器超时时间必须在1-60秒之间');
-    }
-    
-    if (authCacheTimeout !== undefined && (authCacheTimeout < 60000 || authCacheTimeout > 3600000)) {
-      errors.push('认证器缓存超时时间必须在1-60分钟之间');
-    }
-    
-    if (limiterCacheTimeout !== undefined && (limiterCacheTimeout < 30000 || limiterCacheTimeout > 1800000)) {
-      errors.push('限制器缓存超时时间必须在30秒-30分钟之间');
-    }
-    
-    if (autoSyncInterval !== undefined && (autoSyncInterval < 60000 || autoSyncInterval > 3600000)) {
-      errors.push('自动同步间隔必须在1-60分钟之间');
-    }
-    
-    if (minSyncInterval !== undefined && (minSyncInterval < 5000 || minSyncInterval > 300000)) {
-      errors.push('最小同步间隔必须在5秒-5分钟之间');
-    }
-    
-    if (healthCheckInterval !== undefined && (healthCheckInterval < 30000 || healthCheckInterval > 600000)) {
-      errors.push('健康检查间隔必须在30秒-10分钟之间');
+    // 普通用户只能访问公开配置
+    const isPublicConfig = ['disabledProtocols'].includes(key);
+    if (req.user.role !== 'admin' && !isPublicConfig) {
+      return res.status(403).json({ message: '没有权限访问此配置' });
     }
 
-    if (errors.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: '参数验证失败',
-        errors
-      });
-    }
-
-    // 获取当前配置
-    const currentConfig = await SystemConfig.getCurrentConfig();
-    const oldIsSimpleMode = currentConfig.isSimpleMode;
-
-    // 更新配置
-    const updatedConfig = await SystemConfig.updateConfig({
-      isSimpleMode,
-      authTimeout,
-      observerTimeout,
-      limiterTimeout,
-      authCacheTimeout,
-      limiterCacheTimeout,
-      multiInstanceCacheTTL,
-      autoSyncInterval,
-      minSyncInterval,
-      cacheCoordinatorSyncInterval,
-      healthCheckInterval,
-      multiInstanceSyncInterval
-    }, req.user.id, description);
-
-    // 如果模式发生变化，需要重新初始化相关服务
-    if (oldIsSimpleMode !== isSimpleMode) {
-      console.log(`🔄 系统模式变更: ${oldIsSimpleMode ? '单机模式' : '自动模式'} → ${isSimpleMode ? '单机模式' : '自动模式'}`);
-
-      // 通知系统模式管理器
-      const systemModeManager = require('../services/systemModeManager');
-      await systemModeManager.switchMode(isSimpleMode);
-    }
-
-    // 如果不是单机模式且其他配置发生变化，需要重新加载配置
-    if (!isSimpleMode) {
-      const configManager = require('../services/configManager');
-      await configManager.reloadConfig();
+    const value = await SystemConfig.getValue(key);
+    
+    if (value === null) {
+      return res.status(404).json({ message: '配置不存在' });
     }
 
     res.json({
       success: true,
-      data: updatedConfig,
-      message: '系统配置更新成功'
-    });
-
-  } catch (error) {
-    console.error('更新系统配置失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '更新系统配置失败',
-      error: error.message
-    });
-  }
-});
-
-/**
- * 切换系统模式
- * POST /api/system-config/switch-mode
- */
-router.post('/switch-mode', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { isSimpleMode, description } = req.body;
-
-    if (typeof isSimpleMode !== 'boolean') {
-      return res.status(400).json({
-        success: false,
-        message: '模式参数必须为布尔值'
-      });
-    }
-
-    const currentConfig = await SystemConfig.getCurrentConfig();
-    
-    if (currentConfig.isSimpleMode === isSimpleMode) {
-      return res.json({
-        success: true,
-        message: `系统已处于${isSimpleMode ? '单击模式' : '自动模式'}`
-      });
-    }
-
-    // 更新模式
-    await SystemConfig.updateConfig({
-      isSimpleMode
-    }, req.user.id, description || `切换到${isSimpleMode ? '单击模式' : '自动模式'}`);
-
-    // 切换系统模式
-    const systemModeManager = require('../services/systemModeManager');
-    await systemModeManager.switchMode(isSimpleMode);
-
-    res.json({
-      success: true,
-      message: `成功切换到${isSimpleMode ? '单击模式' : '自动模式'}`,
       data: {
-        isSimpleMode,
-        switchedAt: new Date()
+        key,
+        value
       }
     });
-
   } catch (error) {
-    console.error('切换系统模式失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '切换系统模式失败',
-      error: error.message
-    });
+    console.error(`获取配置 ${req.params.key} 失败:`, error);
+    res.status(500).json({ message: '获取配置失败', error: error.message });
   }
 });
 
-/**
- * 获取配置参数说明
- * GET /api/system-config/help
- */
-router.get('/help', requireAuth, requireAdmin, (req, res) => {
-  res.json({
-    success: true,
-    data: {
-      title: 'GOST性能参数配置说明',
-      sections: [
-        {
-          name: '系统模式',
-          description: '控制系统的运行模式',
-          parameters: [
-            {
-              key: 'isSimpleMode',
-              name: '单击模式',
-              description: '启用后禁用所有自动化功能，需要管理员手动同步配置',
-              type: 'boolean',
-              default: false,
-              impact: '高 - 完全改变系统行为'
-            }
-          ]
-        },
-        {
-          name: 'GOST插件超时配置',
-          description: '控制GOST插件的响应超时时间，影响连接建立速度',
-          parameters: [
-            {
-              key: 'authTimeout',
-              name: '认证器超时',
-              description: '用户认证的最大等待时间，过短可能导致认证失败',
-              type: 'integer',
-              unit: '秒',
-              range: '1-60',
-              default: 5,
-              impact: '中 - 影响连接建立速度'
-            },
-            {
-              key: 'observerTimeout',
-              name: '观察器超时',
-              description: '流量统计的最大等待时间，不影响转发性能',
-              type: 'integer',
-              unit: '秒',
-              range: '1-60',
-              default: 10,
-              impact: '低 - 仅影响统计准确性'
-            },
-            {
-              key: 'limiterTimeout',
-              name: '限制器超时',
-              description: '流量限制检查的最大等待时间，影响转发延迟',
-              type: 'integer',
-              unit: '秒',
-              range: '1-60',
-              default: 5,
-              impact: '高 - 直接影响转发性能'
-            }
-          ]
-        },
-        {
-          name: '缓存配置',
-          description: '控制各种缓存的生存时间，影响查询性能',
-          parameters: [
-            {
-              key: 'authCacheTimeout',
-              name: '认证器缓存时间',
-              description: '用户认证结果的缓存时间，越长性能越好但实时性越差',
-              type: 'integer',
-              unit: '毫秒',
-              range: '60000-3600000 (1-60分钟)',
-              default: 600000,
-              impact: '中 - 影响认证性能'
-            },
-            {
-              key: 'limiterCacheTimeout',
-              name: '限制器缓存时间',
-              description: '用户配额检查结果的缓存时间',
-              type: 'integer',
-              unit: '毫秒',
-              range: '30000-1800000 (30秒-30分钟)',
-              default: 300000,
-              impact: '高 - 影响限制器性能'
-            }
-          ]
-        },
-        {
-          name: '同步频率配置',
-          description: '控制各种自动同步的频率，影响系统响应速度',
-          parameters: [
-            {
-              key: 'autoSyncInterval',
-              name: '自动同步间隔',
-              description: '配置自动同步的时间间隔，越短响应越快但资源消耗越大',
-              type: 'integer',
-              unit: '毫秒',
-              range: '60000-3600000 (1-60分钟)',
-              default: 300000,
-              impact: '中 - 影响配置更新速度'
-            },
-            {
-              key: 'healthCheckInterval',
-              name: '健康检查间隔',
-              description: 'GOST服务健康检查的时间间隔',
-              type: 'integer',
-              unit: '毫秒',
-              range: '30000-600000 (30秒-10分钟)',
-              default: 120000,
-              impact: '低 - 影响故障检测速度'
-            }
-          ]
-        }
-      ],
-      recommendations: [
-        {
-          scenario: '高性能场景',
-          description: '追求最佳转发性能',
-          settings: {
-            isSimpleMode: true,
-            limiterTimeout: 3,
-            authCacheTimeout: 600000,
-            limiterCacheTimeout: 600000
-          }
-        },
-        {
-          scenario: '平衡场景',
-          description: '性能和功能的平衡',
-          settings: {
-            isSimpleMode: false,
-            authTimeout: 5,
-            limiterTimeout: 5,
-            autoSyncInterval: 300000,
-            healthCheckInterval: 120000
-          }
-        },
-        {
-          scenario: '高可用场景',
-          description: '追求最佳稳定性和实时性',
-          settings: {
-            isSimpleMode: false,
-            authTimeout: 10,
-            limiterTimeout: 10,
-            autoSyncInterval: 120000,
-            healthCheckInterval: 60000
-          }
-        }
-      ]
+// 更新系统配置
+router.put('/:key', auth, async (req, res) => {
+  try {
+    // 只允许管理员更新配置
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: '没有权限更新系统配置' });
     }
-  });
+
+    const { key } = req.params;
+    const { value, description, category } = req.body;
+
+    if (value === undefined) {
+      return res.status(400).json({ message: '配置值不能为空' });
+    }
+
+    // 特定配置的验证逻辑
+    if (key === 'disabledProtocols') {
+      if (!Array.isArray(value)) {
+        return res.status(400).json({ message: '禁用协议必须是数组格式' });
+      }
+      
+      const validProtocols = ['socks', 'http', 'tls'];
+      const invalidProtocols = value.filter(p => !validProtocols.includes(p));
+      
+      if (invalidProtocols.length > 0) {
+        return res.status(400).json({ 
+          message: `无效的协议: ${invalidProtocols.join(', ')}，有效协议: ${validProtocols.join(', ')}` 
+        });
+      }
+    }
+
+    // 更新配置
+    await SystemConfig.setValue(key, value, {
+      description,
+      category: category || 'performance',
+      updatedBy: req.user.username
+    });
+
+    // 如果更新的是禁用协议，触发GOST配置同步
+    if (key === 'disabledProtocols') {
+      try {
+        const gostSyncCoordinator = require('../services/gostSyncCoordinator');
+        console.log(`🔄 更新禁用协议设置，触发强制同步`);
+        
+        const syncResult = await gostSyncCoordinator.requestSync('protocol_config_update', true, 10);
+        
+        if (syncResult.success) {
+          console.log(`✅ 禁用协议配置更新后GOST同步成功`);
+        } else {
+          console.error(`❌ 禁用协议配置更新后GOST同步失败:`, syncResult.error);
+        }
+      } catch (syncError) {
+        console.error('同步GOST配置失败:', syncError);
+        // 不中断响应
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `配置 ${key} 更新成功`,
+      data: {
+        key,
+        value
+      }
+    });
+  } catch (error) {
+    console.error(`更新配置 ${req.params.key} 失败:`, error);
+    res.status(500).json({ message: '更新配置失败', error: error.message });
+  }
 });
 
 module.exports = router;

@@ -49,6 +49,7 @@ app.use('/api/port-security', require('./routes/portSecurity')); // 端口安全
 app.use('/api/system', require('./routes/system')); // 系统状态API路由
 app.use('/api/performance-config', require('./routes/performanceConfig')); // 性能配置管理路由
 app.use('/api/network-config', require('./routes/networkConfig')); // 网络配置检测路由
+app.use('/api/system-config', require('./routes/systemConfig')); // 系统配置管理路由
 
 // 添加简单的健康检查接口
 app.get('/api/health', (req, res) => {

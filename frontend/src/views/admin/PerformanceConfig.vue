@@ -92,6 +92,40 @@
       </div>
     </el-card>
 
+    <!-- 协议屏蔽配置 -->
+    <el-card class="protocol-card" shadow="hover">
+      <template #header>
+        <div class="card-header">
+          <span>🚫 协议屏蔽配置</span>
+          <el-button type="primary" size="small" @click="saveProtocolConfig" :loading="protocolSaveLoading">
+            保存配置
+          </el-button>
+        </div>
+      </template>
+      
+      <div class="protocol-content">
+        <p class="section-desc">选择需要禁用的转发协议，被禁用的协议将无法创建新规则或转发流量</p>
+        
+        <div class="protocol-checkboxes">
+          <el-checkbox-group v-model="disabledProtocols">
+            <el-checkbox label="socks">SOCKS 协议</el-checkbox>
+            <el-checkbox label="http">HTTP 协议</el-checkbox>
+            <el-checkbox label="tls">TLS 协议</el-checkbox>
+          </el-checkbox-group>
+        </div>
+        
+        <el-alert
+          v-if="disabledProtocols.length > 0"
+          title="警告：禁用协议将立即生效"
+          type="warning"
+          description="禁用协议后，所有使用该协议的转发规则将停止工作，直到重新启用该协议"
+          show-icon
+          :closable="false"
+          style="margin-top: 15px;"
+        />
+      </div>
+    </el-card>
+
     <!-- 详细配置 -->
     <el-card v-if="!isSimpleMode" class="config-card" shadow="hover">
       <template #header>
@@ -325,7 +359,11 @@ export default {
     const modeSwitchLoading = ref(false)
     const manualSyncLoading = ref(false)
     const presetLoading = ref('')
+    const protocolSaveLoading = ref(false)
     const activeTab = ref('plugins')
+    
+    // 禁用协议配置
+    const disabledProtocols = ref([])
     
     // 配置数据
     const config = ref({})
@@ -413,10 +451,48 @@ export default {
           // 更新表单数据
           Object.assign(configForm, response.data.data.config)
         }
+        
+        // 加载禁用协议配置
+        await loadProtocolConfig()
       } catch (error) {
         ElMessage.error('加载配置失败: ' + error.message)
       } finally {
         loading.value = false
+      }
+    }
+    
+    // 加载禁用协议配置
+    const loadProtocolConfig = async () => {
+      try {
+        const response = await api.get('/system-config/disabledProtocols')
+        if (response.data.success && response.data.data) {
+          disabledProtocols.value = response.data.data.value || []
+        }
+      } catch (error) {
+        console.warn('加载禁用协议配置失败:', error)
+        disabledProtocols.value = [] // 默认不禁用任何协议
+      }
+    }
+    
+    // 保存禁用协议配置
+    const saveProtocolConfig = async () => {
+      try {
+        protocolSaveLoading.value = true
+        
+        const response = await api.put('/system-config/disabledProtocols', {
+          value: disabledProtocols.value,
+          description: '管理员更新禁用协议配置',
+          category: 'security'
+        })
+        
+        if (response.data.success) {
+          ElMessage.success('协议屏蔽配置保存成功')
+          await loadProtocolConfig() // 重新加载确认更新
+        }
+      } catch (error) {
+        ElMessage.error('保存协议屏蔽配置失败: ' + error.message)
+      } finally {
+        protocolSaveLoading.value = false
       }
     }
 
@@ -624,6 +700,7 @@ export default {
       modeSwitchLoading,
       manualSyncLoading,
       presetLoading,
+      protocolSaveLoading,
       activeTab,
       config,
       configForm,
@@ -637,9 +714,12 @@ export default {
       multiInstanceCacheMinutes,
       autoSyncMinutes,
       healthCheckMinutes,
+      disabledProtocols,
       loadConfig,
+      loadProtocolConfig,
       refreshStatus,
       saveConfig,
+      saveProtocolConfig,
       handleModeSwitch,
       handleManualSync,
       applyPreset,
@@ -751,6 +831,18 @@ export default {
   margin: 0;
   color: #606266;
   font-size: 14px;
+}
+
+.protocol-card {
+  margin-bottom: 24px;
+}
+
+.protocol-content {
+  padding: 15px 0;
+}
+
+.protocol-checkboxes {
+  margin: 15px 0;
 }
 
 .config-card {

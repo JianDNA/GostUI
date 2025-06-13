@@ -17,13 +17,15 @@ const User = require('./User')(sequelize);
 const Rule = require('./Rule')(sequelize);
 const ForwardRule = require('./ForwardRule')(sequelize);
 const UserForwardRule = require('./UserForwardRule')(sequelize);
+const SystemConfig = require('./SystemConfig')(sequelize);
 
 // 定义模型关联
 const models = {
   User,
   Rule,
   ForwardRule,
-  UserForwardRule
+  UserForwardRule,
+  SystemConfig
 };
 
 // 建立模型之间的关联关系

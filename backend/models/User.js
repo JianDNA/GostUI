@@ -247,9 +247,19 @@ module.exports = (sequelize) => {
     email: {
       type: DataTypes.STRING,
       allowNull: true,
-      unique: true,
+      unique: {
+        args: true,
+        msg: '该邮箱已被使用',
+        // 允许null值不触发唯一性检查
+        ignoreDuplicates: true
+      },
       validate: {
-        isEmail: true
+        isEmailOrEmpty(value) {
+          if (!value) return; // 允许为空
+          if (!/\S+@\S+\.\S+/.test(value)) {
+            throw new Error('请输入有效的邮箱地址');
+          }
+        }
       }
     },
     role: {

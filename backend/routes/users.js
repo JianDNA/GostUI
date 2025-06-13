@@ -260,28 +260,25 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ message: '用户名和密码是必需的' });
     }
 
-    // 普通用户必须设置端口范围和流量限额
-    if (userData.role === 'user' || !userData.role) {
+    // 强制设置角色：只有用户名为admin的用户才能是管理员
+    if (userData.username === 'admin') {
+      // 检查是否已存在admin用户
+      const existingAdmin = await User.findOne({ where: { username: 'admin' } });
+      if (existingAdmin) {
+        return res.status(400).json({ message: 'admin用户已存在，不能创建重复的管理员账户' });
+      }
+      userData.role = 'admin'; // 强制设置为管理员角色
+      userData.isActive = true; // 确保管理员账户处于激活状态
+    } else {
+      userData.role = 'user'; // 强制设置为普通用户角色
+      
+      // 普通用户必须设置端口范围和流量限额
       if (!userData.portRangeStart || !userData.portRangeEnd) {
         return res.status(400).json({ message: '普通用户必须设置端口范围' });
       }
       if (!userData.trafficQuota) {
         return res.status(400).json({ message: '普通用户必须设置流量限额' });
       }
-    }
-
-    // 确保只有admin用户名可以是管理员
-    if (userData.role === 'admin' && userData.username !== 'admin') {
-      return res.status(400).json({ message: '只有用户名为admin的用户才能设置为管理员角色' });
-    }
-
-    // 检查是否已存在admin用户（创建新admin时）
-    if (userData.username === 'admin') {
-      const existingAdmin = await User.findOne({ where: { username: 'admin' } });
-      if (existingAdmin) {
-        return res.status(400).json({ message: 'admin用户已存在，不能创建重复的管理员账户' });
-      }
-      userData.role = 'admin';
     }
 
     // 验证端口范围
@@ -390,8 +387,25 @@ router.put('/:id', auth, async (req, res) => {
     // 如果是管理员账户，强制保持原用户名不变
     if (user.username === 'admin') {
       delete updateData.username;
-      updateData.role = 'admin';
-      updateData.isActive = true;
+      updateData.role = 'admin';  // 确保admin用户始终保持admin角色
+      updateData.isActive = true; // 确保admin用户始终处于激活状态
+      
+      // 如果要修改admin密码，添加风险提示
+      if (updateData.password) {
+        console.log('⚠️ 警告：管理员密码即将被修改');
+        
+        // 检查是否提供了确认标志
+        if (!updateData.confirmAdminPasswordChange) {
+          return res.status(400).json({ 
+            message: '修改管理员密码需要二次确认',
+            needsConfirmation: true,
+            warning: '警告：修改管理员密码后，如果忘记密码将无法通过界面找回。找回管理员密码需要通过服务器命令行操作。请确认您已经记住了新密码。'
+          });
+        }
+        
+        // 移除确认标志，不需要存储到数据库
+        delete updateData.confirmAdminPasswordChange;
+      }
     }
 
     // 不允许修改用户名（除了admin的特殊处理）
@@ -399,9 +413,11 @@ router.put('/:id', auth, async (req, res) => {
       return res.status(400).json({ message: '用户名不能修改' });
     }
 
-    // 不允许修改角色
-    if (updateData.role && updateData.role !== user.role) {
-      return res.status(400).json({ message: '用户角色不能修改' });
+    // 强制设置：所有用户的角色不能修改，admin用户名的用户必须是admin角色，其他用户必须是user角色
+    if (user.username === 'admin') {
+      updateData.role = 'admin'; // 确保admin用户始终保持admin角色
+    } else {
+      updateData.role = 'user'; // 确保其他用户始终保持user角色
     }
 
     // 普通用户必须设置端口范围和流量限额
@@ -790,24 +806,118 @@ router.delete('/:id', auth, async (req, res) => {
     } catch (cacheError) {
       console.warn('⚠️ 删除用户前清理缓存失败:', cacheError.message);
     }
-
-    // 删除用户（关联的转发规则会自动删除）
-    await user.destroy();
-
-    // 触发 Gost 配置同步
+    
+    // 记录详细日志到文件
+    const fs = require('fs');
+    const path = require('path');
+    const logFile = path.join(__dirname, '../logs/user_delete.log');
+    
     try {
-      const gostConfigService = require('../services/gostConfigService');
-      gostConfigService.triggerSync().catch(error => {
-        console.error('删除用户后同步配置失败:', error);
+      fs.appendFileSync(logFile, `\n[${new Date().toISOString()}] 开始删除用户 ${user.username} (ID: ${user.id})\n`);
+    } catch (logError) {
+      console.error('无法写入日志文件:', logError);
+    }
+    
+    // 先查找并删除用户的所有转发规则
+    try {
+      console.log(`🗑️ 删除用户 ${user.username} (ID: ${user.id}) 的所有转发规则`);
+      
+      // 使用事务确保数据一致性
+      const sequelize = require('../models').sequelize;
+      await sequelize.transaction(async (transaction) => {
+        // 查找用户的所有规则
+        const rules = await UserForwardRule.findAll({
+          where: { userId: user.id },
+          transaction
+        });
+        
+        fs.appendFileSync(logFile, `找到 ${rules.length} 个转发规则需要删除\n`);
+        console.log(`找到 ${rules.length} 个转发规则需要删除`);
+        
+        // 逐个删除规则
+        for (const rule of rules) {
+          const ruleInfo = `规则: ${rule.name} (ID: ${rule.id}, 端口: ${rule.sourcePort})`;
+          fs.appendFileSync(logFile, `删除${ruleInfo}\n`);
+          console.log(`删除${ruleInfo}`);
+          
+          try {
+            await rule.destroy({ transaction });
+            fs.appendFileSync(logFile, `成功删除${ruleInfo}\n`);
+            
+            // 清理规则相关缓存
+            await cacheCoordinator.clearPortRelatedCache(rule.sourcePort, 'rule_delete_with_user');
+          } catch (singleRuleError) {
+            fs.appendFileSync(logFile, `删除${ruleInfo}失败: ${singleRuleError.message}\n`);
+            throw singleRuleError; // 重新抛出错误，触发事务回滚
+          }
+        }
+        
+        // 在事务中删除用户
+        await user.destroy({ transaction });
+        fs.appendFileSync(logFile, `成功删除用户 ${user.username} (ID: ${user.id})\n`);
       });
-    } catch (error) {
-      console.error('触发配置同步失败:', error);
+      
+      console.log(`✅ 成功删除用户 ${user.username} 及其所有转发规则`);
+    } catch (deleteError) {
+      const errorMsg = `❌ 删除用户 ${user.username} 失败: ${deleteError.message}`;
+      console.error(errorMsg);
+      fs.appendFileSync(logFile, `${errorMsg}\n${deleteError.stack}\n`);
+      return res.status(500).json({ message: '删除用户失败，请重试', error: deleteError.message });
     }
 
+    // 触发 Gost 配置同步 - 使用强制同步确保所有规则立即生效
+    try {
+      const gostSyncCoordinator = require('../services/gostSyncCoordinator');
+      console.log(`🔄 删除用户 ${user.username}，触发强制同步`);
+      
+      const fs = require('fs');
+      const path = require('path');
+      const logFile = path.join(__dirname, '../logs/user_delete.log');
+      fs.appendFileSync(logFile, `开始同步GOST配置...\n`);
+      
+      const syncResult = await gostSyncCoordinator.requestSync('user_delete', true, 10);
+      
+      if (syncResult.success) {
+        console.log(`✅ 删除用户后GOST同步成功`);
+        fs.appendFileSync(logFile, `✅ GOST同步成功\n`);
+      } else {
+        console.error(`❌ 删除用户后GOST同步失败:`, syncResult.error);
+        fs.appendFileSync(logFile, `❌ GOST同步失败: ${syncResult.error}\n`);
+      }
+    } catch (error) {
+      console.error('触发配置同步失败:', error);
+      
+      // 记录错误但不中断响应
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const logFile = path.join(__dirname, '../logs/user_delete.log');
+        fs.appendFileSync(logFile, `触发配置同步失败: ${error.message}\n${error.stack}\n`);
+      } catch (logError) {
+        console.error('写入日志失败:', logError);
+      }
+    }
+
+    // 返回成功响应
     res.status(204).send();
   } catch (error) {
     console.error('Delete user error:', error);
-    res.status(500).json({ message: '删除用户失败' });
+    
+    // 记录详细错误信息到日志文件
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const logFile = path.join(__dirname, '../logs/user_delete.log');
+      fs.appendFileSync(logFile, `\n[${new Date().toISOString()}] 删除用户时发生未处理的错误:\n${error.message}\n${error.stack}\n`);
+    } catch (logError) {
+      console.error('写入错误日志失败:', logError);
+    }
+    
+    res.status(500).json({ 
+      message: '删除用户失败',
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 

@@ -41,6 +41,12 @@
                 : '未设置' }}
           </span>
         </div>
+        <div class="info-item" v-if="userInfo.additionalPorts && parseAdditionalPorts(userInfo.additionalPorts).length > 0">
+          <span class="label">额外端口:</span>
+          <span class="value additional-ports">
+            {{ parseAdditionalPorts(userInfo.additionalPorts).join(', ') }}
+          </span>
+        </div>
         <div class="info-item" v-if="!isAdmin">
           <span class="label">过期时间:</span>
           <span class="value" :class="{ 'expired': userInfo.isExpired }">
@@ -72,6 +78,9 @@
           <h3>{{ group.username }} ({{ group.rules.length }}个规则)</h3>
           <div class="group-info">
             <span>端口范围: {{ group.portRange }}</span>
+            <span v-if="group.additionalPorts && parseAdditionalPorts(group.additionalPorts).length > 0" class="additional-ports-tag">
+              额外端口: {{ parseAdditionalPorts(group.additionalPorts).join(', ') }}
+            </span>
             <span v-if="group.isExpired" class="expired-tag">已过期</span>
           </div>
         </div>
@@ -230,6 +239,7 @@
       v-model="showCreateDialog"
       width="700px"
       @close="resetForm"
+      class="rule-dialog"
     >
       <el-form
         ref="ruleFormRef"
@@ -257,16 +267,24 @@
         <el-form-item label="源端口" prop="sourcePort">
           <el-input-number
             v-model="ruleForm.sourcePort"
-            :min="isAdmin ? 1 : (currentUserPortRange.start || 1)"
-            :max="isAdmin ? 65535 : (currentUserPortRange.end || 65535)"
+            :min="1"
+            :max="65535"
             placeholder="请输入源端口"
             style="width: 100%"
           />
           <div class="form-tip" v-if="isAdmin">
             管理员权限：可使用任意端口 (1-65535)
           </div>
-          <div class="form-tip" v-else-if="currentUserPortRange.start && currentUserPortRange.end">
-            可用端口范围: {{ currentUserPortRange.start }}-{{ currentUserPortRange.end }}
+          <div class="form-tip" v-else>
+            <div v-if="currentUserPortRange.start && currentUserPortRange.end">
+              端口范围: {{ currentUserPortRange.start }}-{{ currentUserPortRange.end }}
+            </div>
+            <div v-if="currentUserPortRange.additionalPorts && currentUserPortRange.additionalPorts.length > 0">
+              额外端口: {{ currentUserPortRange.additionalPorts.join(', ') }}
+            </div>
+            <div v-if="currentUserPortRange.allPorts && currentUserPortRange.allPorts.length > 0">
+              总计可用端口: {{ currentUserPortRange.allPorts.length }} 个
+            </div>
           </div>
         </el-form-item>
 
@@ -274,15 +292,14 @@
           <el-input
             v-model="ruleForm.targetAddress"
             placeholder="例如: 8.8.8.8:80 或 example.com:80"
-            @blur="validateTargetAddress"
           />
           <div class="form-tip">
             支持 IPv4:端口、[IPv6]:端口 或 域名:端口 格式
           </div>
-          <div class="form-tip" v-if="!isAdmin" style="color: #f56c6c;">
-            普通用户不能转发本地地址 (127.0.0.1, localhost, ::1)，请使用公网IPv4地址，如 8.8.8.8、1.1.1.1 等
+          <div class="form-tip info-tip" v-if="!isAdmin">
+            <i class="el-icon-info"></i> 提示：请使用公网IPv4地址，如 8.8.8.8、1.1.1.1 等（不允许使用本地地址）
           </div>
-          <div class="form-tip" v-if="isAdmin" style="color: #67c23a;">
+          <div class="form-tip success-tip" v-if="isAdmin">
             管理员权限：可以转发任何地址
           </div>
         </el-form-item>
@@ -374,14 +391,43 @@ export default {
       return '规则管理'
     })
 
-    // 当前用户端口范围
+    // 当前用户端口配置
     const currentUserPortRange = computed(() => {
       if (showGroupedView.value) {
-        return { start: 1, end: 65535 } // admin创建规则时不限制
+        return {
+          start: 1,
+          end: 65535,
+          additionalPorts: [],
+          allPorts: []
+        } // admin创建规则时不限制
       }
+
+      // 使用parseAdditionalPorts函数解析额外端口
+      const additionalPorts = parseAdditionalPorts(userInfo.value?.additionalPorts);
+      console.log('计算属性中解析的额外端口:', additionalPorts);
+
+      const allPorts = []
+
+      // 添加端口范围
+      if (userInfo.value?.portRangeStart && userInfo.value?.portRangeEnd) {
+        for (let i = userInfo.value.portRangeStart; i <= userInfo.value.portRangeEnd; i++) {
+          allPorts.push(i)
+        }
+      }
+
+      // 添加额外端口
+      if (additionalPorts && additionalPorts.length > 0) {
+        allPorts.push(...additionalPorts)
+      }
+
+      // 去重并排序
+      const uniquePorts = [...new Set(allPorts)].sort((a, b) => a - b)
+
       return {
         start: userInfo.value?.portRangeStart || 1,
-        end: userInfo.value?.portRangeEnd || 65535
+        end: userInfo.value?.portRangeEnd || 65535,
+        additionalPorts,
+        allPorts: uniquePorts
       }
     })
 
@@ -427,34 +473,16 @@ export default {
       }
     }
 
-    // 验证目标地址
-    const validateTargetAddress = () => {
-      if (!ruleForm.targetAddress) return
-
-      // 基本格式验证
-      const ipv4Pattern = /^(\d{1,3}\.){3}\d{1,3}:\d{1,5}$/
-      const ipv6Pattern = /^\[([0-9a-fA-F:]+)\]:\d{1,5}$/
-      const domainPattern = /^[a-zA-Z0-9.-]+:\d{1,5}$/
-
-      if (!ipv4Pattern.test(ruleForm.targetAddress) &&
-          !ipv6Pattern.test(ruleForm.targetAddress) &&
-          !domainPattern.test(ruleForm.targetAddress)) {
-        ElMessage.warning('目标地址格式不正确')
-        return
-      }
-
-      // 检查内网地址端口限制
-      const [address, port] = ruleForm.targetAddress.includes('[')
-        ? [ruleForm.targetAddress.split(']:')[0] + ']', ruleForm.targetAddress.split(']:')[1]]
-        : ruleForm.targetAddress.split(':')
-
-      const isPrivateIP = checkPrivateIP(address)
-      if (isPrivateIP && userInfo.value) {
-        const portNum = parseInt(port)
-        if (portNum < userInfo.value.portRangeStart || portNum > userInfo.value.portRangeEnd) {
-          ElMessage.warning(`内网地址端口必须在您的端口范围内 (${userInfo.value.portRangeStart}-${userInfo.value.portRangeEnd})`)
-        }
-      }
+    // 检查目标地址是否为内网地址（仅用于内部逻辑）
+    const isPrivateTargetAddress = (address) => {
+      if (!address) return false
+      
+      // 提取地址部分
+      const ipPart = address.includes('[')
+        ? address.split(']:')[0] + ']'
+        : address.split(':')[0]
+        
+      return checkPrivateIP(ipPart)
     }
 
     // 检查是否为内网IP
@@ -514,12 +542,27 @@ export default {
               return
             }
 
-            // 普通用户需要检查端口范围
-            if (currentUserPortRange.value.start && currentUserPortRange.value.end) {
-              if (value < currentUserPortRange.value.start || value > currentUserPortRange.value.end) {
-                callback(new Error(`端口必须在允许范围内 (${currentUserPortRange.value.start}-${currentUserPortRange.value.end})`))
-                return
+            // 普通用户需要检查端口是否在允许列表中
+            const allowedPorts = currentUserPortRange.value.allPorts
+            if (allowedPorts.length > 0 && !allowedPorts.includes(value)) {
+              // 创建更清晰的错误消息
+              let errorMsg = '端口不在允许范围内'
+              let details = []
+              
+              if (currentUserPortRange.value.start && currentUserPortRange.value.end) {
+                details.push(`可用范围: ${currentUserPortRange.value.start}-${currentUserPortRange.value.end}`)
               }
+              
+              if (currentUserPortRange.value.additionalPorts.length > 0) {
+                details.push(`可用额外端口: ${currentUserPortRange.value.additionalPorts.join(', ')}`)
+              }
+              
+              if (details.length > 0) {
+                errorMsg += `。${details.join('，')}`
+              }
+              
+              callback(new Error(errorMsg))
+              return
             }
 
             callback()
@@ -555,9 +598,15 @@ export default {
               callback()
               return
             }
+            
+            // 检查是否是内网地址且用户不是管理员
+            if (!isAdmin.value && isPrivateTargetAddress(value)) {
+              callback(new Error('不允许使用本地地址'))
+              return
+            }
 
             try {
-              // 🔧 调用后端API验证目标地址权限
+              // 调用后端API验证目标地址权限
               const response = await portSecurity.validateTarget({
                 targetAddress: value,
                 userRole: isAdmin.value ? 'admin' : 'user'
@@ -565,7 +614,19 @@ export default {
 
               if (response.data.success && !response.data.data.valid) {
                 const errors = response.data.data.errors || []
-                callback(new Error(errors.join('; ')))
+                // 优化错误消息显示格式
+                let errorMsg = '目标地址不符合要求'
+                
+                if (errors.length > 0) {
+                  // 限制错误消息长度，避免过长
+                  if (errors.length === 1) {
+                    errorMsg = errors[0]
+                  } else {
+                    errorMsg += '：' + errors.join('；')
+                  }
+                }
+                
+                callback(new Error(errorMsg))
                 return
               }
 
@@ -595,11 +656,23 @@ export default {
             ...group,
             rules: group.rules.map(rule => ({ ...rule, switching: false }))
           }))
+          
+          // 调试信息
+          console.log('分组规则数据:', groupedRules.value)
+          groupedRules.value.forEach(group => {
+            console.log(`用户 ${group.username} 额外端口:`, group.additionalPorts)
+          })
+          
           rules.value = []
         } else {
           // 单用户显示
           rules.value = (response.data.rules || []).map(rule => ({ ...rule, switching: false }))
           userInfo.value = response.data.user
+          
+          // 调试信息
+          console.log('用户信息:', userInfo.value)
+          console.log('用户额外端口:', userInfo.value?.additionalPorts)
+          
           groupedRules.value = []
         }
 
@@ -789,14 +862,45 @@ export default {
         reasons.push('用户流量配额已超限')
       }
 
-      // 检查端口范围
-      if (group?.portRangeStart && group?.portRangeEnd) {
-        if (rule.sourcePort < group.portRangeStart || rule.sourcePort > group.portRangeEnd) {
-          reasons.push(`端口 ${rule.sourcePort} 超出允许范围 (${group.portRangeStart}-${group.portRangeEnd})`)
+      // 检查端口范围和额外端口
+      if (rule.sourcePort) {
+        let inRange = false;
+        let additionalPorts = [];
+        
+        // 获取额外端口
+        if (group) {
+          additionalPorts = Array.isArray(group.additionalPorts) ? group.additionalPorts : [];
+        } else if (userInfo.value) {
+          additionalPorts = Array.isArray(userInfo.value.additionalPorts) ? userInfo.value.additionalPorts : [];
         }
-      } else if (userInfo.value?.portRangeStart && userInfo.value?.portRangeEnd) {
-        if (rule.sourcePort < userInfo.value.portRangeStart || rule.sourcePort > userInfo.value.portRangeEnd) {
-          reasons.push(`端口 ${rule.sourcePort} 超出允许范围 (${userInfo.value.portRangeStart}-${userInfo.value.portRangeEnd})`)
+        
+        // 检查是否在端口范围内
+        if (group?.portRangeStart && group?.portRangeEnd) {
+          inRange = rule.sourcePort >= group.portRangeStart && rule.sourcePort <= group.portRangeEnd;
+        } else if (userInfo.value?.portRangeStart && userInfo.value?.portRangeEnd) {
+          inRange = rule.sourcePort >= userInfo.value.portRangeStart && rule.sourcePort <= userInfo.value.portRangeEnd;
+        }
+        
+        // 检查是否在额外端口中
+        const inAdditionalPorts = additionalPorts.includes(rule.sourcePort);
+        
+        if (!inRange && !inAdditionalPorts) {
+          let rangeText = '';
+          if (group?.portRangeStart && group?.portRangeEnd) {
+            rangeText = `${group.portRangeStart}-${group.portRangeEnd}`;
+          } else if (userInfo.value?.portRangeStart && userInfo.value?.portRangeEnd) {
+            rangeText = `${userInfo.value.portRangeStart}-${userInfo.value.portRangeEnd}`;
+          }
+          
+          let message = `端口 ${rule.sourcePort} 超出允许范围`;
+          if (rangeText) {
+            message += ` (${rangeText})`;
+          }
+          if (additionalPorts.length > 0) {
+            message += ` 且不在额外端口列表中 (${additionalPorts.join(', ')})`;
+          }
+          
+          reasons.push(message);
         }
       }
 
@@ -807,14 +911,53 @@ export default {
       return '规则已禁用（系统自动判断）'
     }
 
+    // 解析额外端口
+    const parseAdditionalPorts = (portsData) => {
+      if (!portsData) return [];
+      
+      // 如果已经是数组
+      if (Array.isArray(portsData)) {
+        return portsData;
+      }
+      
+      // 如果是字符串，尝试解析
+      if (typeof portsData === 'string') {
+        try {
+          const parsed = JSON.parse(portsData);
+          return Array.isArray(parsed) ? parsed : [];
+        } catch (error) {
+          console.warn('解析额外端口失败:', error);
+          return [];
+        }
+      }
+      
+      return [];
+    };
+
     // 监听路由变化
     watch(() => route.query.userId, () => {
       loadRules()
     })
 
     onMounted(async () => {
-      await loadNetworkInfo()
-      await loadRules()
+      console.log('组件加载，当前用户ID:', targetUserId.value);
+      await loadNetworkInfo();
+      await loadRules();
+      
+      // 调试信息
+      if (userInfo.value) {
+        console.log('用户信息加载完成:', userInfo.value);
+        console.log('额外端口原始数据:', userInfo.value.additionalPorts);
+        console.log('解析后的额外端口:', parseAdditionalPorts(userInfo.value.additionalPorts));
+      }
+      
+      if (groupedRules.value.length > 0) {
+        console.log('分组规则加载完成');
+        groupedRules.value.forEach(group => {
+          console.log(`用户 ${group.username} 额外端口原始数据:`, group.additionalPorts);
+          console.log(`用户 ${group.username} 解析后的额外端口:`, parseAdditionalPorts(group.additionalPorts));
+        });
+      }
     })
 
     return {
@@ -844,11 +987,12 @@ export default {
       handleGroupSelectionChange,
       resetForm,
       getProtocolType,
-      validateTargetAddress,
       formatTraffic,
       getRuleStatusReason,
       loadNetworkInfo,
-      onListenAddressTypeChange
+      onListenAddressTypeChange,
+      parseAdditionalPorts,
+      isPrivateTargetAddress
     }
   }
 }
@@ -946,6 +1090,30 @@ export default {
   margin-top: 4px;
 }
 
+/* 信息提示样式 */
+.info-tip {
+  color: #409EFF !important;
+  background-color: #ecf5ff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #d9ecff;
+  margin-top: 8px;
+  display: block;
+  margin-bottom: 4px;
+}
+
+/* 成功提示样式 */
+.success-tip {
+  color: #67c23a !important;
+  background-color: #f0f9eb;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #e1f3d8;
+  margin-top: 8px;
+  display: block;
+  margin-bottom: 4px;
+}
+
 .disabled-hint {
   font-size: 11px;
   color: #c0c4cc;
@@ -961,8 +1129,6 @@ export default {
   color: #409eff;
   font-size: 13px;
 }
-
-
 
 .rule-status {
   display: flex;
@@ -988,5 +1154,80 @@ export default {
 .traffic-type {
   margin-top: 4px;
   text-align: center;
+}
+
+.additional-ports {
+  font-size: 12px;
+  color: #67c23a;
+  font-weight: bold;
+}
+
+.additional-ports-tag {
+  font-size: 13px;
+  color: #67c23a;
+  font-weight: bold;
+  margin-left: 8px;
+  background-color: #f0f9eb;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid #e1f3d8;
+}
+
+/* 修复错误提示样式 */
+:deep(.el-form-item__error) {
+  position: absolute;
+  margin-top: 2px;
+  white-space: nowrap;
+  line-height: 1;
+  padding: 2px 6px;
+  font-size: 12px;
+  color: #f56c6c;
+  font-weight: normal;
+  z-index: 2;
+  transform: none;
+  left: 0;
+  background: transparent;
+}
+
+/* 修复目标地址验证错误提示 */
+:deep(.el-form-item.is-error .el-input__inner) {
+  border-color: #f56c6c;
+}
+
+/* 确保错误提示在输入框下方有足够空间 */
+:deep(.el-form-item) {
+  margin-bottom: 22px;
+  position: relative;
+}
+
+/* 修复表单项间距 */
+:deep(.el-form-item.is-error) {
+  margin-bottom: 22px;
+}
+
+/* 修复对话框样式 */
+:deep(.rule-dialog .el-dialog__body) {
+  padding: 20px 30px;
+}
+
+/* 确保表单项在对话框中有足够的空间 */
+:deep(.rule-dialog .el-form-item) {
+  margin-bottom: 22px;
+}
+
+/* 确保错误提示在对话框中正确显示 */
+:deep(.rule-dialog .el-form-item.is-error) {
+  margin-bottom: 22px;
+}
+
+/* 防止错误提示和表单提示重叠 */
+:deep(.el-form-item.is-error .form-tip) {
+  margin-bottom: 0;
+}
+
+/* 确保提示信息在表单项中正确显示 */
+:deep(.el-form-item .form-tip) {
+  margin-top: 6px;
+  margin-bottom: 0;
 }
 </style>

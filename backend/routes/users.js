@@ -73,11 +73,14 @@ router.get('/me', auth, async (req, res) => {
         isQuotaExceeded
       },
       portInfo: {
+        portRangeStart: user.portRangeStart,
+        portRangeEnd: user.portRangeEnd,
+        additionalPorts: user.getAdditionalPorts(),
+        portSummary: user.getPortSummary(),
+        availablePorts: user.getAvailablePorts().length,
+        // 保持向后兼容
         startPort: user.portRangeStart || (user.role === 'admin' ? 1000 : 2000),
-        endPort: user.portRangeEnd || (user.role === 'admin' ? 65535 : 16500),
-        availablePorts: user.portRangeStart && user.portRangeEnd ?
-          (user.portRangeEnd - user.portRangeStart + 1) :
-          (user.role === 'admin' ? 64535 : 14500)
+        endPort: user.portRangeEnd || (user.role === 'admin' ? 65535 : 16500)
       },
       rulesStats: {
         total: forwardRules.length,
@@ -135,6 +138,9 @@ router.get('/', auth, async (req, res) => {
     // 添加计算字段和流量统计（简化版）
     const usersWithStatus = users.map(user => {
       const userData = user.toJSON();
+
+      // 🔧 修复: 正确处理 additionalPorts 字段
+      userData.additionalPorts = user.getAdditionalPorts();
 
       // 计算流量使用情况
       const trafficLimitBytes = userData.trafficQuota ? userData.trafficQuota * 1024 * 1024 * 1024 : 0;
@@ -310,6 +316,7 @@ router.post('/', auth, async (req, res) => {
       portRange: userData.portRange,
       portRangeStart: userData.portRangeStart,
       portRangeEnd: userData.portRangeEnd,
+      additionalPorts: userData.additionalPorts ? JSON.stringify(userData.additionalPorts) : null,
       expiryDate: expiryDate,
       trafficQuota: userData.trafficQuota
     });
@@ -421,8 +428,35 @@ router.put('/:id', auth, async (req, res) => {
       if (updateData.portRangeStart < 1 || updateData.portRangeEnd > 65535) {
         return res.status(400).json({ message: '端口范围必须在1-65535之间' });
       }
+    }
 
-      // 检查端口范围冲突
+    // 验证额外端口
+    if (updateData.additionalPorts !== undefined) {
+      if (updateData.additionalPorts && !Array.isArray(updateData.additionalPorts)) {
+        return res.status(400).json({ message: '额外端口必须是数组格式' });
+      }
+
+      if (updateData.additionalPorts && updateData.additionalPorts.length > 0) {
+        // 验证每个端口
+        for (const port of updateData.additionalPorts) {
+          if (!Number.isInteger(port) || port < 1 || port > 65535) {
+            return res.status(400).json({ message: `无效的端口号: ${port}` });
+          }
+        }
+
+        // 去重
+        updateData.additionalPorts = [...new Set(updateData.additionalPorts)];
+
+        // 转换为JSON字符串存储
+        updateData.additionalPorts = JSON.stringify(updateData.additionalPorts);
+      } else {
+        // 清空额外端口
+        updateData.additionalPorts = null;
+      }
+    }
+
+    // 检查端口范围冲突（仅当设置了端口范围时）
+    if (updateData.portRangeStart && updateData.portRangeEnd) {
       const conflicts = [];
 
       // 检查与其他用户端口范围的重叠
@@ -494,25 +528,65 @@ router.put('/:id', auth, async (req, res) => {
     }
     delete updateData.newPassword;
 
-    // 检查端口范围是否变动，如果变动需要清理不在范围内的转发规则
+    // 检查端口配置是否变动，如果变动需要清理不在允许范围内的转发规则
     const oldPortRangeStart = user.portRangeStart;
     const oldPortRangeEnd = user.portRangeEnd;
+    const oldAdditionalPorts = user.getAdditionalPorts();
     const newPortRangeStart = updateData.portRangeStart;
     const newPortRangeEnd = updateData.portRangeEnd;
 
-    let cleanedRulesCount = 0;
-    if ((newPortRangeStart && newPortRangeStart !== oldPortRangeStart) ||
-        (newPortRangeEnd && newPortRangeEnd !== oldPortRangeEnd)) {
-
-      const rulesToDelete = await UserForwardRule.findAll({
-        where: {
-          userId: user.id,
-          [Op.or]: [
-            { sourcePort: { [Op.lt]: newPortRangeStart || oldPortRangeStart } },
-            { sourcePort: { [Op.gt]: newPortRangeEnd || oldPortRangeEnd } }
-          ]
+    // 解析新的额外端口
+    let newAdditionalPorts = [];
+    if (updateData.additionalPorts !== undefined) {
+      if (typeof updateData.additionalPorts === 'string') {
+        try {
+          newAdditionalPorts = JSON.parse(updateData.additionalPorts);
+        } catch (error) {
+          newAdditionalPorts = [];
         }
+      } else if (Array.isArray(updateData.additionalPorts)) {
+        newAdditionalPorts = updateData.additionalPorts;
+      }
+    } else {
+      newAdditionalPorts = oldAdditionalPorts;
+    }
+
+    let cleanedRulesCount = 0;
+    const portConfigChanged = (newPortRangeStart && newPortRangeStart !== oldPortRangeStart) ||
+                             (newPortRangeEnd && newPortRangeEnd !== oldPortRangeEnd) ||
+                             JSON.stringify(newAdditionalPorts.sort()) !== JSON.stringify(oldAdditionalPorts.sort());
+
+    if (portConfigChanged) {
+      // 获取用户所有规则
+      const userRules = await UserForwardRule.findAll({
+        where: { userId: user.id }
       });
+
+      const rulesToDelete = [];
+      for (const rule of userRules) {
+        const port = rule.sourcePort;
+        let isPortAllowed = false;
+
+        // 检查端口是否在新的范围内
+        if (newPortRangeStart && newPortRangeEnd) {
+          if (port >= newPortRangeStart && port <= newPortRangeEnd) {
+            isPortAllowed = true;
+          }
+        } else if (oldPortRangeStart && oldPortRangeEnd) {
+          if (port >= oldPortRangeStart && port <= oldPortRangeEnd) {
+            isPortAllowed = true;
+          }
+        }
+
+        // 检查端口是否在新的额外端口列表中
+        if (!isPortAllowed && newAdditionalPorts.includes(port)) {
+          isPortAllowed = true;
+        }
+
+        if (!isPortAllowed) {
+          rulesToDelete.push(rule);
+        }
+      }
 
       if (rulesToDelete.length > 0) {
         await UserForwardRule.destroy({
@@ -521,7 +595,7 @@ router.put('/:id', auth, async (req, res) => {
           }
         });
         cleanedRulesCount = rulesToDelete.length;
-        console.log(`清理了用户 ${user.id} 的 ${cleanedRulesCount} 个超出端口范围的转发规则`);
+        console.log(`清理了用户 ${user.id} 的 ${cleanedRulesCount} 个超出端口配置的转发规则`);
       }
     }
 
@@ -894,16 +968,23 @@ router.get('/', auth, async (req, res) => {
     });
 
     // 添加计算字段
-    const usersWithStatus = users.map(user => ({
-      ...user.toJSON(),
-      isExpired: user.isExpired(),
-      forwardRuleCount: user.forwardRules ? user.forwardRules.length : 0,
-      activeRuleCount: user.forwardRules ? user.forwardRules.filter(rule => {
-        // 为计算属性设置用户关联
-        rule.user = user;
-        return rule.isActive;
-      }).length : 0
-    }));
+    const usersWithStatus = users.map(user => {
+      const userData = user.toJSON();
+
+      // 🔧 修复: 正确处理 additionalPorts 字段
+      userData.additionalPorts = user.getAdditionalPorts();
+
+      return {
+        ...userData,
+        isExpired: user.isExpired(),
+        forwardRuleCount: user.forwardRules ? user.forwardRules.length : 0,
+        activeRuleCount: user.forwardRules ? user.forwardRules.filter(rule => {
+          // 为计算属性设置用户关联
+          rule.user = user;
+          return rule.isActive;
+        }).length : 0
+      };
+    });
 
     res.json(usersWithStatus);
   } catch (error) {

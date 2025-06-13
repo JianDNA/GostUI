@@ -65,19 +65,100 @@ module.exports = (sequelize) => {
         return true;
       }
 
-      // 普通用户需要检查端口范围
-      if (!this.portRangeStart || !this.portRangeEnd) return false;
-      return port >= this.portRangeStart && port <= this.portRangeEnd;
+      // 检查端口范围
+      if (this.portRangeStart && this.portRangeEnd) {
+        if (port >= this.portRangeStart && port <= this.portRangeEnd) {
+          return true;
+        }
+      }
+
+      // 检查额外端口列表
+      const additionalPorts = this.getAdditionalPorts();
+      return additionalPorts.includes(port);
+    }
+
+    // 获取额外端口列表
+    getAdditionalPorts() {
+      console.log(`[getAdditionalPorts] 用户 ${this.id} 的原始额外端口数据:`, this.additionalPorts);
+      
+      if (!this.additionalPorts) {
+        console.log(`[getAdditionalPorts] 用户 ${this.id} 没有额外端口数据`);
+        return [];
+      }
+      
+      try {
+        const parsed = JSON.parse(this.additionalPorts);
+        console.log(`[getAdditionalPorts] 用户 ${this.id} 解析后的额外端口:`, parsed);
+        
+        if (Array.isArray(parsed)) {
+          return parsed;
+        } else {
+          console.warn(`[getAdditionalPorts] 用户 ${this.id} 的额外端口不是数组格式:`, parsed);
+          return [];
+        }
+      } catch (error) {
+        console.warn(`[getAdditionalPorts] 用户 ${this.id} 的额外端口数据格式错误:`, error);
+        return [];
+      }
+    }
+
+    // 设置额外端口列表
+    setAdditionalPorts(ports) {
+      if (!Array.isArray(ports)) {
+        throw new Error('额外端口必须是数组格式');
+      }
+
+      // 验证端口格式
+      for (const port of ports) {
+        if (!Number.isInteger(port) || port < 1 || port > 65535) {
+          throw new Error(`无效的端口号: ${port}`);
+        }
+      }
+
+      // 去重并排序
+      const uniquePorts = [...new Set(ports)].sort((a, b) => a - b);
+      this.additionalPorts = JSON.stringify(uniquePorts);
     }
 
     // 获取用户可用的端口列表
     getAvailablePorts() {
-      if (!this.portRangeStart || !this.portRangeEnd) return [];
       const ports = [];
-      for (let i = this.portRangeStart; i <= this.portRangeEnd; i++) {
-        ports.push(i);
+
+      // 添加端口范围内的端口
+      if (this.portRangeStart && this.portRangeEnd) {
+        for (let i = this.portRangeStart; i <= this.portRangeEnd; i++) {
+          ports.push(i);
+        }
       }
-      return ports;
+
+      // 添加额外端口
+      const additionalPorts = this.getAdditionalPorts();
+      ports.push(...additionalPorts);
+
+      // 去重并排序
+      return [...new Set(ports)].sort((a, b) => a - b);
+    }
+
+    // 获取端口配置摘要（用于显示）
+    getPortSummary() {
+      const summary = {
+        range: null,
+        additional: [],
+        total: 0
+      };
+
+      if (this.portRangeStart && this.portRangeEnd) {
+        summary.range = `${this.portRangeStart}-${this.portRangeEnd}`;
+        summary.total += (this.portRangeEnd - this.portRangeStart + 1);
+      }
+
+      const additionalPorts = this.getAdditionalPorts();
+      if (additionalPorts.length > 0) {
+        summary.additional = additionalPorts;
+        summary.total += additionalPorts.length;
+      }
+
+      return summary;
     }
 
     // 获取流量限额 (字节单位)
@@ -239,6 +320,34 @@ module.exports = (sequelize) => {
         max: 65535
       },
       comment: '用户端口范围结束端口'
+    },
+    additionalPorts: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: '用户额外可用端口列表 (JSON格式)',
+      validate: {
+        isValidPortList(value) {
+          if (!value) return; // 允许为空
+
+          try {
+            const ports = JSON.parse(value);
+            if (!Array.isArray(ports)) {
+              throw new Error('额外端口必须是数组格式');
+            }
+
+            for (const port of ports) {
+              if (!Number.isInteger(port) || port < 1 || port > 65535) {
+                throw new Error(`无效的端口号: ${port}`);
+              }
+            }
+          } catch (error) {
+            if (error instanceof SyntaxError) {
+              throw new Error('额外端口数据格式错误，必须是有效的JSON数组');
+            }
+            throw error;
+          }
+        }
+      }
     },
     expiryDate: {
       type: DataTypes.DATE,

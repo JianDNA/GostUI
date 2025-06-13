@@ -17,12 +17,22 @@
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column prop="username" label="用户名" width="120" />
       <el-table-column prop="email" label="邮箱" width="180" />
-      <el-table-column label="端口范围" width="120">
+      <el-table-column label="端口配置" width="200">
         <template #default="{ row }">
-          <span v-if="row.portRangeStart && row.portRangeEnd">
-            {{ row.portRangeStart }}-{{ row.portRangeEnd }}
-          </span>
-          <span v-else class="text-muted">未设置</span>
+          <div v-if="row.role === 'admin'" class="text-muted">
+            管理员 (无限制)
+          </div>
+          <div v-else>
+            <div v-if="row.portRangeStart && row.portRangeEnd" class="port-range">
+              范围: {{ row.portRangeStart }}-{{ row.portRangeEnd }}
+            </div>
+            <div v-if="getAdditionalPorts(row).length > 0" class="additional-ports">
+              额外: {{ getAdditionalPorts(row).join(', ') }}
+            </div>
+            <div v-if="!row.portRangeStart && !row.portRangeEnd && getAdditionalPorts(row).length === 0" class="text-muted">
+              未设置
+            </div>
+          </div>
         </template>
       </el-table-column>
       <el-table-column label="流量限额" width="100">
@@ -235,10 +245,33 @@
             />
           </div>
           <div class="form-tip">
-            必须设置端口范围，例如：10001-10100
+            设置连续端口范围，例如：10001-10100
           </div>
           <div v-if="portConflictMessage" class="conflict-message">
             {{ portConflictMessage }}
+          </div>
+        </el-form-item>
+
+        <el-form-item label="额外端口" v-if="form.role === 'user'">
+          <el-select
+            v-model="form.additionalPorts"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            placeholder="输入额外端口号，按回车添加"
+            style="width: 100%"
+            @change="checkPortConflictsDebounced"
+          >
+            <el-option
+              v-for="port in form.additionalPorts"
+              :key="port"
+              :label="port"
+              :value="port"
+            />
+          </el-select>
+          <div class="form-tip">
+            可选：添加额外的单独端口，例如：12001, 12005, 12008
           </div>
         </el-form-item>
 
@@ -447,6 +480,7 @@ export default {
       role: 'user',
       portRangeStart: null,
       portRangeEnd: null,
+      additionalPorts: [], // 新增：额外端口列表
       expiryDate: null,
       trafficQuota: 100,
       isActive: true
@@ -621,6 +655,7 @@ export default {
         role: user.role,
         portRangeStart: user.portRangeStart,
         portRangeEnd: user.portRangeEnd,
+        additionalPorts: getAdditionalPorts(user), // 🔧 修复：安全加载额外端口
         expiryDate: user.expiryDate,
         trafficQuota: user.trafficQuota || 1,
         isActive: user.isActive
@@ -672,6 +707,15 @@ export default {
       submitting.value = true
       try {
         const data = { ...form }
+
+        // 处理额外端口数据：确保是数字数组
+        if (data.additionalPorts && Array.isArray(data.additionalPorts)) {
+          data.additionalPorts = data.additionalPorts
+            .map(port => typeof port === 'string' ? parseInt(port) : port)
+            .filter(port => !isNaN(port) && port > 0 && port <= 65535)
+        } else {
+          data.additionalPorts = []
+        }
 
         if (isEdit.value) {
           // 编辑时处理密码 - Admin可以重置任何用户的密码
@@ -831,6 +875,7 @@ export default {
         role: 'user',
         portRangeStart: null,
         portRangeEnd: null,
+        additionalPorts: [], // 新增：重置额外端口
         expiryDate: null,
         trafficQuota: 1,
         isActive: true
@@ -864,6 +909,29 @@ export default {
       } else {
         return `${quota}GB`
       }
+    }
+
+    // 🔧 修复: 安全获取额外端口列表
+    const getAdditionalPorts = (user) => {
+      if (!user || !user.additionalPorts) return []
+
+      // 如果已经是数组，直接返回
+      if (Array.isArray(user.additionalPorts)) {
+        return user.additionalPorts
+      }
+
+      // 如果是字符串，尝试解析JSON
+      if (typeof user.additionalPorts === 'string') {
+        try {
+          const parsed = JSON.parse(user.additionalPorts)
+          return Array.isArray(parsed) ? parsed : []
+        } catch (error) {
+          console.warn('解析用户额外端口失败:', error)
+          return []
+        }
+      }
+
+      return []
     }
 
     onMounted(() => {
@@ -905,7 +973,8 @@ export default {
       confirmResetTraffic,
       resetForm,
       checkPortConflictsDebounced,
-      formatQuota
+      formatQuota,
+      getAdditionalPorts
     }
   }
 }
@@ -1002,5 +1071,17 @@ export default {
 
 .reset-traffic-content li {
   margin: 5px 0;
+}
+
+/* 端口配置样式 */
+.port-range {
+  font-size: 12px;
+  color: #409eff;
+  margin-bottom: 2px;
+}
+
+.additional-ports {
+  font-size: 12px;
+  color: #67c23a;
 }
 </style>

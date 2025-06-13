@@ -91,6 +91,60 @@ class PortSecurityService {
       }
       return result;
     }
+    
+    // 🔧 管理员为普通用户创建规则时的特殊处理：只检查端口是否在用户允许的范围内
+    if (userRole === 'admin_for_user' && userId) {
+      console.log(`管理员为用户 ${userId} 创建规则，检查端口 ${port} 是否在用户允许范围内`);
+      
+      // 检查端口是否被占用
+      const isInUse = await this.isPortInUse(port);
+      if (isInUse) {
+        result.valid = false;
+        result.errors.push(this.formatMessage('portInUse', { port }));
+        return result;
+      }
+      
+      // 获取用户信息
+      try {
+        const { models } = require('./dbService');
+        const User = models.User;
+        
+        const user = await User.findByPk(userId);
+        if (!user) {
+          result.valid = false;
+          result.errors.push(`用户 ${userId} 不存在`);
+          return result;
+        }
+        
+        // 检查端口是否在用户允许的范围内
+        if (user.isPortInRange(port)) {
+          result.warnings.push(`管理员为用户创建规则：使用用户允许的端口 ${port}`);
+          return result;
+        } else {
+          result.valid = false;
+          
+          // 生成详细的错误信息
+          let errorMsg = `端口 ${port} 不在用户允许的范围内`;
+          
+          if (user.portRangeStart && user.portRangeEnd) {
+            errorMsg += `。用户端口范围：${user.portRangeStart}-${user.portRangeEnd}`;
+          }
+          
+          const additionalPorts = user.getAdditionalPorts();
+          if (additionalPorts && additionalPorts.length > 0) {
+            errorMsg += `，额外端口：${additionalPorts.join(', ')}`;
+          }
+          
+          result.errors.push(errorMsg);
+          return result;
+        }
+      } catch (error) {
+        console.error(`检查用户 ${userId} 端口范围失败:`, error);
+        result.valid = false;
+        result.errors.push(`检查用户端口范围失败：${error.message}`);
+        return result;
+      }
+    }
 
     // 3. 特权端口检查（仅对非admin用户）
     if (port < 1024 && !this.config.security.allowPrivilegedPorts) {
@@ -106,7 +160,8 @@ class PortSecurityService {
     }
 
     // 5. 端口范围检查（仅对非admin用户）
-    if (!this.isInAllowedRange(port, userRole)) {
+    const isInRange = await this.isInAllowedRange(port, userRole, userId);
+    if (!isInRange) {
       result.valid = false;
 
       // 生成更详细的错误信息，包含范围描述
@@ -121,7 +176,15 @@ class PortSecurityService {
           result.errors.push(`端口 ${port} 是${specialPorts.testing.description}，但您的角色 (${userRole}) 无权使用。允许的角色：${specialPorts.testing.allowedRoles.join(', ')}`);
         }
       } else {
-        result.errors.push(`端口 ${port} 不在允许范围内。用户端口范围：${userRanges}`);
+        // 🔧 如果有用户ID，也显示用户的额外端口信息
+        let errorMessage = `端口 ${port} 不在允许范围内。用户端口范围：${userRanges}`;
+        if (userId) {
+          const additionalPorts = await this.getUserAdditionalPorts(userId);
+          if (additionalPorts.length > 0) {
+            errorMessage += `，额外端口：${additionalPorts.join(', ')}`;
+          }
+        }
+        result.errors.push(errorMessage);
       }
     }
 
@@ -201,7 +264,7 @@ class PortSecurityService {
   /**
    * 检查端口是否在允许范围内
    */
-  isInAllowedRange(port, userRole) {
+  async isInAllowedRange(port, userRole, userId = null) {
     const allowedRanges = this.config.allowedRanges;
     const ranges = allowedRanges[userRole] || allowedRanges.user;
 
@@ -215,6 +278,14 @@ class PortSecurityService {
     // 检查特殊端口（如测试端口）
     if (this.isSpecialPort(port, userRole)) {
       return true;
+    }
+
+    // 🔧 检查用户的额外端口（如果提供了userId）
+    if (userId) {
+      const userAdditionalPorts = await this.getUserAdditionalPorts(userId);
+      if (userAdditionalPorts.includes(port)) {
+        return true;
+      }
     }
 
     return false;
@@ -233,6 +304,31 @@ class PortSecurityService {
     }
 
     return false;
+  }
+
+  /**
+   * 获取用户的额外端口列表
+   * @param {string} userId - 用户ID
+   * @returns {Promise<number[]>} - 额外端口列表
+   */
+  async getUserAdditionalPorts(userId) {
+    try {
+      const { models } = require('./dbService');
+      const User = models.User;
+
+      const user = await User.findByPk(userId);
+      if (!user) {
+        console.warn(`⚠️ 获取用户额外端口: 用户 ${userId} 不存在`);
+        return [];
+      }
+
+      const additionalPorts = user.getAdditionalPorts();
+      console.log(`✅ 用户 ${userId} 额外端口: ${JSON.stringify(additionalPorts)}`);
+      return additionalPorts;
+    } catch (error) {
+      console.warn(`⚠️ 获取用户 ${userId} 额外端口失败:`, error.message);
+      return [];
+    }
   }
 
   /**
@@ -255,8 +351,8 @@ class PortSecurityService {
   async checkUserQuota(userId) {
     try {
       // 查询数据库获取用户当前使用的端口数量
-      const { models } = require('./dbService');
-      const { UserForwardRules } = models;
+      const models = require('./dbService');
+      const UserForwardRules = models.UserForwardRules;
 
       // 获取用户的所有规则，然后使用计算属性过滤
       const userRules = await UserForwardRules.findAll({

@@ -1,12 +1,12 @@
 {
   "services": [
     {
-      "name": "forward-tcp-2365",
-      "addr": ":2365",
+      "name": "forward-tcp-9080",
+      "addr": ":9080",
       "observer": "observer-0",
       "handler": {
         "type": "tcp",
-        "chain": "chain-tcp-2365",
+        "chain": "chain-tcp-9080",
         "metadata": {
           "observer.period": "30s",
           "observer.resetTraffic": true
@@ -19,63 +19,11 @@
         "enableStats": true,
         "observer.period": "30s",
         "observer.resetTraffic": true,
-        "userId": 2,
-        "username": "test",
-        "ruleId": 9,
-        "ruleName": "Test Rule 1",
-        "description": "[配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [紧急禁用: 超配额: 117.2%] [紧急禁用: 超配额: 117.2%] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用] [配额超限自动禁用]"
-      }
-    },
-    {
-      "name": "forward-tcp-6443",
-      "addr": ":6443",
-      "observer": "observer-0",
-      "handler": {
-        "type": "tcp",
-        "chain": "chain-tcp-6443",
-        "metadata": {
-          "observer.period": "30s",
-          "observer.resetTraffic": true
-        }
-      },
-      "listener": {
-        "type": "tcp"
-      },
-      "metadata": {
-        "enableStats": true,
-        "observer.period": "30s",
-        "observer.resetTraffic": true,
-        "userId": 2,
-        "username": "test",
-        "ruleId": 10,
-        "ruleName": "6443",
-        "description": ""
-      }
-    },
-    {
-      "name": "forward-tcp-15000",
-      "addr": ":15000",
-      "observer": "observer-0",
-      "handler": {
-        "type": "tcp",
-        "chain": "chain-tcp-15000",
-        "metadata": {
-          "observer.period": "30s",
-          "observer.resetTraffic": true
-        }
-      },
-      "listener": {
-        "type": "tcp"
-      },
-      "metadata": {
-        "enableStats": true,
-        "observer.period": "30s",
-        "observer.resetTraffic": true,
-        "userId": 2,
-        "username": "test",
-        "ruleId": 11,
-        "ruleName": "Test New Rule",
-        "description": ""
+        "userId": 1,
+        "username": "admin",
+        "ruleId": 7,
+        "ruleName": "Admin HTTP Proxy",
+        "description": "管理员HTTP代理规则"
       }
     },
     {
@@ -107,45 +55,13 @@
   ],
   "chains": [
     {
-      "name": "chain-tcp-2365",
+      "name": "chain-tcp-9080",
       "hops": [
         {
           "name": "hop-0",
           "nodes": [
             {
-              "addr": "127.0.0.1:3000",
-              "connector": {
-                "type": "tcp"
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "chain-tcp-6443",
-      "hops": [
-        {
-          "name": "hop-1",
-          "nodes": [
-            {
-              "addr": "127.0.0.1:3000",
-              "connector": {
-                "type": "tcp"
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "chain-tcp-15000",
-      "hops": [
-        {
-          "name": "hop-2",
-          "nodes": [
-            {
-              "addr": "127.0.0.1:3000",
+              "addr": "127.0.0.1:8081",
               "connector": {
                 "type": "tcp"
               }
@@ -158,7 +74,7 @@
       "name": "chain-tcp-29082",
       "hops": [
         {
-          "name": "hop-3",
+          "name": "hop-1",
           "nodes": [
             {
               "addr": "127.0.0.1:3000",

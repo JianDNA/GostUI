@@ -11,7 +11,7 @@
       "status": "active",
       "portRanges": [],
       "isActive": true,
-      "lastUpdate": 1749739916779
+      "lastUpdate": 1749807512233
     },
     "2": {
       "id": 2,
@@ -24,12 +24,12 @@
       "status": "active",
       "portRanges": [
         {
-          "start": 2000,
-          "end": 16500
+          "start": 10001,
+          "end": 10005
         }
       ],
       "isActive": true,
-      "lastUpdate": 1749739916779
+      "lastUpdate": 1749807512233
     },
     "4": {
       "id": 4,
@@ -42,7 +42,7 @@
       "status": "active",
       "portRanges": [],
       "isActive": true,
-      "lastUpdate": 1749739916779
+      "lastUpdate": 1749807512233
     },
     "5": {
       "id": 5,
@@ -55,27 +55,15 @@
       "status": "active",
       "portRanges": [],
       "isActive": true,
-      "lastUpdate": 1749739916779
+      "lastUpdate": 1749807512233
     }
   },
   "portMapping": {
-    "2365": {
-      "userId": 2,
-      "username": "test",
-      "ruleId": 9,
-      "ruleName": "Test Rule 1"
-    },
-    "6443": {
-      "userId": 2,
-      "username": "test",
-      "ruleId": 10,
-      "ruleName": "6443"
-    },
-    "15000": {
-      "userId": 2,
-      "username": "test",
-      "ruleId": 11,
-      "ruleName": "Test New Rule"
+    "9080": {
+      "userId": 1,
+      "username": "admin",
+      "ruleId": 7,
+      "ruleName": "Admin HTTP Proxy"
     },
     "29082": {
       "userId": 1,
@@ -84,6 +72,6 @@
       "ruleName": "Admin Rule 23"
     }
   },
-  "lastUpdate": 1749739916780,
+  "lastUpdate": 1749807512233,
   "updatedBy": "0"
 }

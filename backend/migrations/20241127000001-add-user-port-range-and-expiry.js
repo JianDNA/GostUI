@@ -39,6 +39,21 @@ module.exports = {
       }
     }
 
+    // 添加额外端口字段
+    try {
+      await queryInterface.addColumn('Users', 'additionalPorts', {
+        type: Sequelize.TEXT,
+        allowNull: true,
+        comment: '用户额外可用端口列表 (JSON格式)'
+      });
+    } catch (error) {
+      if (error.message.includes('duplicate column name')) {
+        console.log('Column additionalPorts already exists, skipping...');
+      } else {
+        throw error;
+      }
+    }
+
     // 为用户表添加过期时间字段
     try {
       await queryInterface.addColumn('Users', 'expiryDate', {

@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿const express = require('express');
+﻿﻿const express = require('express');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
 const { UserForwardRule, User } = require('../models');
@@ -117,7 +117,15 @@ const validateTargetAddress = async (address, user) => {
 
     // 内网地址端口限制检查
     if (isPrivateIP(targetIP)) {
-      if (user.role !== 'admin') {
+      // 获取当前操作用户的角色
+      const currentUserRole = global.currentRequestUser?.role || user.role;
+      
+      // 如果当前用户是管理员，则不做限制
+      if (currentUserRole === 'admin') {
+        console.log('管理员操作：允许使用任意内网地址和端口');
+      }
+      // 普通用户需要检查端口范围
+      else if (user.role !== 'admin') {
         if (!user.portRangeStart || !user.portRangeEnd) {
           throw new Error('用户未设置端口范围，无法使用内网地址');
         }
@@ -200,6 +208,10 @@ router.get('/', auth, async (req, res) => {
           return null; // 过滤掉没有规则的用户
         }
 
+        // 获取用户的额外端口
+        const additionalPorts = user.getAdditionalPorts();
+        console.log(`🔍 分组视图 - 用户 ${user.username} (${user.id}) 的额外端口:`, additionalPorts);
+
         // 为每个规则添加流量统计
         const rulesWithStats = user.forwardRules.map(rule => {
           const ruleData = rule.toJSON();
@@ -228,6 +240,7 @@ router.get('/', auth, async (req, res) => {
           portRange: user.portRangeStart && user.portRangeEnd
             ? `${user.portRangeStart}-${user.portRangeEnd}`
             : '未设置',
+          additionalPorts: additionalPorts, // 使用已解析的额外端口数组
           isExpired: user.isExpired(),
           rules: rulesWithStats
         };
@@ -235,6 +248,12 @@ router.get('/', auth, async (req, res) => {
 
       // 过滤掉 null 值（没有规则的用户）
       const filteredGroupedRules = groupedRules.filter(group => group !== null);
+      
+      // 调试信息
+      console.log('🔍 分组规则中的额外端口信息:');
+      filteredGroupedRules.forEach(group => {
+        console.log(`- 用户 ${group.username} (${group.userId}) 额外端口: ${JSON.stringify(group.additionalPorts)}`);
+      });
 
       return res.json({
         groupedRules: filteredGroupedRules,
@@ -252,6 +271,10 @@ router.get('/', auth, async (req, res) => {
       if (!user) {
         return res.status(404).json({ message: '用户不存在' });
       }
+
+      // 获取用户的额外端口
+      const additionalPorts = user.getAdditionalPorts();
+      console.log(`🔍 用户 ${user.username} (${userId}) 的额外端口:`, additionalPorts);
 
       // 获取规则
       const rules = await UserForwardRule.findAll({
@@ -290,6 +313,7 @@ router.get('/', auth, async (req, res) => {
           username: user.username,
           portRangeStart: user.portRangeStart,
           portRangeEnd: user.portRangeEnd,
+          additionalPorts: additionalPorts, // 确保直接使用解析后的数组
           expiryDate: user.expiryDate,
           isExpired: user.isExpired()
         },
@@ -305,6 +329,8 @@ router.get('/', auth, async (req, res) => {
 // 创建转发规则
 router.post('/', auth, async (req, res) => {
   try {
+    // 设置当前请求用户信息，用于内部函数访问
+    global.currentRequestUser = req.user;
     const {
       name,
       sourcePort,
@@ -342,9 +368,18 @@ router.post('/', auth, async (req, res) => {
 
     // 🔒 端口安全验证（新增）
     try {
+      // 如果是管理员为普通用户创建规则，使用特殊的验证逻辑
+      let validationRole = user.role;
+      
+      // 如果当前操作用户是管理员，但目标用户不是管理员，使用特殊的"admin_for_user"角色
+      if (req.user.role === 'admin' && user.role !== 'admin') {
+        console.log('管理员为普通用户创建规则，使用特殊验证逻辑');
+        validationRole = 'admin_for_user';
+      }
+      
       const portValidation = await portSecurityService.validatePort(
         sourcePort,
-        user.role,
+        validationRole,
         userId
       );
 
@@ -399,9 +434,8 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ message: `端口 ${sourcePort} 已被使用` });
     }
 
-    // 🔧 验证目标地址权限
-    const { portSecurityService } = require('../services/portSecurityService');
-    const targetValidation = await portSecurityService.validateTargetAddress(targetAddress, user.role);
+    // 🔧 验证目标地址权限 - 使用当前操作用户的角色，而不是被编辑用户的角色
+    const targetValidation = await portSecurityService.validateTargetAddress(targetAddress, req.user.role);
 
     if (!targetValidation.valid) {
       return res.status(400).json({
@@ -482,12 +516,17 @@ router.post('/', auth, async (req, res) => {
   } catch (error) {
     console.error('创建转发规则失败:', error);
     res.status(500).json({ message: '创建转发规则失败', error: error.message });
+  } finally {
+    // 清除当前请求用户信息
+    global.currentRequestUser = null;
   }
 });
 
 // 更新转发规则
 router.put('/:id', auth, async (req, res) => {
   try {
+    // 设置当前请求用户信息，用于内部函数访问
+    global.currentRequestUser = req.user;
     const {
       name,
       sourcePort,
@@ -534,9 +573,18 @@ router.put('/:id', auth, async (req, res) => {
     // 🔒 端口安全验证（如果修改了端口）
     if (sourcePort && sourcePort !== rule.sourcePort) {
       try {
+        // 如果是管理员为普通用户更新规则，使用特殊的验证逻辑
+        let validationRole = rule.user.role;
+        
+        // 如果当前操作用户是管理员，但目标用户不是管理员，使用特殊的"admin_for_user"角色
+        if (req.user.role === 'admin' && rule.user.role !== 'admin') {
+          console.log('管理员为普通用户更新规则，使用特殊验证逻辑');
+          validationRole = 'admin_for_user';
+        }
+        
         const portValidation = await portSecurityService.validatePort(
           sourcePort,
-          rule.user.role,
+          validationRole,
           rule.userId
         );
 
@@ -576,10 +624,10 @@ router.put('/:id', auth, async (req, res) => {
       }
     }
 
-    // 🔧 如果更新了目标地址，验证目标地址权限
+    // 🔧 如果更新了目标地址，验证目标地址权限 - 使用当前操作用户的角色
     if (targetAddress && targetAddress !== rule.targetAddress) {
       const { portSecurityService } = require('../services/portSecurityService');
-      const targetValidation = await portSecurityService.validateTargetAddress(targetAddress, user.role);
+      const targetValidation = await portSecurityService.validateTargetAddress(targetAddress, req.user.role);
 
       if (!targetValidation.valid) {
         return res.status(400).json({
@@ -678,6 +726,9 @@ router.put('/:id', auth, async (req, res) => {
   } catch (error) {
     console.error('更新转发规则失败:', error);
     res.status(500).json({ message: '更新转发规则失败', error: error.message });
+  } finally {
+    // 清除当前请求用户信息
+    global.currentRequestUser = null;
   }
 });
 

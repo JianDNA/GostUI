@@ -80,7 +80,9 @@ class PortSecurityService {
     }
 
     // 🔧 管理员权限：admin用户可以使用任何端口，跳过所有限制检查
-    if (userRole === 'admin') {
+    // 获取当前操作用户的角色（如果存在）
+    const currentUserRole = global.currentRequestUser?.role;
+    if (userRole === 'admin' || currentUserRole === 'admin') {
       // 仍然检查端口占用，但跳过其他限制
       const isInUse = await this.isPortInUse(port);
       if (isInUse) {

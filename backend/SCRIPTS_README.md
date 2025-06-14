@@ -27,7 +27,7 @@ scripts目录包含系统维护和部署所需的官方脚本：
 
 ### 3. 有价值的诊断与测试脚本
 
-这些脚本对系统维护、诊断和测试特别有价值：
+这些脚本已移至scripts/archive目录，用于系统维护、诊断和测试：
 
 - `diagnose-system.js` - 系统诊断工具
 - `check-migration-status.js` - 迁移状态检查
@@ -64,38 +64,71 @@ scripts目录包含系统维护和部署所需的官方脚本：
 
 ```bash
 # 诊断系统问题
-node diagnose-system.js
+node scripts/archive/root_cleanup/diagnose-system.js
 ```
 
 ### 观察器测试
 
 ```bash
 # 简单观察器测试
-node debug-observer-simple.js
+node scripts/archive/root_cleanup/debug-observer-simple.js
 
 # 详细观察器测试
-node debug-observer-detailed.js
+node scripts/archive/root_cleanup/debug-observer-detailed.js
 ```
 
 ### 性能测试
 
 ```bash
 # 流媒体压力测试（2.5分钟）
-node test-streaming-pressure.js
+node scripts/archive/root_cleanup/test-streaming-pressure.js
 
 # 1TB大流量测试（约12分钟）
-node test-real-1tb.js
+node scripts/archive/root_cleanup/test-real-1tb.js
 ```
 
 ### 安全与配额测试
 
 ```bash
 # 端口安全测试
-node test-port-security.js
+node scripts/archive/root_cleanup/test-port-security.js
 
 # 配额基础功能测试
-node test-quota-basic.js
+node scripts/archive/root_cleanup/test-quota-basic.js
 ```
+
+## 代码清理记录
+
+### 2025-06-13 代码清理
+
+#### 第一阶段：目录和文件清理
+
+1. 清理内容:
+   - 移除根目录中的30个测试、调试和诊断脚本到scripts/archive/root_cleanup/
+   - 移除冗余的quota-simple.js路由文件到scripts/archive/routes_cleanup/
+   - 清理app.js中的调试日志和冗余代码
+   - 优化系统启动和关闭流程
+
+#### 第二阶段：代码质量优化
+
+1. 清理内容:
+   - 优化test.js路由文件，移除冗余日志和注释
+   - 重构gostConfigService.js服务，简化配置生成逻辑
+   - 统一日志格式，移除冗余注释
+   - 优化配置比较和同步逻辑
+   - 改进错误处理机制
+
+2. 清理原则:
+   - 保持核心功能不变
+   - 移除而非删除，保留可追溯性
+   - 优化代码结构，提高可维护性
+   - 确保系统稳定性不受影响
+
+3. 后续清理计划:
+   - 进一步整理服务层代码
+   - 进一步优化路由处理逻辑
+   - 规范化错误处理
+   - 统一日志格式和级别
 
 ## 脚本维护
 
@@ -103,10 +136,10 @@ node test-quota-basic.js
 
 ```bash
 # 基础清理 - 删除废弃脚本
-node cleanup-scripts.js
+node scripts/archive/root_cleanup/cleanup-scripts.js
 
 # 增强清理 - 整理和归档脚本
-node enhanced-cleanup.js
+node scripts/archive/root_cleanup/enhanced-cleanup.js
 ```
 
 ## 建议

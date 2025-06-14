@@ -35,34 +35,32 @@
       <el-col :span="6">
         <el-card class="stat-card">
           <div class="stat-content">
-            <div class="stat-number">{{ stats.generatedServices || 0 }}</div>
-            <div class="stat-label">生成的服务数</div>
+            <div class="stat-number">{{ stats.serviceCount || 0 }}</div>
+            <div class="stat-label">服务数量</div>
           </div>
         </el-card>
       </el-col>
       <el-col :span="6">
         <el-card class="stat-card">
           <div class="stat-content">
-            <div class="stat-number">{{ stats.currentServices || 0 }}</div>
-            <div class="stat-label">当前服务数</div>
+            <div class="stat-number">{{ stats.portCount || 0 }}</div>
+            <div class="stat-label">端口数量</div>
           </div>
         </el-card>
       </el-col>
       <el-col :span="6">
         <el-card class="stat-card">
           <div class="stat-content">
-            <div class="stat-status" :class="{ 'up-to-date': stats.isUpToDate, 'outdated': !stats.isUpToDate }">
-              {{ stats.isUpToDate ? '已同步' : '需要同步' }}
-            </div>
-            <div class="stat-label">同步状态</div>
+            <div class="stat-number">{{ stats.userCount || 0 }}</div>
+            <div class="stat-label">用户数量</div>
           </div>
         </el-card>
       </el-col>
       <el-col :span="6">
         <el-card class="stat-card">
           <div class="stat-content">
-            <div class="stat-status" :class="{ 'enabled': stats.autoSyncEnabled, 'disabled': !stats.autoSyncEnabled }">
-              {{ stats.autoSyncEnabled ? '已启用' : '已停用' }}
+            <div class="stat-status" :class="{ 'enabled': autoSyncEnabled, 'disabled': !autoSyncEnabled }">
+              {{ autoSyncEnabled ? '已启用' : '已停用' }}
             </div>
             <div class="stat-label">自动同步</div>
           </div>
@@ -173,11 +171,15 @@ export default {
     }
     const syncing = ref(false)
     const stats = reactive({
-      generatedServices: 0,
-      currentServices: 0,
-      isUpToDate: true,
-      autoSyncEnabled: false
+      serviceCount: 0,
+      portCount: 0,
+      userCount: 0,
+      protocols: []
     })
+    
+    // 计算自动同步状态
+    const autoSyncEnabled = ref(false)
+    
     const comparison = ref(null)
     const activeTab = ref('generated')
     const syncLogs = ref([])
@@ -212,6 +214,14 @@ export default {
       try {
         const response = await api.get('/gost-config/stats')
         Object.assign(stats, response.data.data)
+        
+        // 获取同步协调器状态
+        try {
+          const syncStatus = await api.get('/gost-config/sync-status')
+          autoSyncEnabled.value = syncStatus.data.data.isRunning || false
+        } catch (error) {
+          console.error('获取同步状态失败:', error)
+        }
       } catch (error) {
         console.error('加载统计信息失败:', error)
         addLog('加载统计信息失败: ' + (error.response?.data?.message || error.message), 'error')
@@ -261,6 +271,7 @@ export default {
         await api.post('/gost-config/auto-sync/start')
         ElMessage.success('自动同步已启动')
         addLog('自动同步已启动', 'success')
+        autoSyncEnabled.value = true
         await loadStats()
       } catch (error) {
         console.error('启动自动同步失败:', error)
@@ -275,6 +286,7 @@ export default {
         await api.post('/gost-config/auto-sync/stop')
         ElMessage.success('自动同步已停止')
         addLog('自动同步已停止', 'warning')
+        autoSyncEnabled.value = false
         await loadStats()
       } catch (error) {
         console.error('停止自动同步失败:', error)
@@ -324,7 +336,8 @@ export default {
       loadComparison,
       handleManualSync,
       handleStartAutoSync,
-      handleStopAutoSync
+      handleStopAutoSync,
+      autoSyncEnabled
     }
   }
 }

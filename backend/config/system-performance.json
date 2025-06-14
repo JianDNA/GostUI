@@ -1,22 +1,25 @@
 {
   "version": "1.0.0",
-  "lastUpdated": "2025-06-11T18:29:08.861Z",
+  "lastUpdated": "2025-06-13T14:10:08.869Z",
   "lastUpdatedBy": "admin",
-  "description": "测试单机模式性能优化",
+  "description": "管理员切换到自动模式",
   "systemMode": {
-    "isSimpleMode": true
+    "isSimpleMode": false
   },
   "gostPlugins": {
-    "authTimeout": 5,
-    "observerTimeout": 10,
-    "limiterTimeout": 5,
-    "observerPeriod": 30,
-    "observerAsyncProcessing": true
+    "authTimeout": 3,
+    "observerTimeout": 15,
+    "limiterTimeout": 3,
+    "observerPeriod": 120,
+    "observerAsyncProcessing": true,
+    "disableQuotaEnforcement": false,
+    "disableConfigSync": false,
+    "batchDatabaseOperations": false
   },
   "cacheConfig": {
-    "authCacheTimeout": 600000,
-    "limiterCacheTimeout": 300000,
-    "multiInstanceCacheTTL": 120000
+    "authCacheTimeout": 900000,
+    "limiterCacheTimeout": 600000,
+    "multiInstanceCacheTTL": 300000
   },
   "syncConfig": {
     "autoSyncInterval": 300000,

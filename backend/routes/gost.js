@@ -159,8 +159,26 @@ router.post('/start', auth, adminAuth, async (req, res) => {
         const config = JSON.parse(configContent);
         if (config.services && config.services.length > 0) {
           const addrStr = config.services[0].addr;
-          const port = parseInt(addrStr.replace(':', ''), 10);
-          if (!isNaN(port)) {
+          
+          // 修复端口提取逻辑，确保正确处理IP地址和端口
+          let port;
+          
+          // 处理格式为 ":端口" 的情况
+          if (addrStr.startsWith(':')) {
+            port = parseInt(addrStr.substring(1), 10);
+          } 
+          // 处理格式为 "IP:端口" 的情况
+          else if (addrStr.includes(':')) {
+            // 分离IP和端口
+            const lastColonIndex = addrStr.lastIndexOf(':');
+            port = parseInt(addrStr.substring(lastColonIndex + 1), 10);
+          } 
+          // 无法识别的格式
+          else {
+            port = NaN;
+          }
+          
+          if (!isNaN(port) && port > 0 && port <= 65535) {
             forwardPort = port;
           }
         }
@@ -192,7 +210,23 @@ router.post('/start', auth, adminAuth, async (req, res) => {
         const config = JSON.parse(configContent);
         if (config.services && config.services.length > 0) {
           const addrStr = config.services[0].addr;
-          currentPort = parseInt(addrStr.replace(':', ''), 10);
+          
+          // 修复端口提取逻辑，确保正确处理IP地址和端口
+          // 处理格式为 ":端口" 的情况
+          if (addrStr.startsWith(':')) {
+            currentPort = parseInt(addrStr.substring(1), 10);
+          } 
+          // 处理格式为 "IP:端口" 的情况
+          else if (addrStr.includes(':')) {
+            // 分离IP和端口
+            const lastColonIndex = addrStr.lastIndexOf(':');
+            currentPort = parseInt(addrStr.substring(lastColonIndex + 1), 10);
+          }
+          
+          // 验证端口有效性
+          if (isNaN(currentPort) || currentPort <= 0 || currentPort > 65535) {
+            currentPort = null;
+          }
         }
       } catch (err) {
         console.warn('读取当前配置端口失败:', err);

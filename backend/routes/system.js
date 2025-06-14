@@ -4,10 +4,14 @@
 
 const express = require('express');
 const router = express.Router();
-const { auth: authenticateToken, adminAuth: requireAdmin } = require('../middleware/auth');
+const { auth, adminAuth } = require('../middleware/auth');
+const { handleApiError } = require('../utils/errorHandler');
+const { defaultLogger, LOG_LEVELS } = require('../utils/logger');
+const { models } = require('../services/dbService');
+const { User, UserForwardRule } = models;
 
 // 获取系统状态 (仅管理员)
-router.get('/status', authenticateToken, requireAdmin, async (req, res) => {
+router.get('/status', auth, adminAuth, async (req, res) => {
   try {
     const realTimeTrafficMonitor = require('../services/realTimeTrafficMonitor');
     const quotaCoordinatorService = require('../services/quotaCoordinatorService');
@@ -44,17 +48,12 @@ router.get('/status', authenticateToken, requireAdmin, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('获取系统状态失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '获取系统状态失败',
-      error: error.message
-    });
+    handleApiError('获取系统状态', error, res);
   }
 });
 
 // 获取GOST状态 (仅管理员)
-router.get('/gost-status', authenticateToken, requireAdmin, async (req, res) => {
+router.get('/gost-status', auth, adminAuth, async (req, res) => {
   try {
     const gostHealthService = require('../services/gostHealthService');
     const gostService = require('../services/gostService');
@@ -81,17 +80,12 @@ router.get('/gost-status', authenticateToken, requireAdmin, async (req, res) => 
     });
 
   } catch (error) {
-    console.error('获取GOST状态失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '获取GOST状态失败',
-      error: error.message
-    });
+    handleApiError('获取GOST状态', error, res);
   }
 });
 
 // 重启GOST服务 (仅管理员)
-router.post('/restart-gost', authenticateToken, requireAdmin, async (req, res) => {
+router.post('/restart-gost', auth, adminAuth, async (req, res) => {
   try {
     const gostConfigService = require('../services/gostConfigService');
 
@@ -105,37 +99,74 @@ router.post('/restart-gost', authenticateToken, requireAdmin, async (req, res) =
     });
 
   } catch (error) {
-    console.error('重启GOST服务失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '重启GOST服务失败',
-      error: error.message
-    });
+    handleApiError('重启GOST服务', error, res);
   }
 });
 
 // 获取系统日志 (仅管理员)
-router.get('/logs', authenticateToken, requireAdmin, async (req, res) => {
+router.get('/logs', auth, adminAuth, async (req, res) => {
   try {
     const fs = require('fs').promises;
     const path = require('path');
 
-    const { lines = 100, level = 'all' } = req.query;
+    const { lines = 100, level = 'all', file = 'application' } = req.query;
+    
+    let logFilePath;
+    if (file === 'error') {
+      logFilePath = path.join(__dirname, '../logs/error.log');
+    } else {
+      logFilePath = path.join(__dirname, '../logs/application.log');
+    }
+    
+    // 检查文件是否存在
+    try {
+      await fs.access(logFilePath);
+    } catch (error) {
+      return res.json({
+        success: true,
+        data: {
+          timestamp: new Date().toISOString(),
+          lines: parseInt(lines),
+          level: level,
+          file: file,
+          logs: [],
+          message: '日志文件不存在'
+        }
+      });
+    }
+    
+    // 读取日志文件
+    const logContent = await fs.readFile(logFilePath, 'utf8');
+    const logLines = logContent.split('\n').filter(line => line.trim());
+    
+    // 根据级别过滤
+    let filteredLogs = logLines;
+    if (level !== 'all') {
+      filteredLogs = logLines.filter(line => line.includes(`[${level.toUpperCase()}]`));
+    }
+    
+    // 获取最新的行
+    const logs = filteredLogs.slice(-parseInt(lines)).map(line => {
+      try {
+        // 尝试解析JSON格式的日志
+        if (line.startsWith('{') && line.endsWith('}')) {
+          return JSON.parse(line);
+        }
+        // 处理普通文本格式
+        return { raw: line };
+      } catch (e) {
+        return { raw: line };
+      }
+    });
 
-    // 这里可以根据需要读取不同的日志文件
     const logData = {
       timestamp: new Date().toISOString(),
       lines: parseInt(lines),
       level: level,
-      logs: [
-        // 示例日志数据，实际应该从日志文件读取
-        {
-          timestamp: new Date().toISOString(),
-          level: 'info',
-          message: '系统运行正常',
-          service: 'system'
-        }
-      ]
+      file: file,
+      totalLines: logLines.length,
+      filteredLines: filteredLogs.length,
+      logs: logs
     };
 
     res.json({
@@ -144,20 +175,60 @@ router.get('/logs', authenticateToken, requireAdmin, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('获取系统日志失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '获取系统日志失败',
-      error: error.message
+    handleApiError('获取系统日志', error, res);
+  }
+});
+
+// 获取日志级别 (仅管理员)
+router.get('/log-level', auth, adminAuth, (req, res) => {
+  try {
+    const currentLevel = defaultLogger.getLevel();
+    const availableLevels = Object.keys(LOG_LEVELS);
+    
+    res.json({
+      success: true,
+      data: {
+        currentLevel,
+        availableLevels,
+        config: defaultLogger.getConfig()
+      }
     });
+  } catch (error) {
+    handleApiError('获取日志级别', error, res);
+  }
+});
+
+// 设置日志级别 (仅管理员)
+router.post('/log-level', auth, adminAuth, (req, res) => {
+  try {
+    const { level } = req.body;
+    
+    if (!level || !LOG_LEVELS.hasOwnProperty(level)) {
+      return res.status(400).json({
+        success: false,
+        message: '无效的日志级别',
+        availableLevels: Object.keys(LOG_LEVELS)
+      });
+    }
+    
+    defaultLogger.setLevel(level);
+    
+    res.json({
+      success: true,
+      message: `日志级别已设置为 ${level}`,
+      data: {
+        currentLevel: defaultLogger.getLevel(),
+        availableLevels: Object.keys(LOG_LEVELS)
+      }
+    });
+  } catch (error) {
+    handleApiError('设置日志级别', error, res);
   }
 });
 
 // 获取系统统计
-router.get('/stats', authenticateToken, async (req, res) => {
+router.get('/stats', auth, async (req, res) => {
   try {
-    const { User, UserForwardRule } = require('../models');
-
     // 获取基本统计信息
     const totalUsers = await User.count();
     const activeUsers = await User.count({ where: { role: 'user' } });
@@ -196,7 +267,7 @@ router.get('/stats', authenticateToken, async (req, res) => {
       },
       traffic: {
         totalUsed: trafficStats[0]?.totalTraffic || 0,
-        totalQuota: (trafficStats[0]?.totalQuota || 0) * 1024 * 1024 * 1024 // 转换为字节
+        totalQuota: trafficStats[0]?.totalQuota || 0
       },
       timestamp: new Date().toISOString()
     };
@@ -207,28 +278,16 @@ router.get('/stats', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('获取系统统计失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '获取系统统计失败',
-      error: error.message
-    });
+    handleApiError('获取系统统计', error, res);
   }
 });
 
-// 获取实时监控状态 (仅管理员)
-router.get('/monitor-status', authenticateToken, requireAdmin, async (req, res) => {
+// 获取监控状态 (仅管理员)
+router.get('/monitor-status', auth, adminAuth, async (req, res) => {
   try {
     const realTimeTrafficMonitor = require('../services/realTimeTrafficMonitor');
 
-    const status = {
-      isRunning: realTimeTrafficMonitor.isMonitoring,
-      stats: realTimeTrafficMonitor.getStats ? realTimeTrafficMonitor.getStats() : null,
-      config: {
-        monitoringInterval: realTimeTrafficMonitor.monitoringInterval,
-        forceCheckInterval: realTimeTrafficMonitor.forceCheckInterval
-      }
-    };
+    const status = realTimeTrafficMonitor.getMonitoringStatus();
 
     res.json({
       success: true,
@@ -236,23 +295,31 @@ router.get('/monitor-status', authenticateToken, requireAdmin, async (req, res) 
     });
 
   } catch (error) {
-    console.error('获取监控状态失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '获取监控状态失败',
-      error: error.message
-    });
+    handleApiError('获取监控状态', error, res);
   }
 });
 
-// 获取配额协调器状态 (仅管理员)
-router.get('/quota-status', authenticateToken, requireAdmin, async (req, res) => {
+// 获取配额状态 (仅管理员)
+router.get('/quota-status', auth, adminAuth, async (req, res) => {
   try {
-    const quotaCoordinatorService = require('../services/quotaCoordinatorService');
-
-    const status = quotaCoordinatorService.getStatus ? quotaCoordinatorService.getStatus() : {
-      message: '配额协调器状态不可用'
-    };
+    const quotaManagementService = require('../services/quotaManagementService');
+    
+    // 检查服务是否有getStatus方法
+    if (!quotaManagementService.getStatus) {
+      // 如果没有getStatus方法，返回基本状态信息
+      const basicStatus = {
+        isRunning: false,
+        message: '配额管理服务未完全初始化',
+        timestamp: new Date().toISOString()
+      };
+      
+      return res.json({
+        success: true,
+        data: basicStatus
+      });
+    }
+    
+    const status = await quotaManagementService.getStatus();
 
     res.json({
       success: true,
@@ -260,23 +327,15 @@ router.get('/quota-status', authenticateToken, requireAdmin, async (req, res) =>
     });
 
   } catch (error) {
-    console.error('获取配额状态失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '获取配额状态失败',
-      error: error.message
-    });
+    handleApiError('获取配额状态', error, res);
   }
 });
 
-// 获取同步协调器状态 (仅管理员)
-router.get('/sync-status', authenticateToken, requireAdmin, async (req, res) => {
+// 获取同步状态 (仅管理员)
+router.get('/sync-status', auth, adminAuth, async (req, res) => {
   try {
     const gostSyncCoordinator = require('../services/gostSyncCoordinator');
-
-    const status = gostSyncCoordinator.getStatus ? gostSyncCoordinator.getStatus() : {
-      message: '同步协调器状态不可用'
-    };
+    const status = gostSyncCoordinator.getStatus();
 
     res.json({
       success: true,
@@ -284,47 +343,38 @@ router.get('/sync-status', authenticateToken, requireAdmin, async (req, res) => 
     });
 
   } catch (error) {
-    console.error('获取同步状态失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '获取同步状态失败',
-      error: error.message
-    });
+    handleApiError('获取同步状态', error, res);
   }
 });
 
-// 强制同步配置 (仅管理员)
-router.post('/force-sync', authenticateToken, requireAdmin, async (req, res) => {
+// 强制同步 (仅管理员)
+router.post('/force-sync', auth, adminAuth, async (req, res) => {
   try {
     const gostSyncCoordinator = require('../services/gostSyncCoordinator');
-
-    const result = await gostSyncCoordinator.requestSync('manual_force', true, 10);
+    const result = await gostSyncCoordinator.requestSync('manual_admin', true);
 
     res.json({
       success: true,
-      message: '强制同步已触发',
-      data: result
+      data: result,
+      message: '强制同步请求已发送'
     });
 
   } catch (error) {
-    console.error('强制同步失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '强制同步失败',
-      error: error.message
-    });
+    handleApiError('强制同步', error, res);
   }
 });
 
 // 获取观察器状态 (仅管理员)
-router.get('/observer-status', authenticateToken, requireAdmin, async (req, res) => {
+router.get('/observer-status', auth, adminAuth, async (req, res) => {
   try {
     const gostPluginService = require('../services/gostPluginService');
-
     const status = {
-      isRunning: true, // GOST插件服务总是运行的
+      isRunning: true, // 观察器总是运行的
       port: 18081,
-      stats: gostPluginService.getStats ? gostPluginService.getStats() : null
+      bufferSize: gostPluginService.trafficBuffer ? gostPluginService.trafficBuffer.size : 0,
+      speedBufferSize: gostPluginService.speedBuffer ? gostPluginService.speedBuffer.size : 0,
+      lastFlushTime: gostPluginService.lastFlushTime,
+      timestamp: new Date().toISOString()
     };
 
     res.json({
@@ -333,12 +383,64 @@ router.get('/observer-status', authenticateToken, requireAdmin, async (req, res)
     });
 
   } catch (error) {
-    console.error('获取观察器状态失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '获取观察器状态失败',
-      error: error.message
+    handleApiError('获取观察器状态', error, res);
+  }
+});
+
+// 获取当前系统模式
+router.get('/mode', auth, adminAuth, async (req, res) => {
+  try {
+    const systemModeManager = require('../services/systemModeManager');
+    const isSimpleMode = systemModeManager.isSimpleMode();
+    
+    res.json({
+      success: true,
+      data: {
+        mode: isSimpleMode ? 'simple' : 'auto',
+        description: isSimpleMode ? '单机模式' : '自动模式'
+      },
+      message: '获取系统模式成功'
     });
+  } catch (error) {
+    handleApiError('获取系统模式', error, res);
+  }
+});
+
+// 切换到单机模式
+router.post('/mode/simple', auth, adminAuth, async (req, res) => {
+  try {
+    const systemModeManager = require('../services/systemModeManager');
+    await systemModeManager.switchMode(true);
+    
+    res.json({
+      success: true,
+      data: {
+        mode: 'simple',
+        description: '单机模式'
+      },
+      message: '已切换到单机模式'
+    });
+  } catch (error) {
+    handleApiError('切换到单机模式', error, res);
+  }
+});
+
+// 切换到自动模式
+router.post('/mode/auto', auth, adminAuth, async (req, res) => {
+  try {
+    const systemModeManager = require('../services/systemModeManager');
+    await systemModeManager.switchMode(false);
+    
+    res.json({
+      success: true,
+      data: {
+        mode: 'auto',
+        description: '自动模式'
+      },
+      message: '已切换到自动模式'
+    });
+  } catch (error) {
+    handleApiError('切换到自动模式', error, res);
   }
 });
 

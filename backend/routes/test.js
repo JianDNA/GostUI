@@ -10,9 +10,10 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
+const { logError, handleApiError } = require('../utils/errorHandler');
 
 /**
- * 生成指定大小的随机数据（小数据版本）
+ * 生成指定大小的随机数据
  * @param {number} sizeInBytes - 数据大小（字节）
  * @returns {string} 随机数据字符串
  */
@@ -74,8 +75,6 @@ function streamLargeData(res, sizeInBytes, message) {
  */
 router.get('/traffic-1mb', (req, res) => {
   try {
-    console.log('🧪 流量测试: 生成 1MB 数据...');
-    
     const startTime = Date.now();
     const oneMB = 1024 * 1024; // 1MB = 1,048,576 bytes
     
@@ -84,8 +83,6 @@ router.get('/traffic-1mb', (req, res) => {
     
     const endTime = Date.now();
     const generationTime = endTime - startTime;
-    
-    console.log(`✅ 1MB 数据生成完成，耗时: ${generationTime}ms`);
     
     res.json({
       message: '流量测试 - 1MB 数据',
@@ -96,11 +93,7 @@ router.get('/traffic-1mb', (req, res) => {
       data: data
     });
   } catch (error) {
-    console.error('❌ 生成测试数据失败:', error);
-    res.status(500).json({
-      message: '生成测试数据失败',
-      error: error.message
-    });
+    handleApiError('流量测试(1MB)', error, res);
   }
 });
 
@@ -110,8 +103,6 @@ router.get('/traffic-1mb', (req, res) => {
  */
 router.get('/traffic-5mb', (req, res) => {
   try {
-    console.log('🧪 流量测试: 生成 5MB 数据...');
-    
     const startTime = Date.now();
     const fiveMB = 5 * 1024 * 1024; // 5MB
     
@@ -120,8 +111,6 @@ router.get('/traffic-5mb', (req, res) => {
     
     const endTime = Date.now();
     const generationTime = endTime - startTime;
-    
-    console.log(`✅ 5MB 数据生成完成，耗时: ${generationTime}ms`);
     
     res.json({
       message: '流量测试 - 5MB 数据',
@@ -132,11 +121,7 @@ router.get('/traffic-5mb', (req, res) => {
       data: data
     });
   } catch (error) {
-    console.error('❌ 生成测试数据失败:', error);
-    res.status(500).json({
-      message: '生成测试数据失败',
-      error: error.message
-    });
+    handleApiError('流量测试(5MB)', error, res);
   }
 });
 
@@ -146,8 +131,6 @@ router.get('/traffic-5mb', (req, res) => {
  */
 router.get('/traffic-10mb', (req, res) => {
   try {
-    console.log('🧪 流量测试: 生成 10MB 数据...');
-    
     const startTime = Date.now();
     const tenMB = 10 * 1024 * 1024; // 10MB
     
@@ -156,8 +139,6 @@ router.get('/traffic-10mb', (req, res) => {
     
     const endTime = Date.now();
     const generationTime = endTime - startTime;
-    
-    console.log(`✅ 10MB 数据生成完成，耗时: ${generationTime}ms`);
     
     res.json({
       message: '流量测试 - 10MB 数据',
@@ -168,11 +149,7 @@ router.get('/traffic-10mb', (req, res) => {
       data: data
     });
   } catch (error) {
-    console.error('❌ 生成测试数据失败:', error);
-    res.status(500).json({
-      message: '生成测试数据失败',
-      error: error.message
-    });
+    handleApiError('流量测试(10MB)', error, res);
   }
 });
 
@@ -192,19 +169,13 @@ router.get('/traffic-custom', (req, res) => {
       });
     }
     
-    console.log(`🧪 流量测试: 生成 ${sizeInMB}MB 数据...`);
-
     const startTime = Date.now();
     const sizeInBytes = Math.floor(sizeInMB * 1024 * 1024);
 
     // 对于大数据量（>100MB），使用流式处理
     if (sizeInMB > 100) {
-      console.warn(`⚠️ 生成大量数据 (${sizeInMB}MB)，使用流式处理...`);
-
       const endTime = Date.now();
       const generationTime = endTime - startTime;
-
-      console.log(`🚀 开始流式发送 ${sizeInMB}MB 数据，准备时间: ${generationTime}ms`);
 
       // 使用流式处理发送大数据
       streamLargeData(res, sizeInBytes, `流量测试 - ${sizeInMB}MB 数据 (流式)`);
@@ -212,15 +183,11 @@ router.get('/traffic-custom', (req, res) => {
     }
 
     // 小数据使用原有方式
-    console.log(`📦 生成小数据 (${sizeInMB}MB)...`);
-
     // 生成指定大小的随机数据
     const data = generateRandomData(sizeInBytes);
 
     const endTime = Date.now();
     const generationTime = endTime - startTime;
-
-    console.log(`✅ ${sizeInMB}MB 数据生成完成，耗时: ${generationTime}ms`);
 
     res.json({
       message: `流量测试 - ${sizeInMB}MB 数据`,
@@ -232,11 +199,7 @@ router.get('/traffic-custom', (req, res) => {
       data: data
     });
   } catch (error) {
-    console.error('❌ 生成测试数据失败:', error);
-    res.status(500).json({
-      message: '生成测试数据失败',
-      error: error.message
-    });
+    handleApiError('流量测试(自定义大小)', error, res);
   }
 });
 
@@ -279,11 +242,7 @@ router.get('/status', (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('❌ 获取测试状态失败:', error);
-    res.status(500).json({
-      message: '获取测试状态失败',
-      error: error.message
-    });
+    handleApiError('获取测试状态', error, res);
   }
 });
 
@@ -293,15 +252,11 @@ router.get('/status', (req, res) => {
  */
 router.post('/flush-buffer', async (req, res) => {
   try {
-    console.log('🧪 手动触发缓冲区刷新...');
-
     // 获取 GOST 插件服务实例
     const gostPluginService = require('../services/gostPluginService');
 
     // 检查缓冲区状态
     const bufferSize = gostPluginService.trafficBuffer ? gostPluginService.trafficBuffer.size : 0;
-
-    console.log(`📊 当前缓冲区大小: ${bufferSize}`);
 
     if (bufferSize === 0) {
       return res.json({
@@ -314,19 +269,13 @@ router.post('/flush-buffer', async (req, res) => {
     // 手动触发刷新
     await gostPluginService.flushTrafficBuffer();
 
-    console.log('✅ 手动缓冲区刷新完成');
-
     res.json({
       message: '缓冲区刷新完成',
       flushedItems: bufferSize,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('❌ 手动刷新缓冲区失败:', error);
-    res.status(500).json({
-      message: '手动刷新缓冲区失败',
-      error: error.message
-    });
+    handleApiError('手动刷新缓冲区', error, res);
   }
 });
 
@@ -353,11 +302,7 @@ router.get('/buffer-status', (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('❌ 获取缓冲区状态失败:', error);
-    res.status(500).json({
-      message: '获取缓冲区状态失败',
-      error: error.message
-    });
+    handleApiError('获取缓冲区状态', error, res);
   }
 });
 
@@ -424,7 +369,7 @@ router.get('/help', (req, res) => {
 });
 
 /**
- * 🚀 延迟测试接口 - 简单响应 (模拟网页浏览)
+ * 延迟测试接口 - 简单响应
  * GET /api/test/latency
  */
 router.get('/latency', (req, res) => {
@@ -436,13 +381,12 @@ router.get('/latency', (req, res) => {
       port: process.env.PORT || 3000
     });
   } catch (error) {
-    console.error('延迟测试失败:', error);
-    res.status(500).json({ error: '延迟测试失败' });
+    handleApiError('延迟测试', error, res);
   }
 });
 
 /**
- * 🚀 数据回传测试接口 (模拟文件下载)
+ * 数据回传测试接口
  * POST /api/test/echo
  */
 router.post('/echo', async (req, res) => {
@@ -458,7 +402,7 @@ router.post('/echo', async (req, res) => {
       await new Promise(resolve => setTimeout(resolve, delay));
     }
 
-    // 返回相同大小的数据 (模拟下载)
+    // 返回相同大小的数据
     res.json({
       message: '数据回传测试成功',
       timestamp: new Date().toISOString(),
@@ -467,13 +411,12 @@ router.post('/echo', async (req, res) => {
       echo: data // 回传数据
     });
   } catch (error) {
-    console.error('数据回传测试失败:', error);
-    res.status(500).json({ error: '数据回传测试失败' });
+    handleApiError('数据回传测试', error, res);
   }
 });
 
 /**
- * 🚀 生成指定大小的测试数据
+ * 生成指定大小的测试数据
  * GET /api/test/generate/:size
  */
 router.get('/generate/:size', async (req, res) => {
@@ -494,8 +437,7 @@ router.get('/generate/:size', async (req, res) => {
       data: testData
     });
   } catch (error) {
-    console.error('生成测试数据失败:', error);
-    res.status(500).json({ error: '生成测试数据失败' });
+    handleApiError('生成测试数据', error, res);
   }
 });
 

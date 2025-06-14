@@ -2,7 +2,7 @@
   "services": [
     {
       "name": "forward-tcp-29082",
-      "addr": "127.0.0.1:29082",
+      "addr": ":127",
       "observer": "observer-0",
       "handler": {
         "type": "tcp",
@@ -55,34 +55,6 @@
         "listenAddress": "127.0.0.1",
         "listenAddressType": "ipv4"
       }
-    },
-    {
-      "name": "forward-tcp-12001",
-      "addr": "127.0.0.1:12001",
-      "observer": "observer-0",
-      "handler": {
-        "type": "tcp",
-        "chain": "chain-tcp-12001",
-        "metadata": {
-          "observer.period": "120s",
-          "observer.resetTraffic": true
-        }
-      },
-      "listener": {
-        "type": "tcp"
-      },
-      "metadata": {
-        "enableStats": true,
-        "observer.period": "120s",
-        "observer.resetTraffic": true,
-        "userId": 1,
-        "username": "admin",
-        "ruleId": 8,
-        "ruleName": "Test Auto Mode",
-        "description": "Test rule for auto mode",
-        "listenAddress": "127.0.0.1",
-        "listenAddressType": "ipv4"
-      }
     }
   ],
   "chains": [
@@ -110,22 +82,6 @@
           "nodes": [
             {
               "addr": "127.0.0.1:8081",
-              "connector": {
-                "type": "tcp"
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "chain-tcp-12001",
-      "hops": [
-        {
-          "name": "hop-2",
-          "nodes": [
-            {
-              "addr": "127.0.0.1:8080",
               "connector": {
                 "type": "tcp"
               }

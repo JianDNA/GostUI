@@ -191,8 +191,11 @@ class RuleSecurityService {
       const user = rule.user;
       const sourcePort = rule.sourcePort;
 
+      // 获取当前操作用户的角色（如果存在）
+      const currentUserRole = global.currentRequestUser?.role;
+
       // 🔧 Admin用户不受任何端口限制，可以使用任何端口
-      if (user.role === 'admin') {
+      if (user.role === 'admin' || currentUserRole === 'admin') {
         return { allowed: true, reason: 'admin_port_privilege' };
       }
 

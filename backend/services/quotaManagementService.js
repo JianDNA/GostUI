@@ -13,6 +13,7 @@ class QuotaManagementService {
     this.quotaCheckInterval = 30 * 1000; // 30秒检查一次
     this.quotaCheckTimer = null;
     this.lastQuotaStates = new Map(); // 缓存上次的配额状态
+    this._lastCheckTime = null;
   }
 
   /**
@@ -234,10 +235,25 @@ class QuotaManagementService {
   }
 
   /**
+   * 获取配额管理服务状态
+   * @returns {Object} 服务状态信息
+   */
+  getStatus() {
+    return {
+      isRunning: !!this.quotaCheckTimer,
+      quotaCheckInterval: this.quotaCheckInterval,
+      cachedStatesCount: this.lastQuotaStates.size,
+      lastCheckTime: this._lastCheckTime || null,
+      timestamp: new Date().toISOString()
+    };
+  }
+
+  /**
    * 执行配额检查
    */
   async performQuotaCheck() {
     try {
+      this._lastCheckTime = new Date().toISOString();
       const allStatuses = await this.checkAllUsersQuotaStatus();
 
       for (const status of allStatuses) {

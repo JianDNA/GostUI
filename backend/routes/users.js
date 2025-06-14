@@ -87,16 +87,42 @@ router.get('/me', auth, async (req, res) => {
         active: activeRules.length,
         inactive: forwardRules.length - activeRules.length
       },
-      forwardRules: forwardRules.map(rule => ({
-        id: rule.id,
-        name: rule.name,
-        sourcePort: rule.sourcePort,
-        targetAddress: rule.targetAddress,
-        protocol: rule.protocol,
-        description: rule.description,
-        createdAt: rule.createdAt,
-        isActive: rule.isActive
-      }))
+      forwardRules: forwardRules.map(rule => {
+        // 解析目标地址为主机和端口
+        let targetHost = '';
+        let targetPort = '';
+        
+        if (rule.targetAddress) {
+          // 使用UserForwardRule模型的方法解析目标地址
+          const targetInfo = rule.getTargetIPAndPort();
+          if (targetInfo) {
+            targetHost = targetInfo.ip;
+            targetPort = targetInfo.port;
+          } else {
+            // 备用解析方法
+            const lastColonIndex = rule.targetAddress.lastIndexOf(':');
+            if (lastColonIndex !== -1) {
+              targetHost = rule.targetAddress.substring(0, lastColonIndex);
+              targetPort = rule.targetAddress.substring(lastColonIndex + 1);
+            } else {
+              targetHost = rule.targetAddress;
+            }
+          }
+        }
+        
+        return {
+          id: rule.id,
+          name: rule.name,
+          sourcePort: rule.sourcePort,
+          targetAddress: rule.targetAddress,
+          targetHost,
+          targetPort,
+          protocol: rule.protocol,
+          description: rule.description,
+          createdAt: rule.createdAt,
+          isActive: rule.isActive
+        };
+      })
     };
 
     res.json({

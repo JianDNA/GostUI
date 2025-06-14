@@ -1,18 +1,23 @@
-const { models } = require('./dbService');
-const { User, UserForwardRule } = models;
-const { Op } = require('sequelize');
-const crypto = require('crypto');
+/**
+ * GOST配置服务
+ * 
+ * 负责生成、管理和同步GOST配置
+ */
+
 const fs = require('fs').promises;
 const path = require('path');
+const crypto = require('crypto');
+const { models } = require('./dbService');
+const { defaultLogger } = require('../utils/logger');
+const { inspectObject } = require('../utils/debugHelper');
+const { safeAsync, ConfigError, formatError } = require('../utils/errorHandler');
 
 class GostConfigService {
   constructor() {
     this.configPath = path.join(__dirname, '../config/gost-config.json');
-    this.lastConfigHash = null;
-    this.lastSyncTime = null;
-    this.syncTimer = null;
-    this.syncInterval = 25000; // 25秒
-
+    this.syncLock = false;
+    this.autoSyncInterval = null;
+    
     // 确保配置目录存在
     this.ensureConfigDirectory();
   }
@@ -20,133 +25,76 @@ class GostConfigService {
   /**
    * 确保配置目录存在
    */
-  ensureConfigDirectory() {
+  async ensureConfigDirectory() {
+    const configDir = path.dirname(this.configPath);
     try {
-      const configDir = path.dirname(this.configPath);
-      if (!require('fs').existsSync(configDir)) {
-        require('fs').mkdirSync(configDir, { recursive: true });
-        console.log('创建配置目录:', configDir);
-      }
+      await fs.mkdir(configDir, { recursive: true });
+      return true;
     } catch (error) {
-      console.error('创建配置目录失败:', error);
+      defaultLogger.error(`创建配置目录失败: ${error.message}`);
+      return false;
     }
   }
 
   /**
-   * 生成标准化的 Gost 配置
-   * 根据数据库中有效用户的转发规则生成配置
+   * 生成 GOST 配置
+   * 使用 safeAsync 包装以简化错误处理
    */
-  async generateGostConfig() {
-    try {
-      // 获取所有有效用户（未过期且启用的用户）
-      const validUsers = await User.findAll({
-        where: {
-          isActive: true,
-          [Op.or]: [
-            { expiryDate: null }, // 永不过期
-            { expiryDate: { [Op.gt]: new Date() } } // 未过期
-          ]
-        },
-        include: [{
-          model: UserForwardRule,
-          as: 'forwardRules',
-          // 移除 isActive 查询条件，改为在后续处理中使用计算属性
-          required: false // LEFT JOIN，允许用户没有转发规则
-        }]
-      });
-
-      // 收集所有有效的转发规则
-      const allRules = [];
-      validUsers.forEach(user => {
-        if (user.forwardRules && user.forwardRules.length > 0) {
-          user.forwardRules.forEach(rule => {
-            // 设置用户关联，以便计算属性能正常工作
-            rule.user = user;
-
-            // 使用计算属性检查规则是否应该激活
-            const shouldBeActive = rule.isActive; // 现在 isActive 就是计算属性
-
-            // 只有计算属性为true的规则才被包含
-            if (shouldBeActive) {
-              allRules.push({
-                userId: user.id,
-                username: user.username,
-                ruleId: rule.id,
-                name: rule.name,
-                sourcePort: rule.sourcePort,
-                targetAddress: rule.targetAddress,
-                protocol: rule.protocol,
-                description: rule.description
-              });
-            } else {
-              console.log(`🚫 跳过规则 ${rule.name} (端口${rule.sourcePort}): 计算属性=${shouldBeActive}`);
-            }
-          });
-        }
-      });
-
-      // 按协议和端口排序，确保配置的一致性
-      allRules.sort((a, b) => {
-        if (a.protocol !== b.protocol) {
-          return a.protocol.localeCompare(b.protocol);
-        }
-        return a.sourcePort - b.sourcePort;
-      });
-
-      // 输出详细的规则统计信息
-      console.log(`📊 配置生成统计:`);
-      console.log(`   - 有效用户数: ${validUsers.length}`);
-      console.log(`   - 有效规则数: ${allRules.length}`);
-
-      // 按用户分组统计
-      const userStats = {};
-      allRules.forEach(rule => {
-        if (!userStats[rule.username]) {
-          userStats[rule.username] = { count: 0, ports: [] };
-        }
-        userStats[rule.username].count++;
-        userStats[rule.username].ports.push(rule.sourcePort);
-      });
-
-      Object.entries(userStats).forEach(([username, stats]) => {
-        console.log(`   - 用户 ${username}: ${stats.count} 个规则, 端口: ${stats.ports.sort((a,b) => a-b).join(', ')}`);
-      });
-
-      // 检测端口冲突
-      const portMap = new Map();
-      const conflicts = [];
-
-      allRules.forEach(rule => {
-        const key = `${rule.protocol}-${rule.sourcePort}`;
-        if (portMap.has(key)) {
-          const existing = portMap.get(key);
-          conflicts.push({
-            port: rule.sourcePort,
-            protocol: rule.protocol,
-            users: [existing.username, rule.username],
-            rules: [existing.name, rule.name]
-          });
-        } else {
-          portMap.set(key, rule);
-        }
-      });
-
-      if (conflicts.length > 0) {
-        console.warn(`⚠️ 检测到 ${conflicts.length} 个端口冲突:`);
-        conflicts.forEach(conflict => {
-          console.warn(`   - 端口 ${conflict.port} (${conflict.protocol}): 用户 ${conflict.users.join(' vs ')}`);
+  generateGostConfig = safeAsync(async () => {
+    defaultLogger.info('开始生成GOST配置...');
+      
+      // 查询规则
+      let allRules = [];
+      try {
+      const { User, UserForwardRule } = models;
+        allRules = await UserForwardRule.findAll({
+          include: [{
+            model: User,
+            as: 'user',
+            attributes: ['id', 'username', 'role']
+          }]
         });
+        
+      defaultLogger.info(`查询到 ${allRules.length} 条转发规则`);
+      } catch (queryError) {
+      defaultLogger.error(`查询转发规则失败: ${queryError ? queryError.message : '未知错误'}`);
+      defaultLogger.error(`错误详情: ${inspectObject(queryError || {})}`);
+      
+      // 返回最小配置而不是抛出异常
+      return this._createMinimalConfig();
       }
+      
+      // 转换规则格式并添加用户信息
+      let formattedRules = [];
+      try {
+      // 确保allRules是数组
+      if (!Array.isArray(allRules)) {
+        defaultLogger.warn('查询结果不是数组，使用空数组');
+        allRules = [];
+      }
+      
+      formattedRules = allRules
+        .map(rule => this._formatRule(rule))
+        .filter(Boolean); // 过滤掉null值
+      
+      defaultLogger.info(`格式化了 ${formattedRules.length} 条有效规则`);
+    } catch (formatError) {
+      defaultLogger.error(`格式化规则失败: ${formatError ? formatError.message : '未知错误'}`);
+      defaultLogger.error(`错误详情: ${inspectObject(formatError || {})}`);
+      
+      // 返回最小配置而不是抛出异常
+      return this._createMinimalConfig();
+    }
 
-      // 🚀 从性能配置管理器获取插件配置
-      const performanceConfigManager = require('./performanceConfigManager');
-      const systemModeManager = require('./systemModeManager');
-      const pluginConfig = performanceConfigManager.getGostPluginConfig();
-      const isSimpleMode = systemModeManager.isSimpleMode();
+    try {
+      // 生成统计信息
+      this._generateRuleStats(formattedRules);
+
+      // 从性能配置管理器获取插件配置
+      const { pluginConfig, isSimpleMode } = this._getPluginConfig();
       
       // 获取禁用协议列表
-      const { SystemConfig } = models;
-      const disabledProtocols = await SystemConfig.getValue('disabledProtocols', []);
+      const disabledProtocols = await this._getDisabledProtocols();
 
       // 生成 Gost 配置
       const gostConfig = {
@@ -154,106 +102,406 @@ class GostConfigService {
         chains: []
       };
 
-      // 🔧 修复: 始终添加观察器插件以支持流量统计
-      gostConfig.observers = [
+      // 添加观察器插件以支持流量统计
+      this._addObserverPlugin(gostConfig, pluginConfig);
+
+      // 为每个转发规则创建服务和链
+      this._createServicesAndChains(gostConfig, formattedRules, disabledProtocols, pluginConfig, isSimpleMode);
+
+      defaultLogger.info(`🔧 配置生成完成，共 ${gostConfig.services.length} 个服务, ${gostConfig.chains.length} 个链`);
+      return gostConfig;
+    } catch (gostError) {
+      defaultLogger.error(`生成GOST配置时发生错误: ${gostError ? gostError.message : '未知错误'}`);
+      defaultLogger.error(`错误详情: ${inspectObject(gostError || {})}`);
+      
+      // 返回最小配置
+      return this._createMinimalConfig();
+    }
+  }, {
+    throwError: false,
+    defaultValue: () => {
+      return {
+        services: [],
+        chains: [],
+        observers: [
+          {
+            name: "observer-0",
+            plugin: {
+              type: "http",
+              addr: "http://localhost:3000/api/gost-plugin/observer",
+              timeout: "10s"
+            }
+          }
+        ],
+        api: {
+          addr: ":18080",
+          pathPrefix: "/api",
+          accesslog: false
+        }
+      };
+    },
+    logError: true
+  });
+
+  /**
+   * 创建最小配置
+   * @private
+   */
+  _createMinimalConfig() {
+    return {
+      services: [],
+      chains: [],
+      observers: [
         {
           name: "observer-0",
           plugin: {
             type: "http",
             addr: "http://localhost:3000/api/gost-plugin/observer",
-            timeout: pluginConfig.observerTimeout || "10s"
+            timeout: "10s"
           }
         }
-      ];
-
-      // 🔧 添加API配置以支持热加载
-      gostConfig.api = {
+      ],
+      api: {
         addr: ":18080",
         pathPrefix: "/api",
         accesslog: false
-      };
+      }
+    };
+  }
 
-      // 🎛️ 只有在自动模式下才添加其他插件
-      if (!isSimpleMode) {
-        // 🔧 端口转发模式暂不支持认证器和限制器插件
-        // 但保留配置结构以备将来使用
+  /**
+   * 格式化单个规则
+   * @private
+   */
+  _formatRule(rule) {
+    try {
+      // 确保rule对象存在
+      if (!rule) {
+        defaultLogger.warn(`尝试格式化空规则，跳过`);
+        return null;
+      }
+      
+            const user = rule.user;
+            if (!user) {
+        defaultLogger.warn(`规则 ${rule.id || 'unknown'} 没有关联用户，跳过`);
+              return null;
+            }
+            
+            return {
+              ruleId: rule.id,
+              userId: user.id,
+              username: user.username,
+              isAdmin: user.role === 'admin',
+              name: rule.name,
+              description: rule.description || '',
+              protocol: rule.protocol,
+              sourcePort: rule.sourcePort,
+              targetAddress: rule.targetAddress,
+              listenAddress: rule.listenAddress || '0.0.0.0',
+              listenAddressType: rule.listenAddressType || 'ipv4',
+              getGostListenAddress: function() {
+                if (this.listenAddressType === 'ipv6') {
+                  return `[${this.listenAddress || '::'}]:${this.sourcePort}`;
+                } else {
+                  return `${this.listenAddress || '0.0.0.0'}:${this.sourcePort}`;
+                }
+              }
+            };
+    } catch (error) {
+      // 安全获取rule.id，避免undefined错误
+      const ruleId = rule ? (rule.id || 'unknown') : 'unknown';
+      defaultLogger.error(`处理规则失败: ${ruleId}: ${error ? error.message : '未知错误'}`);
+            return null;
+          }
+  }
+
+  /**
+   * 生成规则统计信息
+   * @private
+   */
+  _generateRuleStats(formattedRules) {
+    try {
+      // 确保formattedRules是数组
+      if (!Array.isArray(formattedRules)) {
+        defaultLogger.warn('格式化规则不是数组，跳过统计生成');
+        return;
       }
 
-      // 为每个转发规则创建服务和链
-      allRules.forEach((rule, index) => {
-        // 检查协议是否被禁用
-        if (disabledProtocols.includes(rule.protocol)) {
-          console.log(`🚫 跳过被禁用的协议 ${rule.protocol} 的规则: ${rule.name} (用户: ${rule.username}, 端口: ${rule.sourcePort})`);
+      const userRules = {};
+        formattedRules.forEach(rule => {
+        // 确保rule和rule.username存在
+        if (!rule || !rule.username) {
+          return; // 跳过无效规则
+        }
+        
+          if (!userRules[rule.username]) {
+            userRules[rule.username] = {
+              count: 0,
+              ports: []
+            };
+          }
+          
+          userRules[rule.username].count++;
+        
+        // 确保sourcePort存在
+        if (rule.sourcePort) {
+          userRules[rule.username].ports.push(rule.sourcePort);
+        }
+        });
+        
+        // 输出统计信息
+      defaultLogger.info('📊 配置生成统计:');
+      defaultLogger.info(`   - 有效用户数: ${Object.keys(userRules).length}`);
+      defaultLogger.info(`   - 有效规则数: ${formattedRules.length}`);
+        
+        Object.entries(userRules).forEach(([username, data]) => {
+        defaultLogger.info(`   - 用户 ${username}: ${data.count} 个规则, 端口: ${data.ports.join(', ')}`);
+        });
+    } catch (error) {
+      defaultLogger.error(`生成统计信息失败: ${error ? error.message : '未知错误'}`);
+      // 错误不会中断流程，继续执行
+    }
+      }
+
+  /**
+   * 获取插件配置
+   * @private
+   */
+  _getPluginConfig() {
+    try {
+      // 获取性能配置管理器
+      const performanceConfigManager = require('./performanceConfigManager');
+      const systemModeManager = require('./systemModeManager');
+      
+      // 安全调用获取插件配置
+      let pluginConfig;
+      try {
+        pluginConfig = performanceConfigManager.getGostPluginConfig();
+      } catch (configError) {
+        defaultLogger.warn(`获取插件配置失败: ${configError ? configError.message : '未知错误'}`);
+        pluginConfig = {
+          observerTimeout: "10s",
+          observerPeriod: "30s"
+        };
+      }
+      
+      // 安全调用获取系统模式
+      let isSimpleMode;
+      try {
+        isSimpleMode = systemModeManager.isSimpleMode();
+      } catch (modeError) {
+        defaultLogger.warn(`获取系统模式失败: ${modeError ? modeError.message : '未知错误'}`);
+        isSimpleMode = false;
+      }
+      
+      defaultLogger.info(`系统模式: ${isSimpleMode ? '单机模式' : '自动模式'}`);
+      return { pluginConfig, isSimpleMode };
+    } catch (error) {
+      defaultLogger.error(`获取插件配置失败: ${error ? error.message : '未知错误'}`);
+      defaultLogger.error(`错误详情: ${inspectObject(error || {})}`);
+      
+      // 使用默认配置
+      return {
+        pluginConfig: {
+          observerTimeout: "10s",
+          observerPeriod: "30s"
+        },
+        isSimpleMode: false
+      };
+    }
+  }
+
+  /**
+   * 获取禁用协议列表
+   * @private
+   */
+  async _getDisabledProtocols() {
+      try {
+        const { SystemConfig } = models;
+      const disabledProtocols = await SystemConfig.getValue('disabledProtocols', []);
+        
+        if (disabledProtocols && disabledProtocols.length > 0) {
+        defaultLogger.info(`已禁用协议: ${disabledProtocols.join(', ')}`);
+        }
+      
+      return disabledProtocols;
+    } catch (error) {
+      defaultLogger.warn(`获取禁用协议列表失败，使用空列表: ${error ? error.message : '未知错误'}`);
+      return [];
+    }
+  }
+
+  /**
+   * 添加观察器插件
+   * @private
+   */
+  _addObserverPlugin(gostConfig, pluginConfig) {
+    try {
+      // 确保参数有效
+      if (!gostConfig) {
+        defaultLogger.warn('添加观察器失败: 无效的配置对象');
+        return;
+      }
+
+      // 确保pluginConfig存在
+      const timeout = pluginConfig && pluginConfig.observerTimeout ? pluginConfig.observerTimeout : "10s";
+      
+        gostConfig.observers = [
+          {
+            name: "observer-0",
+            plugin: {
+              type: "http",
+              addr: "http://localhost:3000/api/gost-plugin/observer",
+            timeout: timeout
+            }
+          }
+        ];
+
+        // 添加API配置以支持热加载
+        gostConfig.api = {
+          addr: ":18080",
+          pathPrefix: "/api",
+          accesslog: false
+        };
+    } catch (error) {
+      defaultLogger.error(`配置观察器失败: ${error ? error.message : '未知错误'}`);
+      
+        // 使用默认观察器配置
+      if (gostConfig) {
+        gostConfig.observers = [
+          {
+            name: "observer-0",
+            plugin: {
+              type: "http",
+              addr: "http://localhost:3000/api/gost-plugin/observer",
+              timeout: "10s"
+            }
+          }
+        ];
+        gostConfig.api = {
+          addr: ":18080",
+          pathPrefix: "/api",
+          accesslog: false
+        };
+      }
+    }
+  }
+
+  /**
+   * 创建服务和链
+   * @private
+   */
+  _createServicesAndChains(gostConfig, formattedRules, disabledProtocols, pluginConfig, isSimpleMode) {
+    // 确保参数有效
+    if (!gostConfig || !Array.isArray(formattedRules)) {
+      defaultLogger.warn('创建服务和链失败: 无效的参数');
+      return;
+      }
+
+    // 确保gostConfig有services和chains数组
+    if (!Array.isArray(gostConfig.services)) {
+      gostConfig.services = [];
+    }
+    
+    if (!Array.isArray(gostConfig.chains)) {
+      gostConfig.chains = [];
+    }
+    
+    // 确保pluginConfig存在
+    if (!pluginConfig) {
+      pluginConfig = {
+        observerPeriod: "30s"
+      };
+    }
+    
+    formattedRules.forEach((rule, index) => {
+          try {
+        // 确保规则对象有效
+        if (!rule) {
+          defaultLogger.warn('跳过无效规则');
+          return;
+        }
+        
+            // 检查协议是否被禁用
+            if (disabledProtocols && disabledProtocols.includes(rule.protocol)) {
+          defaultLogger.warn(`🚫 跳过被禁用的协议 ${rule.protocol} 的规则: ${rule.name || 'unknown'} (用户: ${rule.username || 'unknown'}, 端口: ${rule.sourcePort || 'unknown'})`);
           return; // 跳过此规则
         }
         
-        const serviceName = `forward-${rule.protocol}-${rule.sourcePort}`;
-        const chainName = `chain-${rule.protocol}-${rule.sourcePort}`;
-
-        console.log(`🔧 创建服务: ${serviceName} (用户: ${rule.username}, 端口: ${rule.sourcePort} -> ${rule.targetAddress})`);
-
-        // 🔧 Phase 2: 创建服务，包含完整的插件支持和IPv6监听地址支持
-        const service = {
-          name: serviceName,
-          addr: rule.getGostListenAddress ? rule.getGostListenAddress() : `:${rule.sourcePort}`, // 🔧 支持IPv6监听地址
-          observer: "observer-0",  // 🔧 尝试服务级别的观察器
-          handler: {
-            type: rule.protocol,  // 🔧 恢复为端口转发模式（TCP/UDP）
-            chain: chainName,
-            metadata: {
-              // Handler 级别的观察器配置 - 使用动态配置
-              "observer.period": pluginConfig.observerPeriod || "30s",  // 🔧 性能优化：使用配置文件中的周期
-              "observer.resetTraffic": true,  // 🔧 关键：启用增量流量模式
+        // 确保必要的属性存在
+        if (!rule.protocol || !rule.sourcePort || !rule.targetAddress) {
+          defaultLogger.warn(`🚫 跳过缺少必要属性的规则: ${rule.name || 'unknown'} (用户: ${rule.username || 'unknown'})`);
+              return; // 跳过此规则
             }
-          },
-          listener: {
-            type: rule.protocol
-          },
-          metadata: {
-            // 启用统计功能
-            enableStats: true,
-            // 观测器配置 - 使用动态配置
-            "observer.period": pluginConfig.observerPeriod || "30s",  // 🔧 性能优化：使用配置文件中的周期
-            "observer.resetTraffic": true,  // 🔧 关键修复：启用增量流量模式
-            // 用户和规则信息
-            userId: rule.userId,
-            username: rule.username,
-            ruleId: rule.ruleId,
-            ruleName: rule.name,
-            description: rule.description,
-            // 🔧 新增：监听地址信息
-            listenAddress: rule.listenAddress,
-            listenAddressType: rule.listenAddressType
-          }
-        };
+            
+            const serviceName = `forward-${rule.protocol}-${rule.sourcePort}`;
+            const chainName = `chain-${rule.protocol}-${rule.sourcePort}`;
 
-        // 创建链
-        const chain = {
-          name: chainName,
-          hops: [
-            {
-              name: `hop-${index}`,
-              nodes: [
+        defaultLogger.info(`🔧 创建服务: ${serviceName} (用户: ${rule.username || 'unknown'}, 端口: ${rule.sourcePort} -> ${rule.targetAddress})`);
+
+            // 创建服务，包含完整的插件支持和IPv6监听地址支持
+            const service = {
+              name: serviceName,
+          addr: rule.getGostListenAddress ? rule.getGostListenAddress() : 
+                (rule.user && rule.user.role === 'admin') ? `0.0.0.0:${rule.sourcePort}` : `:${rule.sourcePort}`, // 支持IPv6监听地址和admin用户绑定所有接口
+              observer: "observer-0",  // 服务级别的观察器
+              handler: {
+                type: rule.protocol,  // 端口转发模式（TCP/UDP）
+                chain: chainName,
+                metadata: {
+                  // Handler 级别的观察器配置 - 使用动态配置
+                  "observer.period": pluginConfig.observerPeriod || "30s",
+                  "observer.resetTraffic": true,  // 启用增量流量模式
+                }
+              },
+              listener: {
+                type: rule.protocol
+              },
+              metadata: {
+                // 启用统计功能
+                enableStats: true,
+                // 观测器配置 - 使用动态配置
+                "observer.period": pluginConfig.observerPeriod || "30s",
+                "observer.resetTraffic": true,  // 启用增量流量模式
+                // 用户和规则信息
+            userId: rule.userId || 0,
+            username: rule.username || 'unknown',
+            ruleId: rule.ruleId || rule.id || 0,
+            ruleName: rule.name || 'unknown',
+            description: rule.description || '',
+                // 监听地址信息
+            listenAddress: rule.user && rule.user.role === 'admin' ? '0.0.0.0' : (rule.listenAddress || '127.0.0.1'),
+            listenAddressType: rule.listenAddressType || 'ipv4'
+              }
+            };
+
+            // 创建链
+            const chain = {
+              name: chainName,
+              hops: [
                 {
-                  addr: rule.targetAddress,
-                  connector: {
-                    type: rule.protocol
-                  }
+                  name: `hop-${index}`,
+                  nodes: [
+                    {
+                      addr: rule.targetAddress,
+                      connector: {
+                        type: rule.protocol
+                      }
+                    }
+                  ]
                 }
               ]
+            };
+
+            gostConfig.services.push(service);
+            gostConfig.chains.push(chain);
+      } catch (error) {
+        // 安全获取规则信息
+        const ruleName = rule ? (rule.name || 'unknown') : 'unknown';
+        const ruleId = rule ? (rule.ruleId || rule.id || 'unknown') : 'unknown';
+        defaultLogger.error(`❌ 处理规则失败: ${ruleName} (ID: ${ruleId}): ${error ? error.message : '未知错误'}`);
             }
-          ]
-        };
-
-        gostConfig.services.push(service);
-        gostConfig.chains.push(chain);
-      });
-
-      return gostConfig;
-    } catch (error) {
-      console.error('生成 Gost 配置失败:', error);
-      throw new Error(`生成 Gost 配置失败: ${error.message}`);
-    }
+    });
   }
 
   /**
@@ -267,7 +515,7 @@ class GostConfigService {
   /**
    * 读取当前持久化的配置
    */
-  async getCurrentPersistedConfig() {
+  getCurrentPersistedConfig = safeAsync(async () => {
     try {
       const configData = await fs.readFile(this.configPath, 'utf8');
       return JSON.parse(configData);
@@ -278,21 +526,19 @@ class GostConfigService {
       }
       throw error;
     }
-  }
+  }, {
+    defaultValue: { services: [], chains: [] }
+  });
 
   /**
    * 保存配置到文件
    */
-  async saveConfigToFile(config) {
-    try {
+  saveConfigToFile = safeAsync(async (config) => {
       const configString = JSON.stringify(config, null, 2);
       await fs.writeFile(this.configPath, configString, 'utf8');
-      console.log('Gost 配置已保存到文件:', this.configPath);
-    } catch (error) {
-      console.error('保存 Gost 配置失败:', error);
-      throw error;
-    }
-  }
+    defaultLogger.info('Gost 配置已保存到文件:', this.configPath);
+    return true;
+  });
 
   /**
    * 比较两个配置是否相同
@@ -306,8 +552,7 @@ class GostConfigService {
   /**
    * 更新 Gost 服务配置
    */
-  async updateGostService(config, options = {}) {
-    try {
+  updateGostService = safeAsync(async (config, options = {}) => {
       // 保存新配置
       await this.saveConfigToFile(config);
 
@@ -315,129 +560,150 @@ class GostConfigService {
       try {
         const gostService = require('./gostService');
 
-        // 🔧 检查是否需要强制重启（用于紧急配额禁用）
-        if (options.forceRestart) {
-          console.log('🚨 紧急配额禁用：强制重启GOST服务以断开所有连接');
+        // 检查是否需要强制重启（用于紧急配额禁用）
+      if (options && options.forceRestart) {
+        defaultLogger.warn('🚨 紧急配额禁用：强制重启GOST服务以断开所有连接');
           await gostService.forceRestart(true);
-          console.log('✅ GOST服务强制重启完成，所有连接已断开');
+        defaultLogger.info('✅ GOST服务强制重启完成，所有连接已断开');
         } else {
-          // 🔧 传递触发信息给热加载方法
+          // 传递触发信息给热加载方法
           const hotReloadOptions = {
-            trigger: options.trigger || 'config_update',
-            force: options.force || false
+          trigger: options && options.trigger ? options.trigger : 'config_update',
+          force: options && options.force ? options.force : false
           };
 
           await gostService.updateConfig(config, hotReloadOptions);
-          console.log('Gost 服务配置更新成功');
+        defaultLogger.info('Gost 服务配置更新成功');
         }
-      } catch (gostError) {
-        console.warn('Gost 服务操作失败，但配置已保存:', gostError.message);
-        // 不抛出错误，因为配置已经保存成功
-      }
-
-      return true;
     } catch (error) {
-      console.error('更新 Gost 服务失败:', error);
-      throw error;
+      // 记录错误但不抛出，因为配置已经保存成功
+      defaultLogger.warn(`Gost 服务操作失败，但配置已保存: ${error ? error.message : '未知错误'}`);
+      defaultLogger.warn(`错误详情: ${inspectObject(error || {})}`);
     }
-  }
+
+    return true;
+  });
 
   /**
-   * 同步配置 - 检查数据库配置与当前配置是否一致
+   * 同步配置
    */
-  async syncConfig() {
+  syncConfig = safeAsync(async () => {
+    if (this.syncLock) {
+      defaultLogger.info('配置同步已在进行中，跳过本次同步');
+      return false;
+    }
+
+    this.syncLock = true;
     try {
-      console.log('开始同步 Gost 配置...');
-
-      // 🔧 检查是否在单击模式下禁用配置同步
-      const performanceConfigManager = require('./performanceConfigManager');
-      const pluginConfig = performanceConfigManager.getGostPluginConfig();
-
-      // ✅ 只有在单击模式下才禁用配置同步，自动模式下正常执行
-      if (pluginConfig.disableConfigSync) {
-        console.log('📊 [单击模式] 配置同步已禁用，跳过GOST配置同步');
-        return { updated: false, config: null, reason: 'sync_disabled_single_click_mode' };
-      }
-
       // 生成新配置
       const newConfig = await this.generateGostConfig();
-
-      // 获取当前配置
+      
+      // 读取当前配置
       const currentConfig = await this.getCurrentPersistedConfig();
-
-      // 比较配置
+      
+      // 比较配置是否有变化
       if (this.isConfigChanged(newConfig, currentConfig)) {
-        console.log('检测到配置变化，更新 Gost 服务...');
-        console.log('新配置服务数量:', newConfig.services.length);
-        console.log('当前配置服务数量:', currentConfig.services.length);
-
-        // 更新服务
+        defaultLogger.info('🔄 开始更新GOST配置...');
         await this.updateGostService(newConfig);
-
-        // 更新哈希值和同步时间
-        this.lastConfigHash = this.calculateConfigHash(newConfig);
-        this.lastSyncTime = new Date();
-
-        console.log('Gost 配置同步完成');
-        return { updated: true, config: newConfig };
+        defaultLogger.info('Gost 服务配置更新成功');
+        return true;
       } else {
-        console.log('配置无变化，跳过更新');
-        this.lastSyncTime = new Date();
-        return { updated: false, config: currentConfig };
+        defaultLogger.info('📋 配置无变化，跳过更新');
+        return false;
       }
-    } catch (error) {
-      console.error('同步 Gost 配置失败:', error);
-      throw error;
+    } finally {
+      this.syncLock = false;
+    }
+  }, {
+    throwError: false,
+    defaultValue: false
+  });
+
+  /**
+   * 启动自动同步
+   */
+  startAutoSync(interval = 60000) {
+    if (this.autoSyncInterval) {
+      clearInterval(this.autoSyncInterval);
+    }
+    this.autoSyncInterval = setInterval(() => this.syncConfig(), interval);
+    defaultLogger.info(`自动同步已启动，间隔: ${interval}ms`);
+  }
+
+  /**
+   * 停止自动同步
+   */
+  stopAutoSync() {
+    if (this.autoSyncInterval) {
+      clearInterval(this.autoSyncInterval);
+      this.autoSyncInterval = null;
+      defaultLogger.info('自动同步已停止');
     }
   }
 
   /**
-   * 启动定时同步（已迁移到统一协调器）
+   * 触发同步
    */
-  startAutoSync() {
-    console.log('⚠️ [GOST配置] 定时同步已迁移到统一协调器');
-    const gostSyncCoordinator = require('./gostSyncCoordinator');
-    gostSyncCoordinator.startAutoSync();
-  }
-
-  /**
-   * 停止定时同步（已迁移到统一协调器）
-   */
-  stopAutoSync() {
-    console.log('⚠️ [GOST配置] 定时同步已迁移到统一协调器');
-    const gostSyncCoordinator = require('./gostSyncCoordinator');
-    gostSyncCoordinator.stopAutoSync();
-  }
-
-  /**
-   * 手动触发同步（使用统一协调器）
-   */
-  async triggerSync(trigger = 'manual', force = false, priority = 7) {
-    console.log(`手动触发 Gost 配置同步... (触发源: ${trigger})`);
-    const gostSyncCoordinator = require('./gostSyncCoordinator');
-    return await gostSyncCoordinator.requestSync(trigger, force, priority);
-  }
+  triggerSync = safeAsync(async (trigger = 'manual', force = false, priority = 7) => {
+    defaultLogger.info(`手动触发同步，触发源: ${trigger}, 强制: ${force}, 优先级: ${priority}`);
+    return this.syncConfig();
+  }, {
+    throwError: false,
+    defaultValue: false
+  });
 
   /**
    * 获取配置统计信息
    */
-  async getConfigStats() {
-    try {
-      const config = await this.generateGostConfig();
-      const currentConfig = await this.getCurrentPersistedConfig();
-
+  getConfigStats = safeAsync(async () => {
+      const config = await this.getCurrentPersistedConfig();
+      
+      // 统计服务和链
+      const serviceCount = config.services ? config.services.length : 0;
+      const chainCount = config.chains ? config.chains.length : 0;
+      
+      // 统计用户和端口
+      const users = new Set();
+      const ports = new Set();
+      const protocols = new Set();
+      
+      if (config.services) {
+        config.services.forEach(service => {
+          if (service.metadata && service.metadata.username) {
+            users.add(service.metadata.username);
+          }
+          
+          // 从地址中提取端口
+          const portMatch = service.addr ? service.addr.match(/:(\d+)$/) : null;
+          if (portMatch && portMatch[1]) {
+            ports.add(parseInt(portMatch[1]));
+          }
+          
+          // 收集协议
+          if (service.handler && service.handler.type) {
+            protocols.add(service.handler.type);
+          }
+        });
+      }
+      
       return {
-        generatedServices: config.services.length,
-        currentServices: currentConfig.services.length,
-        isUpToDate: !this.isConfigChanged(config, currentConfig),
-        lastSyncTime: this.lastSyncTime,
-        autoSyncEnabled: !!this.syncTimer
+        serviceCount,
+        chainCount,
+        userCount: users.size,
+        portCount: ports.size,
+        protocols: Array.from(protocols),
+        lastUpdated: new Date().toISOString()
       };
-    } catch (error) {
-      console.error('获取配置统计失败:', error);
-      throw error;
+  }, {
+    defaultValue: {
+      serviceCount: 0,
+      chainCount: 0,
+      userCount: 0,
+      portCount: 0,
+      protocols: [],
+        lastUpdated: new Date().toISOString()
     }
-  }
+  });
 }
 
 module.exports = new GostConfigService();

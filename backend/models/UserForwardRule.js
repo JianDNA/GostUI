@@ -58,10 +58,17 @@ module.exports = (sequelize) => {
     getTargetIPAndPort() {
       if (!this.targetAddress) return null;
 
+      try {
       // IPv4:port 格式
       if (this.targetAddress.includes('.') && !this.targetAddress.includes('[')) {
-        const [ip, port] = this.targetAddress.split(':');
-        return { ip, port: parseInt(port, 10) };
+          // 处理可能包含多个点的情况（如127.0.0.1:8080）
+          const lastColonIndex = this.targetAddress.lastIndexOf(':');
+          if (lastColonIndex === -1) return null;
+          
+          const ip = this.targetAddress.substring(0, lastColonIndex);
+          const port = parseInt(this.targetAddress.substring(lastColonIndex + 1), 10);
+          
+          return { ip, port };
       }
 
       // [IPv6]:port 格式
@@ -70,6 +77,18 @@ module.exports = (sequelize) => {
         if (match) {
           return { ip: match[1], port: parseInt(match[2], 10) };
         }
+        }
+        
+        // 域名:端口格式
+        if (this.targetAddress.includes(':')) {
+          const lastColonIndex = this.targetAddress.lastIndexOf(':');
+          const host = this.targetAddress.substring(0, lastColonIndex);
+          const port = parseInt(this.targetAddress.substring(lastColonIndex + 1), 10);
+          
+          return { ip: host, port };
+        }
+      } catch (error) {
+        console.error(`解析目标地址失败: ${this.targetAddress}`, error);
       }
 
       return null;
@@ -93,6 +112,12 @@ module.exports = (sequelize) => {
     getGostListenAddress() {
       const address = this.listenAddress || '127.0.0.1';
       const port = this.sourcePort;
+
+      // 特殊处理：admin用户可以绑定到所有接口
+      if (this.user && this.user.role === 'admin') {
+        // 对admin用户使用0.0.0.0绑定所有接口，不做端口限制
+        return `0.0.0.0:${port}`;
+      }
 
       // GOST配置格式：对于本地地址可以省略IP部分
       if (address === '127.0.0.1' || address === '::1') {
@@ -359,14 +384,12 @@ module.exports = (sequelize) => {
             throw new Error('用户已过期，无法创建或修改转发规则');
           }
 
-          // 检查端口是否在用户允许的范围内（Admin 用户不受限制）
-          if (!user.isPortInRange(rule.sourcePort)) {
-            if (user.role === 'admin') {
-              // Admin 用户应该总是通过，如果到这里说明有其他问题
-              throw new Error(`Admin 用户端口验证异常，请联系管理员`);
-            } else {
+          // 获取当前操作用户的角色（如果存在）
+          const currentUserRole = global.currentRequestUser?.role;
+
+          // 检查端口是否在用户允许的范围内（Admin 用户不受限制，或者当前操作用户是admin）
+          if (!user.isPortInRange(rule.sourcePort) && user.role !== 'admin' && currentUserRole !== 'admin') {
               throw new Error(`端口 ${rule.sourcePort} 不在用户允许的端口范围内 (${user.portRangeStart}-${user.portRangeEnd})`);
-            }
           }
         }
       },

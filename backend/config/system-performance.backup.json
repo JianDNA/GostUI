@@ -1,22 +1,25 @@
 {
   "version": "1.0.0",
-  "lastUpdated": "2025-06-11T18:11:31.396Z",
+  "lastUpdated": "2025-06-13T14:04:13.542Z",
   "lastUpdatedBy": "admin",
-  "description": "管理员切换到自动模式",
+  "description": "应用预设配置: 高性能模式 - 追求最佳转发性能，适合高并发场景",
   "systemMode": {
-    "isSimpleMode": false
+    "isSimpleMode": true
   },
   "gostPlugins": {
-    "authTimeout": 5,
-    "observerTimeout": 10,
-    "limiterTimeout": 5,
-    "observerPeriod": 30,
-    "observerAsyncProcessing": true
+    "authTimeout": 3,
+    "observerTimeout": 15,
+    "limiterTimeout": 3,
+    "observerPeriod": 120,
+    "observerAsyncProcessing": true,
+    "disableQuotaEnforcement": true,
+    "disableConfigSync": true,
+    "batchDatabaseOperations": true
   },
   "cacheConfig": {
-    "authCacheTimeout": 600000,
-    "limiterCacheTimeout": 300000,
-    "multiInstanceCacheTTL": 120000
+    "authCacheTimeout": 900000,
+    "limiterCacheTimeout": 600000,
+    "multiInstanceCacheTTL": 300000
   },
   "syncConfig": {
     "autoSyncInterval": 300000,
@@ -98,7 +101,7 @@
   "parameterHelp": {
     "systemMode": {
       "isSimpleMode": {
-        "name": "单击模式",
+        "name": "单机模式",
         "description": "启用后禁用所有自动化功能(认证器、观察器、限制器、自动同步等)，需要管理员手动重启GOST来同步配置",
         "impact": "极高 - 完全改变系统行为",
         "recommendation": "高性能场景或调试时使用"

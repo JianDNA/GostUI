@@ -1,0 +1,24 @@
+{
+  "name": "gost-proxy-manager",
+  "version": "1.0.0",
+  "description": "GOST代理管理系统",
+  "main": "backend/app.js",
+  "scripts": {
+    "start": "cd backend && node app.js",
+    "dev": "cd backend && nodemon app.js",
+    "frontend": "cd frontend && npm run serve",
+    "install:all": "npm install && cd frontend && npm install && cd ../backend && npm install",
+    "test": "cd backend && npm test"
+  },
+  "dependencies": {
+    "concurrently": "^8.2.1",
+    "nodemon": "^3.1.10",
+    "sequelize": "^6.37.7",
+    "sequelize-cli": "^6.6.3"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "author": "",
+  "license": "MIT"
+}

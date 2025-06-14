@@ -1,7 +1,7 @@
 {
-  "name": "gost-management-backend",
+  "name": "gost-proxy-manager-backend",
   "version": "1.0.0",
-  "description": "GOST Management System Backend",
+  "description": "GOST代理管理系统后端",
   "main": "app.js",
   "scripts": {
     "start": "node app.js",
@@ -22,25 +22,41 @@
     "db:migrate": "npx sequelize-cli db:migrate",
     "db:migrate:undo": "npx sequelize-cli db:migrate:undo",
     "init-time-series": "node scripts/init-time-series.js",
-    "fix-startup": "node scripts/fix-startup-issues.js"
+    "fix-startup": "node scripts/fix-startup-issues.js",
+    "test": "jest"
   },
   "dependencies": {
     "@influxdata/influxdb-client": "^1.33.2",
     "axios": "^1.9.0",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^2.4.3",
+    "body-parser": "^1.20.2",
+    "chalk": "^5.4.1",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
-    "jsonwebtoken": "^9.0.0",
+    "express-validator": "^7.0.1",
+    "fs-extra": "^11.1.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.1",
     "node-cron": "^3.0.3",
-    "sequelize": "^6.37.7",
-    "sqlite3": "^5.1.7",
+    "sequelize": "^6.35.1",
+    "sqlite3": "^5.1.6",
+    "winston": "^3.11.0",
+    "winston-daily-rotate-file": "^4.7.1",
     "ws": "^8.18.2"
   },
   "devDependencies": {
-    "nodemon": "^2.0.22",
-    "sequelize-cli": "^6.6.2"
-  }
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.1",
+    "sequelize-cli": "^6.6.2",
+    "supertest": "^6.3.3"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "author": "",
+  "license": "MIT"
 }

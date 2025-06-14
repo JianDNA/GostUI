@@ -11,7 +11,7 @@
       "status": "active",
       "portRanges": [],
       "isActive": true,
-      "lastUpdate": 1749810377002
+      "lastUpdate": 1749902067389
     },
     "2": {
       "id": 2,
@@ -29,7 +29,7 @@
         }
       ],
       "isActive": true,
-      "lastUpdate": 1749810377002
+      "lastUpdate": 1749902067389
     },
     "5": {
       "id": 5,
@@ -40,9 +40,14 @@
       "trafficLimitBytes": 536870912,
       "usedTraffic": 0,
       "status": "active",
-      "portRanges": [],
+      "portRanges": [
+        {
+          "start": 10062,
+          "end": 10063
+        }
+      ],
       "isActive": true,
-      "lastUpdate": 1749810377002
+      "lastUpdate": 1749902067389
     }
   },
   "portMapping": {
@@ -52,6 +57,12 @@
       "ruleId": 7,
       "ruleName": "Admin HTTP Proxy"
     },
+    "12001": {
+      "userId": 1,
+      "username": "admin",
+      "ruleId": 8,
+      "ruleName": "Test Auto Mode"
+    },
     "29082": {
       "userId": 1,
       "username": "admin",
@@ -59,6 +70,6 @@
       "ruleName": "Admin Rule 23"
     }
   },
-  "lastUpdate": 1749810377002,
+  "lastUpdate": 1749902067390,
   "updatedBy": "0"
 }

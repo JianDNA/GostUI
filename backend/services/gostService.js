@@ -8,6 +8,7 @@ const os = require('os');
 const { promisify } = require('util');
 const execPromise = promisify(exec);
 const { platformUtils, isWindows, isLinux } = require('../utils/platform');
+const { inspectObject, safeGet, traceCall } = require('../utils/debugHelper');
 
 class GostService {
   constructor() {
@@ -618,8 +619,13 @@ class GostService {
 
       // 更新端口
       if (config.services && config.services.length > 0) {
-        config.services[0].addr = `:${port}`;
-        console.log(`配置已更新为使用端口 ${port}`);
+        // 确保端口是数字类型，避免IP地址被误解析为端口
+        const portNumber = parseInt(port, 10);
+        if (isNaN(portNumber) || portNumber < 1 || portNumber > 65535) {
+          throw new Error(`无效的端口号: ${port}`);
+        }
+        config.services[0].addr = `:${portNumber}`;
+        console.log(`配置已更新为使用端口 ${portNumber}`);
       }
 
       // 写入配置文件
@@ -658,10 +664,36 @@ class GostService {
         // 从自定义配置中提取端口
         if (gostConfig.services && gostConfig.services.length > 0) {
           const addrStr = gostConfig.services[0].addr;
-          forwardPort = parseInt(addrStr.replace(':', ''), 10);
+          
+          // 修复端口提取逻辑，确保正确处理IP地址和端口
+          let extractedPort;
+          
+          // 处理格式为 ":端口" 的情况
+          if (addrStr.startsWith(':')) {
+            extractedPort = parseInt(addrStr.substring(1), 10);
+          } 
+          // 处理格式为 "IP:端口" 的情况
+          else if (addrStr.includes(':')) {
+            // 分离IP和端口
+            const lastColonIndex = addrStr.lastIndexOf(':');
+            extractedPort = parseInt(addrStr.substring(lastColonIndex + 1), 10);
+          } 
+          // 无法识别的格式
+          else {
+            extractedPort = NaN;
+          }
+          
+          // 验证端口有效性
+          if (!isNaN(extractedPort) && extractedPort > 0 && extractedPort <= 65535) {
+            forwardPort = extractedPort;
 
           // 确保端口可用
           await this.preparePort(forwardPort);
+          } else {
+            console.warn(`配置中的端口号无效: ${addrStr}，将使用默认端口`);
+            forwardPort = 6443;
+            await this.preparePort(forwardPort);
+          }
         }
       } else {
         // 首先尝试从现有配置中获取端口
@@ -672,10 +704,27 @@ class GostService {
 
             if (existingConfig.services && existingConfig.services.length > 0) {
               const addrStr = existingConfig.services[0].addr;
-              const existingPort = parseInt(addrStr.replace(':', ''), 10);
+              
+              // 修复端口提取逻辑，确保正确处理IP地址和端口
+              let existingPort;
+              
+              // 处理格式为 ":端口" 的情况
+              if (addrStr.startsWith(':')) {
+                existingPort = parseInt(addrStr.substring(1), 10);
+              } 
+              // 处理格式为 "IP:端口" 的情况
+              else if (addrStr.includes(':')) {
+                // 分离IP和端口
+                const lastColonIndex = addrStr.lastIndexOf(':');
+                existingPort = parseInt(addrStr.substring(lastColonIndex + 1), 10);
+              } 
+              // 无法识别的格式
+              else {
+                existingPort = NaN;
+              }
 
               // 尝试使用现有端口
-              if (!isNaN(existingPort) && existingPort > 0) {
+              if (!isNaN(existingPort) && existingPort > 0 && existingPort <= 65535) {
                 forwardPort = existingPort;
               } else {
                 forwardPort = 6443; // 默认端口
@@ -715,6 +764,35 @@ class GostService {
       console.log('使用配置文件启动:', this.configPath);
       console.log('完整命令:', executablePath, args.join(' '));
 
+      // 检查是否需要使用sudo（当配置中包含低端口号时）
+      let needsSudo = false;
+      if (gostConfig && gostConfig.services) {
+        // 检查是否有任何服务使用低于1024的端口
+        for (const service of gostConfig.services) {
+          if (service.addr) {
+            const portMatch = service.addr.match(/:(\d+)$/);
+            if (portMatch) {
+              const port = parseInt(portMatch[1], 10);
+              if (port < 1024) {
+                console.log(`⚠️ 检测到低端口号 ${port}，将尝试使用sudo启动`);
+                needsSudo = true;
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      // 根据需要使用sudo启动
+      if (needsSudo) {
+        console.log('🔐 使用sudo启动GOST以支持低端口号绑定');
+        this.process = spawn('sudo', [executablePath, ...args], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          shell: isWindows(),
+          detached: false,
+          env: {...process.env}
+        });
+      } else {
       this.process = spawn(executablePath, args, {
         // 捕获stdout和stderr
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -725,6 +803,7 @@ class GostService {
         // 环境变量
         env: {...process.env}
       });
+      }
 
       console.log('Go-Gost 进程已启动，PID:', this.process.pid);
 
@@ -978,7 +1057,20 @@ class GostService {
         // 提取服务信息和端口使用情况
         const services = configData.services || [];
         const portForwards = services.map(service => {
-          const sourcePort = service.addr ? parseInt(service.addr.replace(':', ''), 10) : null;
+          // 修复端口提取逻辑，确保正确处理IP地址和端口
+          let sourcePort = null;
+          if (service.addr) {
+            // 处理格式为 ":端口" 的情况
+            if (service.addr.startsWith(':')) {
+              sourcePort = parseInt(service.addr.substring(1), 10);
+            } 
+            // 处理格式为 "IP:端口" 的情况
+            else if (service.addr.includes(':')) {
+              // 分离IP和端口
+              const lastColonIndex = service.addr.lastIndexOf(':');
+              sourcePort = parseInt(service.addr.substring(lastColonIndex + 1), 10);
+            }
+          }
 
           // 提取目标地址
           let targetHost = null;
@@ -1173,10 +1265,30 @@ class GostService {
   // 🔥 新增：GOST热加载方法 (高性能，无重启) - 增强版
   async hotReloadConfig(newConfig, options = {}) {
     try {
-      console.log('🔥 开始GOST热加载配置...');
+      console.log('🔄 开始GOST热加载配置...');
+      console.log('📊 配置选项:', inspectObject(options));
 
       // 检查配置是否真的有变化
-      const currentConfig = await this.getCurrentConfig();
+      let currentConfig;
+      try {
+        currentConfig = await traceCall(async () => this.getCurrentConfig());
+        console.log('📋 当前配置结构:', 
+          `services=${safeGet(currentConfig, 'services.length', 0)}, ` +
+          `chains=${safeGet(currentConfig, 'chains.length', 0)}, ` + 
+          `observers=${safeGet(currentConfig, 'observers.length', 0)}`
+        );
+      } catch (configError) {
+        console.error('❌ 获取当前配置失败:', inspectObject(configError));
+        currentConfig = null;
+      }
+
+      // 检查新配置结构
+      console.log('📋 新配置结构:', 
+        `services=${safeGet(newConfig, 'services.length', 0)}, ` +
+        `chains=${safeGet(newConfig, 'chains.length', 0)}, ` + 
+        `observers=${safeGet(newConfig, 'observers.length', 0)}`
+      );
+      
       const configChanged = this.isConfigurationChanged(currentConfig, newConfig);
 
       // 强制更新模式：某些关键场景必须更新
@@ -1208,8 +1320,13 @@ class GostService {
       };
 
       // 保存新配置
+      try {
       fs.writeFileSync(this.configPath, JSON.stringify(configWithAPI, null, 2));
       console.log('✅ 配置文件已更新');
+      } catch (writeError) {
+        console.error('❌ 写入配置文件失败:', inspectObject(writeError));
+        throw writeError;
+      }
 
       // 🔥 使用GOST Web API进行热加载
       if (this.isRunning) {
@@ -1230,6 +1347,8 @@ class GostService {
             timeout: 5000
           };
 
+          console.log('📡 API请求选项:', inspectObject(options));
+
           const success = await new Promise((resolve) => {
             const req = http.request(options, (res) => {
               let responseData = '';
@@ -1239,6 +1358,7 @@ class GostService {
               });
 
               res.on('end', () => {
+                console.log(`📡 API响应: 状态码=${res.statusCode}, 数据=${responseData}`);
                 if (res.statusCode === 200) {
                   console.log('✅ GOST热加载成功！配置文件已重新加载');
                   resolve(true);
@@ -1250,7 +1370,8 @@ class GostService {
             });
 
             req.on('error', (error) => {
-              console.warn('⚠️ 热加载API调用失败:', error.message);
+              console.warn('⚠️ 热加载API调用失败:', error ? error.message : '未知错误');
+              console.error('错误详情:', inspectObject(error));
               resolve(false);
             });
 
@@ -1264,36 +1385,48 @@ class GostService {
           });
 
           if (success) {
+            try {
             // 🔧 新增：热加载后验证配置同步状态
-            const verificationResult = await this.verifyConfigSync(configWithAPI);
-            if (!verificationResult.success) {
-              console.warn('⚠️ 热加载后配置验证失败，强制重启GOST服务');
-              console.warn('验证失败原因:', verificationResult.reason);
-              await this.forceRestart(true);
+              console.log('🔍 开始验证配置同步状态...');
+              const verificationResult = await traceCall(async () => this.verifyConfigSync(configWithAPI));
+              console.log('📊 验证结果:', inspectObject(verificationResult));
+              
+              if (!verificationResult || !verificationResult.success) {
+                const reason = verificationResult ? verificationResult.reason : '未知原因';
+                console.warn(`⚠️ 热加载后配置验证失败，强制重启GOST服务: ${reason}`);
+                await traceCall(async () => this.forceRestart(true));
               return true;
             }
             console.log('✅ 热加载后配置验证通过');
             return true;
+            } catch (verifyError) {
+              console.warn(`⚠️ 热加载后配置验证出错，强制重启GOST服务: ${verifyError ? verifyError.message : '未知错误'}`);
+              console.error('验证错误详情:', inspectObject(verifyError));
+              await traceCall(async () => this.forceRestart(true));
+              return true;
+            }
           } else {
             console.warn('⚠️ 热加载失败，强制重启GOST服务以确保配置生效');
-            await this.forceRestart(true);
+            await traceCall(async () => this.forceRestart(true));
             return true; // 重启成功后返回true
           }
         } catch (error) {
-          console.warn('⚠️ 热加载异常，强制重启GOST服务:', error.message);
-          await this.forceRestart(true);
+          console.warn('⚠️ 热加载异常，强制重启GOST服务:', error ? error.message : '未知错误');
+          console.error('热加载异常详情:', inspectObject(error));
+          await traceCall(async () => this.forceRestart(true));
           return true; // 重启成功后返回true
         }
       } else if (newConfig.services && newConfig.services.length > 0) {
         console.log('🚀 服务未运行但有有效配置，启动GOST服务...');
-        await this.startWithConfig(configWithAPI);
+        await traceCall(async () => this.startWithConfig(configWithAPI));
       } else {
         console.log('📋 服务未运行且无有效配置，配置已保存');
       }
 
       return true;
     } catch (error) {
-      console.error('❌ GOST热加载失败:', error);
+      console.error('❌ GOST热加载失败:', error ? error.message : '未知错误');
+      console.error('错误详情:', inspectObject(error));
       throw error;
     }
   }
@@ -1302,6 +1435,15 @@ class GostService {
   async verifyConfigSync(expectedConfig, maxRetries = 3) {
     try {
       console.log('🔍 开始验证GOST配置同步状态...');
+
+      // 检查期望的配置是否存在
+      if (!expectedConfig) {
+        console.warn('⚠️ 无法验证：期望的配置为空');
+        return {
+          success: false,
+          reason: '期望的配置为空'
+        };
+      }
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
@@ -1332,9 +1474,22 @@ class GostService {
             continue;
           }
 
-          // 比较服务端口
-          const expectedPorts = expectedServices.map(s => s.addr.replace(':', '')).sort();
-          const actualPorts = actualServices.map(s => s.addr.replace(':', '')).sort();
+          // 比较服务端口 - 添加错误处理
+          const expectedPorts = expectedServices.map(s => {
+            try {
+              return s.addr ? s.addr.replace(':', '') : '';
+            } catch (e) {
+              return '';
+            }
+          }).filter(Boolean).sort();
+          
+          const actualPorts = actualServices.map(s => {
+            try {
+              return s.addr ? s.addr.replace(':', '') : '';
+            } catch (e) {
+              return '';
+            }
+          }).filter(Boolean).sort();
 
           const portsMatch = JSON.stringify(expectedPorts) === JSON.stringify(actualPorts);
           if (!portsMatch) {
@@ -1353,11 +1508,12 @@ class GostService {
           return { success: true };
 
         } catch (error) {
-          console.warn(`⚠️ 验证尝试 ${attempt}/${maxRetries} 异常:`, error.message);
+          const errorMessage = error ? (error.message || "未知错误") : "未知错误";
+          console.warn(`⚠️ 验证尝试 ${attempt}/${maxRetries} 异常: ${errorMessage}`);
           if (attempt === maxRetries) {
             return {
               success: false,
-              reason: `验证异常: ${error.message}`
+              reason: `验证异常: ${errorMessage}`
             };
           }
         }
@@ -1369,10 +1525,11 @@ class GostService {
       };
 
     } catch (error) {
-      console.error('❌ 配置同步验证失败:', error);
+      const errorMessage = error ? (error.message || "未知错误") : "未知错误";
+      console.error(`❌ 配置同步验证失败: ${errorMessage}`);
       return {
         success: false,
-        reason: `验证异常: ${error.message}`
+        reason: `验证异常: ${errorMessage}`
       };
     }
   }

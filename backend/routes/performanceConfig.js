@@ -5,15 +5,17 @@
 
 const express = require('express');
 const router = express.Router();
-const { auth: requireAuth, adminAuth: requireAdmin } = require('../middleware/auth');
+const { auth, adminAuth } = require('../middleware/auth');
 const performanceConfigManager = require('../services/performanceConfigManager');
 const systemModeManager = require('../services/systemModeManager');
+const { handleApiError } = require('../utils/errorHandler');
+const { defaultLogger: logger } = require('../utils/logger');
 
 /**
  * 获取当前性能配置
  * GET /api/performance-config
  */
-router.get('/', requireAuth, requireAdmin, async (req, res) => {
+router.get('/', auth, adminAuth, async (req, res) => {
   try {
     const config = performanceConfigManager.getFullConfig();
     const stats = performanceConfigManager.getStats();
@@ -29,12 +31,7 @@ router.get('/', requireAuth, requireAdmin, async (req, res) => {
       message: '获取性能配置成功'
     });
   } catch (error) {
-    console.error('获取性能配置失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '获取性能配置失败',
-      error: error.message
-    });
+    handleApiError('获取性能配置', error, res);
   }
 });
 
@@ -42,7 +39,7 @@ router.get('/', requireAuth, requireAdmin, async (req, res) => {
  * 更新性能配置
  * PUT /api/performance-config
  */
-router.put('/', requireAuth, requireAdmin, async (req, res) => {
+router.put('/', auth, adminAuth, async (req, res) => {
   try {
     const {
       systemMode,
@@ -98,12 +95,7 @@ router.put('/', requireAuth, requireAdmin, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('更新性能配置失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '更新性能配置失败',
-      error: error.message
-    });
+    handleApiError('更新性能配置', error, res);
   }
 });
 
@@ -111,7 +103,7 @@ router.put('/', requireAuth, requireAdmin, async (req, res) => {
  * 切换系统模式
  * POST /api/performance-config/switch-mode
  */
-router.post('/switch-mode', requireAuth, requireAdmin, async (req, res) => {
+router.post('/switch-mode', auth, adminAuth, async (req, res) => {
   try {
     const { isSimpleMode, description } = req.body;
 
@@ -151,12 +143,7 @@ router.post('/switch-mode', requireAuth, requireAdmin, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('切换系统模式失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '切换系统模式失败',
-      error: error.message
-    });
+    handleApiError('切换系统模式', error, res);
   }
 });
 
@@ -164,7 +151,7 @@ router.post('/switch-mode', requireAuth, requireAdmin, async (req, res) => {
  * 手动同步GOST配置 (单击模式专用)
  * POST /api/performance-config/manual-sync
  */
-router.post('/manual-sync', requireAuth, requireAdmin, async (req, res) => {
+router.post('/manual-sync', auth, adminAuth, async (req, res) => {
   try {
     if (!systemModeManager.isSimpleMode()) {
       return res.status(400).json({
@@ -182,12 +169,7 @@ router.post('/manual-sync', requireAuth, requireAdmin, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('手动同步GOST配置失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '手动同步GOST配置失败',
-      error: error.message
-    });
+    handleApiError('手动同步GOST配置', error, res);
   }
 });
 
@@ -195,7 +177,7 @@ router.post('/manual-sync', requireAuth, requireAdmin, async (req, res) => {
  * 应用预设配置
  * POST /api/performance-config/apply-preset
  */
-router.post('/apply-preset', requireAuth, requireAdmin, async (req, res) => {
+router.post('/apply-preset', auth, adminAuth, async (req, res) => {
   try {
     const { presetName, description } = req.body;
 
@@ -226,12 +208,7 @@ router.post('/apply-preset', requireAuth, requireAdmin, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('应用预设配置失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '应用预设配置失败',
-      error: error.message
-    });
+    handleApiError('应用预设配置', error, res);
   }
 });
 
@@ -239,7 +216,7 @@ router.post('/apply-preset', requireAuth, requireAdmin, async (req, res) => {
  * 获取配置帮助信息
  * GET /api/performance-config/help
  */
-router.get('/help', requireAuth, requireAdmin, async (req, res) => {
+router.get('/help', auth, adminAuth, async (req, res) => {
   try {
     // 从配置文件读取帮助信息
     const fullConfig = performanceConfigManager.getFullConfig();
@@ -254,12 +231,7 @@ router.get('/help', requireAuth, requireAdmin, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('获取配置帮助失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '获取配置帮助失败',
-      error: error.message
-    });
+    handleApiError('获取配置帮助信息', error, res);
   }
 });
 
@@ -267,7 +239,7 @@ router.get('/help', requireAuth, requireAdmin, async (req, res) => {
  * 获取系统状态
  * GET /api/performance-config/status
  */
-router.get('/status', requireAuth, requireAdmin, async (req, res) => {
+router.get('/status', auth, adminAuth, async (req, res) => {
   try {
     const modeStatus = systemModeManager.getStatus();
     const configStats = performanceConfigManager.getStats();
@@ -285,12 +257,7 @@ router.get('/status', requireAuth, requireAdmin, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('获取系统状态失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '获取系统状态失败',
-      error: error.message
-    });
+    handleApiError('获取系统状态', error, res);
   }
 });
 

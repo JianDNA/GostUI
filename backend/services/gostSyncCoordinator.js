@@ -6,6 +6,9 @@
 const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
+const { defaultLogger: logger } = require('../utils/logger');
+const { inspectObject, safeGet, traceCall } = require('../utils/debugHelper');
+const { safeAsync, ServiceError, formatError } = require('../utils/errorHandler');
 
 class GostSyncCoordinator {
   constructor() {
@@ -17,7 +20,7 @@ class GostSyncCoordinator {
 
     // 🚀 从性能配置管理器获取配置参数
     this.updateSyncConfig();
-    this.maxQueueSize = 5; // 最大队列大小（减少队列）
+    this.maxQueueSize = 10; // 最大队列大小（减少队列）
     this.syncTimeout = 30000; // 同步超时：30秒
 
     // 定时器
@@ -42,7 +45,7 @@ class GostSyncCoordinator {
       lastError: null
     };
 
-    console.log('🔧 GOST同步协调器已初始化');
+    logger.info('🔄 [同步协调] 协调器初始化');
   }
 
   /**
@@ -54,13 +57,13 @@ class GostSyncCoordinator {
       const syncConfig = performanceConfigManager.getSyncConfig();
 
       this.minSyncInterval = syncConfig.minSyncInterval || 10000;
-      this.autoSyncInterval = syncConfig.autoSyncInterval || 120000;
+      this.autoSyncInterval = syncConfig.autoSyncInterval || 5 * 60 * 1000; // 5分钟
 
-      console.log(`🔧 [同步协调器] 配置已更新: 自动同步${this.autoSyncInterval / 1000}秒, 最小间隔${this.minSyncInterval / 1000}秒`);
+      logger.info(`🔧 [同步协调器] 配置已更新: 自动同步${this.autoSyncInterval / 1000}秒, 最小间隔${this.minSyncInterval / 1000}秒`);
     } catch (error) {
-      console.warn('⚠️ [同步协调器] 更新配置失败，使用默认值:', error.message);
+      logger.warn('⚠️ [同步协调器] 更新配置失败，使用默认值:', error.message);
       this.minSyncInterval = 10000;
-      this.autoSyncInterval = 120000;
+      this.autoSyncInterval = 5 * 60 * 1000; // 5分钟
     }
   }
 
@@ -71,62 +74,83 @@ class GostSyncCoordinator {
    * @param {number} priority - 优先级 (1-10, 10最高)
    */
   async requestSync(trigger = 'unknown', force = false, priority = 5) {
-    const request = {
-      id: this.generateRequestId(),
-      trigger,
-      force,
-      priority,
-      timestamp: Date.now(),
-      status: 'queued'
-    };
-
-    console.log(`📥 [同步协调] 收到同步请求: ${request.id} (触发源: ${trigger}, 强制: ${force}, 优先级: ${priority})`);
-
     try {
-      // 检查是否需要跳过
-      if (!force && this.shouldSkipSync(trigger)) {
-        this.stats.skippedSyncs++;
-        console.log(`⏭️ [同步协调] 跳过同步请求: ${request.id} - 间隔未到或无变化`);
-        return { skipped: true, reason: 'interval_not_reached' };
-      }
+      const request = {
+        id: this.generateRequestId(),
+        trigger,
+        force,
+        priority,
+        timestamp: Date.now(),
+        status: 'queued'
+      };
 
-      // 🔧 紧急请求抢占机制：对于紧急配额禁用，立即执行
-      if (trigger === 'emergency_quota_disable' && priority >= 10) {
-        console.log(`🚨 [同步协调] 紧急请求抢占: ${request.id} - 立即执行`);
+      logger.info(`📥 [同步协调] 收到同步请求: ${request.id} (触发源: ${trigger}, 强制: ${force}, 优先级: ${priority})`);
 
-        // 如果当前有同步在进行，等待其完成（最多等待5秒）
-        if (this.isSyncing) {
-          console.log(`⏳ [同步协调] 等待当前同步完成以执行紧急请求: ${request.id}`);
-          const maxWait = 5000; // 最多等待5秒
-          const startWait = Date.now();
+      try {
+        // 检查是否需要跳过
+        if (!force && this.shouldSkipSync(trigger)) {
+          this.stats.skippedSyncs++;
+          logger.info(`⏭️ [同步协调] 跳过同步请求: ${request.id} - 间隔未到或无变化`);
+          return { skipped: true, reason: 'interval_not_reached' };
+        }
 
-          while (this.isSyncing && (Date.now() - startWait) < maxWait) {
-            await new Promise(resolve => setTimeout(resolve, 100));
+        // 🔧 紧急请求抢占机制：对于紧急配额禁用，立即执行
+        if (trigger === 'emergency_quota_disable' && priority >= 10) {
+          logger.info(`🚨 [同步协调] 紧急请求抢占: ${request.id} - 立即执行`);
+
+          // 如果当前有同步在进行，等待其完成（最多等待5秒）
+          if (this.isSyncing) {
+            logger.info(`⏳ [同步协调] 等待当前同步完成以执行紧急请求: ${request.id}`);
+            const maxWait = 5000; // 最多等待5秒
+            const startWait = Date.now();
+
+            while (this.isSyncing && (Date.now() - startWait) < maxWait) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
+
+            if (this.isSyncing) {
+              logger.info(`⚠️ [同步协调] 等待超时，强制执行紧急请求: ${request.id}`);
+              // 强制释放锁并执行
+              this.isSyncing = false;
+              await this.releaseLock();
+            }
           }
 
-          if (this.isSyncing) {
-            console.log(`⚠️ [同步协调] 等待超时，强制执行紧急请求: ${request.id}`);
-            // 强制释放锁并执行
-            this.isSyncing = false;
-            await this.releaseLock();
+          try {
+            return await this.executeSync(request);
+          } catch (execError) {
+            const errorMessage = execError ? (execError.message || "未知错误") : "未知错误";
+            logger.error(`❌ [同步协调] 紧急请求执行失败: ${request.id}`, errorMessage);
+            return { success: false, error: errorMessage };
           }
         }
 
-        return await this.executeSync(request);
+        // 如果当前没有同步进行，立即执行
+        if (!this.isSyncing) {
+          try {
+            return await this.executeSync(request);
+          } catch (execError) {
+            const errorMessage = execError ? (execError.message || "未知错误") : "未知错误";
+            logger.error(`❌ [同步协调] 同步请求执行失败: ${request.id}`, errorMessage);
+            return { success: false, error: errorMessage };
+          }
+        }
+
+        // 加入队列
+        return await this.enqueueSync(request);
+
+      } catch (innerError) {
+        const errorMessage = innerError ? (innerError.message || "未知错误") : "未知错误";
+        logger.error(`❌ [同步协调] 处理同步请求内部错误: ${request.id}`, errorMessage);
+        this.stats.failedSyncs++;
+        return { success: false, error: errorMessage };
       }
-
-      // 如果当前没有同步进行，立即执行
-      if (!this.isSyncing) {
-        return await this.executeSync(request);
-      }
-
-      // 加入队列
-      return await this.enqueueSync(request);
-
-    } catch (error) {
-      console.error(`❌ [同步协调] 处理同步请求失败: ${request.id}`, error);
+    } catch (outerError) {
+      // 捕获整个requestSync过程中的任何错误，包括请求对象创建失败等
+      const errorMessage = outerError ? (outerError.message || "未知错误") : "未知错误";
+      logger.error(`❌ [同步协调] 创建同步请求失败:`, errorMessage);
       this.stats.failedSyncs++;
-      return { success: false, error: error.message };
+      return { success: false, error: errorMessage };
     }
   }
 
@@ -174,7 +198,7 @@ class GostSyncCoordinator {
       // 移除最低优先级的请求
       this.syncQueue.sort((a, b) => a.priority - b.priority);
       const removed = this.syncQueue.shift();
-      console.log(`🗑️ [同步协调] 队列已满，移除低优先级请求: ${removed.id}`);
+      logger.warn(`🗑️ [同步协调] 队列已满，移除低优先级请求: ${removed.id}`);
     }
 
     // 检查是否有相同触发源的请求
@@ -184,9 +208,9 @@ class GostSyncCoordinator {
       const existing = this.syncQueue[existingIndex];
       if (request.priority > existing.priority) {
         this.syncQueue[existingIndex] = request;
-        console.log(`🔄 [同步协调] 替换队列中的请求: ${existing.id} -> ${request.id}`);
+        logger.info(`🔄 [同步协调] 替换队列中的请求: ${existing.id} -> ${request.id}`);
       } else {
-        console.log(`⏭️ [同步协调] 跳过重复的低优先级请求: ${request.id}`);
+        logger.warn(`⏭️ [同步协调] 跳过重复的低优先级请求: ${request.id}`);
         return { queued: false, reason: 'duplicate_lower_priority' };
       }
     } else {
@@ -196,7 +220,7 @@ class GostSyncCoordinator {
     }
 
     this.stats.queuedRequests++;
-    console.log(`📋 [同步协调] 请求已加入队列: ${request.id}, 队列长度: ${this.syncQueue.length}`);
+    logger.info(`📋 [同步协调] 请求已加入队列: ${request.id}, 队列长度: ${this.syncQueue.length}`);
 
     return { queued: true, queuePosition: this.syncQueue.findIndex(req => req.id === request.id) + 1 };
   }
@@ -217,10 +241,31 @@ class GostSyncCoordinator {
       request.status = 'executing';
       request.startTime = Date.now();
 
-      console.log(`🔄 [同步协调] 开始执行同步: ${request.id}`);
+      logger.info(`🔄 [同步协调] 开始执行同步: ${request.id}`);
 
       // 执行实际的同步操作
-      const result = await this.performSync(request);
+      let result;
+      try {
+        result = await this.performSync(request);
+        // 确保result是一个有效的对象
+        if (!result) {
+          result = {
+            success: false,
+            error: "同步操作返回了空结果",
+            trigger: request.trigger
+          };
+        }
+      } catch (syncError) {
+        // 捕获performSync可能抛出的任何错误
+        const errorMessage = syncError ? (syncError.message || "未知错误") : "未知错误";
+        logger.error(`❌ [同步协调] performSync执行异常: ${request.id}`, errorMessage);
+        
+        result = {
+          success: false,
+          error: errorMessage,
+          trigger: request.trigger
+        };
+      }
 
       // 更新统计
       this.stats.totalSyncs++;
@@ -232,20 +277,40 @@ class GostSyncCoordinator {
         }
       } else {
         this.stats.failedSyncs++;
-        this.stats.lastError = result.error;
+        this.stats.lastError = result.error || "未知错误";
       }
 
       request.status = result.success ? 'completed' : 'failed';
       request.endTime = Date.now();
       request.duration = request.endTime - request.startTime;
 
-      console.log(`✅ [同步协调] 同步完成: ${request.id}, 耗时: ${request.duration}ms, 成功: ${result.success}`);
+      logger.info(`✅ [同步协调] 同步完成: ${request.id}, 耗时: ${request.duration}ms, 成功: ${result.success}`);
 
       // 处理队列中的下一个请求
       setImmediate(() => this.processQueue());
 
       return result;
 
+    } catch (error) {
+      // 捕获整个executeSync过程中的任何错误
+      const errorMessage = error ? (error.message || "未知错误") : "未知错误";
+      logger.error(`❌ [同步协调] 执行同步过程异常: ${request.id}`, errorMessage);
+      
+      // 更新统计
+      this.stats.totalSyncs++;
+      this.stats.failedSyncs++;
+      this.stats.lastError = errorMessage;
+      
+      // 更新请求状态
+      request.status = 'failed';
+      request.endTime = Date.now();
+      request.duration = request.endTime - request.startTime;
+      
+      return {
+        success: false,
+        error: errorMessage,
+        trigger: request.trigger
+      };
     } finally {
       this.isSyncing = false;
       await this.releaseLock();
@@ -258,10 +323,78 @@ class GostSyncCoordinator {
   async performSync(request) {
     try {
       const gostConfigService = require('./gostConfigService');
+      const systemModeManager = require('./systemModeManager');
+
+      // 检查是否处于单机模式，如果是则使用简化的配置
+      const isSimpleMode = systemModeManager.isSimpleMode();
+      if (isSimpleMode) {
+        logger.info(`🔧 [同步协调] 检测到单机模式，使用简化配置: ${request.id}`);
+      }
 
       // 生成新配置
-      const newConfig = await gostConfigService.generateGostConfig();
+      let newConfig;
+      try {
+        logger.info(`🔄 [同步协调] 开始生成配置: ${request.id}`);
+        
+        // 使用 traceCall 包装函数调用，以获取更详细的错误信息
+        newConfig = await traceCall(async () => {
+          const config = await gostConfigService.generateGostConfig();
+          // 打印配置结构，但不打印所有细节
+          logger.info(`📋 [同步协调] 配置结构: services=${safeGet(config, 'services.length', 0)}, chains=${safeGet(config, 'chains.length', 0)}, observers=${safeGet(config, 'observers.length', 0)}`);
+          return config;
+        });
+        
+        logger.info(`✅ [同步协调] 配置生成成功: ${request.id}, 服务数: ${newConfig.services ? newConfig.services.length : 0}`);
+      } catch (configError) {
+        // 使用 inspectObject 详细打印错误
+        logger.error(`❌ [同步协调] 生成配置失败: ${request.id}, 错误详情: ${inspectObject(configError || {})}`);
+        
+        // 在单机模式下使用最小配置
+        if (isSimpleMode) {
+          logger.info(`🔧 [同步协调] 单机模式下使用最小配置: ${request.id}`);
+          newConfig = {
+            services: [],
+            chains: [],
+            observers: [
+              {
+                name: "observer-0",
+                plugin: {
+                  type: "http",
+                  addr: "http://localhost:3000/api/gost-plugin/observer",
+                  timeout: "10s"
+                }
+              }
+            ],
+            api: {
+              addr: ":18080",
+              pathPrefix: "/api",
+              accesslog: false
+            }
+          };
+        } else {
+          return {
+            success: false,
+            error: configError ? (configError.message || "未知错误") : "未知错误",
+            trigger: request.trigger
+          };
+        }
+      }
+      
+      if (!newConfig) {
+        logger.error(`❌ [同步协调] 配置生成结果为空: ${request.id}`);
+        return {
+          success: false,
+          error: "配置生成结果为空",
+          trigger: request.trigger
+        };
+      }
+      
+      // 确保配置对象有必要的属性
+      newConfig.services = newConfig.services || [];
+      newConfig.chains = newConfig.chains || [];
+      
       const newConfigHash = this.calculateConfigHash(newConfig);
+      logger.info(`📊 [同步协调] 配置哈希值: ${newConfigHash.substring(0, 8)}`);
 
       // 强制更新的关键场景
       const forceUpdateScenarios = [
@@ -283,7 +416,7 @@ class GostSyncCoordinator {
 
       // 检查配置是否有变化
       if (!shouldForceUpdate && this.lastConfigHash === newConfigHash) {
-        console.log(`📋 [同步协调] 配置无变化，跳过更新: ${request.id}`);
+        logger.info(`📋 [同步协调] 配置无变化，跳过更新: ${request.id}`);
         return {
           success: true,
           updated: false,
@@ -294,11 +427,23 @@ class GostSyncCoordinator {
       }
 
       if (shouldForceUpdate && this.lastConfigHash === newConfigHash) {
-        console.log(`🔥 [同步协调] 强制更新模式，即使配置无变化也执行: ${request.id} (触发源: ${request.trigger})`);
+        logger.info(`🔥 [同步协调] 强制更新模式，即使配置无变化也执行: ${request.id} (触发源: ${request.trigger})`);
       }
 
       // 获取当前配置
-      const currentConfig = await gostConfigService.getCurrentPersistedConfig();
+      let currentConfig;
+      try {
+        logger.info(`🔄 [同步协调] 获取当前配置: ${request.id}`);
+        currentConfig = await traceCall(async () => {
+          return await gostConfigService.getCurrentPersistedConfig();
+        });
+        logger.info(`✅ [同步协调] 当前配置获取成功: ${request.id}`);
+      } catch (configError) {
+        logger.error(`❌ [同步协调] 获取当前配置失败: ${request.id}, 错误详情: ${inspectObject(configError || {})}`);
+        
+        // 使用空配置作为当前配置
+        currentConfig = { services: [], chains: [] };
+      }
 
       // 🔧 检查是否需要强制重启（紧急配额禁用或流量重置）
       const needsForceRestart = [
@@ -307,21 +452,40 @@ class GostSyncCoordinator {
       ].includes(request.trigger);
 
       // 更新GOST服务
-      if (needsForceRestart) {
-        console.log(`🚨 [同步协调] ${request.trigger}：使用强制重启模式: ${request.id}`);
-        await gostConfigService.updateGostService(newConfig, {
-          forceRestart: true,
-          trigger: request.trigger,
-          force: request.force
+      try {
+        logger.info(`🔄 [同步协调] 开始更新GOST服务: ${request.id}`);
+        
+        // 使用 traceCall 包装函数调用
+        await traceCall(async () => {
+        if (needsForceRestart) {
+          logger.info(`🚨 [同步协调] ${request.trigger}：使用强制重启模式: ${request.id}`);
+          await gostConfigService.updateGostService(newConfig, {
+            forceRestart: true,
+            trigger: request.trigger,
+            force: request.force
+          });
+        } else {
+          await gostConfigService.updateGostService(newConfig, {
+            trigger: request.trigger,
+            force: request.force
+          });
+        }
         });
-      } else {
-        await gostConfigService.updateGostService(newConfig, {
-          trigger: request.trigger,
-          force: request.force
-        });
+        
+        logger.info(`✅ [同步协调] GOST服务更新成功: ${request.id}`);
+      } catch (updateError) {
+        logger.error(`❌ [同步协调] 更新服务失败: ${request.id}, 错误详情: ${inspectObject(updateError || {})}`);
+        return {
+          success: false,
+          error: updateError ? (updateError.message || "未知错误") : "未知错误",
+          trigger: request.trigger
+        };
       }
 
-      console.log(`🔄 [同步协调] 配置已更新: ${request.id}, 服务数: ${newConfig.services.length}`);
+      logger.info(`🔄 [同步协调] 配置已更新: ${request.id}, 服务数: ${newConfig.services.length}`);
+
+      // 更新最后一次成功配置的哈希值
+      this.lastConfigHash = newConfigHash;
 
       return {
         success: true,
@@ -333,11 +497,11 @@ class GostSyncCoordinator {
       };
 
     } catch (error) {
-      console.error(`❌ [同步协调] 同步执行失败: ${request.id}`, error);
+      logger.error(`❌ [同步协调] 同步操作失败: ${request ? request.id : 'unknown'}, 错误详情: ${inspectObject(error || {})}`);
       return {
         success: false,
-        error: error.message,
-        trigger: request.trigger
+        error: error ? (error.message || "未知错误") : "未知错误",
+        trigger: request ? request.trigger : 'unknown'
       };
     }
   }
@@ -352,12 +516,14 @@ class GostSyncCoordinator {
 
     // 获取最高优先级的请求
     const nextRequest = this.syncQueue.shift();
-    console.log(`📤 [同步协调] 处理队列中的请求: ${nextRequest.id}`);
+    logger.info(`📤 [同步协调] 处理队列中的请求: ${nextRequest.id}`);
 
     try {
       await this.executeSync(nextRequest);
     } catch (error) {
-      console.error(`❌ [同步协调] 处理队列请求失败: ${nextRequest.id}`, error);
+      // 修复：确保error不为undefined，并提供默认错误消息
+      const errorMessage = error ? (error.message || "未知错误") : "未知错误";
+      logger.error(`❌ [同步协调] 处理队列请求失败: ${nextRequest.id}`, errorMessage);
     }
   }
 
@@ -368,7 +534,7 @@ class GostSyncCoordinator {
     if (this.syncLock) {
       const lockAge = Date.now() - this.syncLock.timestamp;
       if (lockAge > this.lockTimeout) {
-        console.log(`⚠️ [同步协调] 检测到过期锁，强制释放: ${this.syncLock.requestId}`);
+        logger.info(`⚠️ [同步协调] 检测到过期锁，强制释放: ${this.syncLock.requestId}`);
         this.syncLock = null;
       } else {
         throw new Error(`同步锁被占用: ${this.syncLock.requestId}`);
@@ -380,7 +546,7 @@ class GostSyncCoordinator {
       timestamp: Date.now()
     };
 
-    console.log(`🔒 [同步协调] 获取同步锁: ${requestId}`);
+    logger.info(`🔒 [同步协调] 获取同步锁: ${requestId}`);
   }
 
   /**
@@ -388,7 +554,7 @@ class GostSyncCoordinator {
    */
   async releaseLock() {
     if (this.syncLock) {
-      console.log(`🔓 [同步协调] 释放同步锁: ${this.syncLock.requestId}`);
+      logger.info(`🔓 [同步协调] 释放同步锁: ${this.syncLock.requestId}`);
       this.syncLock = null;
     }
   }
@@ -398,23 +564,27 @@ class GostSyncCoordinator {
    */
   startAutoSync() {
     if (this.autoSyncTimer) {
-      console.log('⚠️ [同步协调] 自动同步已在运行');
+      logger.info('⚠️ [同步协调] 自动同步已在运行');
       return;
     }
 
-    console.log(`🚀 [同步协调] 启动自动同步，间隔: ${this.autoSyncInterval / 1000}秒`);
+    logger.info(`🚀 [同步协调] 启动自动同步，间隔: ${this.autoSyncInterval / 1000}秒`);
 
     // 延迟启动
     setTimeout(() => {
       this.requestSync('auto_initial', false, 3).catch(error => {
-        console.error('初始自动同步失败:', error);
+        // 修复：确保error不为undefined，并提供默认错误消息
+        const errorMessage = error ? (error.message || "未知错误") : "未知错误";
+        logger.error('初始自动同步失败:', errorMessage);
       });
     }, 5000);
 
     // 设置定时器
     this.autoSyncTimer = setInterval(() => {
       this.requestSync('auto_periodic', false, 3).catch(error => {
-        console.error('定期自动同步失败:', error);
+        // 修复：确保error不为undefined，并提供默认错误消息
+        const errorMessage = error ? (error.message || "未知错误") : "未知错误";
+        logger.error('定期自动同步失败:', errorMessage);
       });
     }, this.autoSyncInterval);
   }
@@ -426,7 +596,7 @@ class GostSyncCoordinator {
     if (this.autoSyncTimer) {
       clearInterval(this.autoSyncTimer);
       this.autoSyncTimer = null;
-      console.log('🛑 [同步协调] 自动同步已停止');
+      logger.info('🛑 [同步协调] 自动同步已停止');
     }
   }
 
@@ -480,7 +650,7 @@ class GostSyncCoordinator {
     this.stopAutoSync();
     this.syncQueue = [];
     this.syncLock = null;
-    console.log('🧹 [同步协调] 资源已清理');
+    logger.info('🧹 [同步协调] 资源已清理');
   }
 }
 

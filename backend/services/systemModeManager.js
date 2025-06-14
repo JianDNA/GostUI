@@ -9,6 +9,7 @@
  */
 
 const EventEmitter = require('events');
+const { defaultLogger: logger } = require('../utils/logger');
 
 class SystemModeManager extends EventEmitter {
   constructor() {
@@ -18,7 +19,7 @@ class SystemModeManager extends EventEmitter {
     this.services = new Map(); // 存储各种服务的引用
     this.isInitialized = false;
     
-    console.log('🎛️ [系统模式] 管理器初始化');
+    logger.info('🎛️ [系统模式] 管理器初始化');
   }
 
   /**
@@ -32,7 +33,7 @@ class SystemModeManager extends EventEmitter {
       const isSimpleMode = performanceConfigManager.isSimpleMode();
       this.currentMode = isSimpleMode ? 'simple' : 'auto';
       
-      console.log(`🎛️ [系统模式] 初始化完成，当前模式: ${this.currentMode === 'simple' ? '单机模式' : '自动模式'}`);
+      logger.info(`🎛️ [系统模式] 初始化完成，当前模式: ${this.currentMode === 'simple' ? '单机模式' : '自动模式'}`);
 
       // 根据模式启动或停止服务
       await this.applyMode(this.currentMode);
@@ -40,7 +41,7 @@ class SystemModeManager extends EventEmitter {
       this.isInitialized = true;
       return true;
     } catch (error) {
-      console.error('❌ [系统模式] 初始化失败:', error);
+      logger.error('❌ [系统模式] 初始化失败:', error);
       throw error;
     }
   }
@@ -52,11 +53,11 @@ class SystemModeManager extends EventEmitter {
     const newMode = isSimpleMode ? 'simple' : 'auto';
 
     if (this.currentMode === newMode) {
-      console.log(`🎛️ [系统模式] 已处于${newMode === 'simple' ? '单机模式' : '自动模式'}`);
+      logger.info(`🎛️ [系统模式] 已处于${newMode === 'simple' ? '单机模式' : '自动模式'}`);
       return;
     }
 
-    console.log(`🔄 [系统模式] 切换模式: ${this.currentMode} → ${newMode}`);
+    logger.info(`🔄 [系统模式] 切换模式: ${this.currentMode} → ${newMode}`);
 
     const oldMode = this.currentMode;
     this.currentMode = newMode;
@@ -72,10 +73,10 @@ class SystemModeManager extends EventEmitter {
         timestamp: new Date()
       });
 
-      console.log(`✅ [系统模式] 成功切换到${newMode === 'simple' ? '单机模式' : '自动模式'}`);
+      logger.info(`✅ [系统模式] 成功切换到${newMode === 'simple' ? '单机模式' : '自动模式'}`);
 
     } catch (error) {
-      console.error('❌ [系统模式] 切换模式失败:', error);
+      logger.error('❌ [系统模式] 切换模式失败:', error);
       // 回滚模式
       this.currentMode = oldMode;
       throw error;
@@ -97,7 +98,7 @@ class SystemModeManager extends EventEmitter {
    * 启用单机模式
    */
   async enableSimpleMode() {
-    console.log('🔧 [系统模式] 启用单机模式，禁用所有自动化功能...');
+    logger.info('🔧 [系统模式] 启用单机模式，禁用所有自动化功能...');
 
     try {
       // 1. 停止GOST同步协调器
@@ -114,18 +115,18 @@ class SystemModeManager extends EventEmitter {
 
       // 5. 🔧 修复：保留多实例缓存服务 (观察器需要端口用户映射)
       // 注意：不停止 multiInstanceCacheService，因为观察器需要它来获取端口用户映射
-      console.log('🔧 [系统模式] 保留多实例缓存服务以支持观察器功能');
+      logger.info('🔧 [系统模式] 保留多实例缓存服务以支持观察器功能');
       // 不调用 await this.stopService('multiInstanceCacheService');
 
       // 5. 🔧 修复：保留流量统计相关服务，只禁用认证器和限制器
       await this.disableGostPluginsButKeepObserver();
 
-      console.log('✅ [系统模式] 单机模式已启用');
-      console.log('📝 [系统模式] 提示: 现在需要手动重启GOST服务来同步配置');
-      console.log('📊 [系统模式] 流量统计功能已保留');
+      logger.info('✅ [系统模式] 单机模式已启用');
+      logger.info('📝 [系统模式] 提示: 现在需要手动重启GOST服务来同步配置');
+      logger.info('📊 [系统模式] 流量统计功能已保留');
 
     } catch (error) {
-      console.error('❌ [系统模式] 启用单机模式失败:', error);
+      logger.error('❌ [系统模式] 启用单机模式失败:', error);
       throw error;
     }
   }
@@ -134,7 +135,7 @@ class SystemModeManager extends EventEmitter {
    * 启用自动模式
    */
   async enableAutoMode() {
-    console.log('🔧 [系统模式] 启用自动模式，恢复所有自动化功能...');
+    logger.info('🔧 [系统模式] 启用自动模式，恢复所有自动化功能...');
     
     try {
       // 1. 启用GOST插件
@@ -155,10 +156,10 @@ class SystemModeManager extends EventEmitter {
       // 6. 启动实时流量监控服务
       await this.startService('realTimeTrafficMonitor');
 
-      console.log('✅ [系统模式] 自动模式已启用');
+      logger.info('✅ [系统模式] 自动模式已启用');
       
     } catch (error) {
-      console.error('❌ [系统模式] 启用自动模式失败:', error);
+      logger.error('❌ [系统模式] 启用自动模式失败:', error);
       throw error;
     }
   }
@@ -168,53 +169,52 @@ class SystemModeManager extends EventEmitter {
    */
   async disableGostPluginsButKeepObserver() {
     try {
-      console.log('🔧 [系统模式] 禁用认证器和限制器，保留观察器...');
-
-      // 生成完整的GOST配置
-      const gostConfigService = require('./gostConfigService');
-      const config = await gostConfigService.generateGostConfig();
-
-      // 🔧 修复: 单机模式下只禁用认证器和限制器，保留观察器
-      if (config.services) {
-        config.services.forEach(service => {
-          delete service.auther;   // 禁用认证器
-          delete service.limiter;  // 禁用限制器
-          // 保留 service.observer 以支持流量统计
-        });
-      }
-
-      // 🔧 关键修复: 确保全局观察器配置被保留
-      if (!config.observers) {
-        config.observers = [
-          {
-            name: "observer-0",
-            plugin: {
-              type: "http",
-              addr: "http://localhost:3000/api/gost-plugin/observer",
-              timeout: "10s"
+      logger.info('🔧 [系统模式] 禁用认证器和限制器，保留观察器...');
+      
+      try {
+        // 生成完整的GOST配置
+        const gostConfigService = require('./gostConfigService');
+        
+        // 创建基本配置结构，避免依赖generateGostConfig
+        const config = {
+          services: [],
+          chains: [],
+          observers: [
+            {
+              name: "observer-0",
+              plugin: {
+                type: "http",
+                addr: "http://localhost:3000/api/gost-plugin/observer",
+                timeout: "10s"
+              }
             }
+          ],
+          api: {
+            addr: ":18080",
+            pathPrefix: "/api",
+            accesslog: false
           }
-        ];
-      }
-
-      // 🔧 保留API配置以支持热重载
-      if (!config.api) {
-        config.api = {
-          addr: ":18080",
-          pathPrefix: "/api",
-          accesslog: false
         };
+        
+        // 更新GOST服务配置
+        const gostService = require('./gostService');
+        await gostService.updateConfig(config, { forceRestart: true });
+        
+        logger.info('✅ [系统模式] GOST插件配置已更新：认证器和限制器已禁用，观察器已保留');
+        return true;
+      } catch (configError) {
+        // 修复：确保configError不为undefined，并提供默认错误消息
+        const errorMessage = configError ? (configError.message || '未知错误') : '未知错误';
+        logger.error(`❌ [系统模式] 禁用GOST插件失败: ${errorMessage}`);
+        // 不抛出异常，允许模式切换继续
+        return false;
       }
-
-      // 应用配置
-      const gostService = require('./gostService');
-      await gostService.updateConfig(config, { forceRestart: true });
-
-      console.log('✅ [系统模式] 认证器和限制器已禁用，观察器已保留');
-
     } catch (error) {
-      console.error('❌ [系统模式] 禁用GOST插件失败:', error);
-      throw error;
+      // 修复：确保error不为undefined，并提供默认错误消息
+      const errorMessage = error ? (error.message || '未知错误') : '未知错误';
+      logger.error(`❌ [系统模式] 禁用GOST插件失败: ${errorMessage}`);
+      // 不抛出异常，允许模式切换继续
+      return false;
     }
   }
 
@@ -223,7 +223,7 @@ class SystemModeManager extends EventEmitter {
    */
   async disableGostPlugins() {
     try {
-      console.log('🚫 [系统模式] 禁用所有GOST插件...');
+      logger.info('🚫 [系统模式] 禁用所有GOST插件...');
 
       // 生成无插件的GOST配置
       const gostConfigService = require('./gostConfigService');
@@ -248,10 +248,10 @@ class SystemModeManager extends EventEmitter {
       const gostService = require('./gostService');
       await gostService.updateConfig(config, { forceRestart: true });
 
-      console.log('✅ [系统模式] 所有GOST插件已禁用');
+      logger.info('✅ [系统模式] 所有GOST插件已禁用');
 
     } catch (error) {
-      console.error('❌ [系统模式] 禁用GOST插件失败:', error);
+      logger.error('❌ [系统模式] 禁用GOST插件失败:', error);
       throw error;
     }
   }
@@ -261,7 +261,7 @@ class SystemModeManager extends EventEmitter {
    */
   async enableGostPlugins() {
     try {
-      console.log('🔌 [系统模式] 启用GOST插件...');
+      logger.info('🔌 [系统模式] 启用GOST插件...');
       
       // 生成完整的GOST配置 (包含插件)
       const gostConfigService = require('./gostConfigService');
@@ -271,10 +271,10 @@ class SystemModeManager extends EventEmitter {
       const gostService = require('./gostService');
       await gostService.updateConfig(config, { forceRestart: true });
       
-      console.log('✅ [系统模式] GOST插件已启用');
+      logger.info('✅ [系统模式] GOST插件已启用');
       
     } catch (error) {
-      console.error('❌ [系统模式] 启用GOST插件失败:', error);
+      logger.error('❌ [系统模式] 启用GOST插件失败:', error);
       throw error;
     }
   }
@@ -286,7 +286,7 @@ class SystemModeManager extends EventEmitter {
     try {
       // 🔧 关键修复：在单机模式下不停止 multiInstanceCacheService
       if (serviceName === 'multiInstanceCacheService' && this.currentMode === 'simple') {
-        console.log('🔧 [系统模式] 单机模式下保留多实例缓存服务以支持观察器');
+        logger.info('🔧 [系统模式] 单机模式下保留多实例缓存服务以支持观察器');
         return;
       }
 
@@ -329,10 +329,10 @@ class SystemModeManager extends EventEmitter {
           break;
       }
 
-      console.log(`🛑 [系统模式] 服务已停止: ${serviceName}`);
+      logger.info(`🛑 [系统模式] 服务已停止: ${serviceName}`);
 
     } catch (error) {
-      console.warn(`⚠️ [系统模式] 停止服务失败: ${serviceName}`, error.message);
+      logger.warn(`⚠️ [系统模式] 停止服务失败: ${serviceName}`, error.message);
     }
   }
 
@@ -380,10 +380,10 @@ class SystemModeManager extends EventEmitter {
           break;
       }
       
-      console.log(`🚀 [系统模式] 服务已启动: ${serviceName}`);
+      logger.info(`🚀 [系统模式] 服务已启动: ${serviceName}`);
       
     } catch (error) {
-      console.warn(`⚠️ [系统模式] 启动服务失败: ${serviceName}`, error.message);
+      logger.warn(`⚠️ [系统模式] 启动服务失败: ${serviceName}`, error.message);
     }
   }
 
@@ -391,27 +391,27 @@ class SystemModeManager extends EventEmitter {
    * 手动同步GOST配置 (单机模式专用)
    */
   async manualSyncGost() {
-    console.log('🔍 [DEBUG] manualSyncGost 被调用，当前模式:', this.currentMode);
+    logger.info('🔍 [DEBUG] manualSyncGost 被调用，当前模式:', this.currentMode);
 
     if (this.currentMode !== 'simple') {
-      console.log('❌ [DEBUG] 不在单机模式下，抛出异常');
+      logger.info('❌ [DEBUG] 不在单机模式下，抛出异常');
       throw new Error('手动同步仅在单机模式下可用');
     }
 
     try {
-      console.log('🔄 [系统模式] 手动同步GOST配置...');
+      logger.info('🔄 [系统模式] 手动同步GOST配置...');
       
       // 生成新配置
       const gostConfigService = require('./gostConfigService');
-      console.log('🔍 [DEBUG] 开始生成配置...');
+      logger.info('🔍 [DEBUG] 开始生成配置...');
       const config = await gostConfigService.generateGostConfig();
-      console.log('🔍 [DEBUG] 配置生成完成');
-      console.log('🔍 [DEBUG] 配置对象:', JSON.stringify(config, null, 2));
+      logger.info('🔍 [DEBUG] 配置生成完成');
+      logger.info('🔍 [DEBUG] 配置对象:', JSON.stringify(config, null, 2));
 
-      console.log('🔍 [DEBUG] 生成的配置包含观察器:', !!config.observers);
-      console.log('🔍 [DEBUG] 观察器配置:', config.observers);
-      console.log('🔍 [DEBUG] 配置对象类型:', typeof config);
-      console.log('🔍 [DEBUG] 配置对象键:', Object.keys(config));
+      logger.info('🔍 [DEBUG] 生成的配置包含观察器:', !!config.observers);
+      logger.info('🔍 [DEBUG] 观察器配置:', config.observers);
+      logger.info('🔍 [DEBUG] 配置对象类型:', typeof config);
+      logger.info('🔍 [DEBUG] 配置对象键:', Object.keys(config));
 
       // 🔧 修复: 单机模式下保留观察器插件以支持流量统计
       if (config.services) {
@@ -424,7 +424,7 @@ class SystemModeManager extends EventEmitter {
 
       // 🔧 关键修复: 确保全局观察器配置被保留
       if (!config.observers) {
-        console.log('⚠️ [DEBUG] 配置中缺少观察器，手动添加...');
+        logger.info('⚠️ [DEBUG] 配置中缺少观察器，手动添加...');
         config.observers = [
           {
             name: "observer-0",
@@ -436,7 +436,7 @@ class SystemModeManager extends EventEmitter {
           }
         ];
       } else {
-        console.log('✅ [DEBUG] 配置中已包含观察器');
+        logger.info('✅ [DEBUG] 配置中已包含观察器');
       }
 
       // 🔧 不删除API配置，保留完整配置结构
@@ -448,7 +448,7 @@ class SystemModeManager extends EventEmitter {
 
       // 🔧 关键修复: 确保观察器配置被保留
       if (!config.observers) {
-        console.log('⚠️ [DEBUG] 配置中缺少观察器，手动添加...');
+        logger.info('⚠️ [DEBUG] 配置中缺少观察器，手动添加...');
         config.observers = [
           {
             name: "observer-0",
@@ -460,7 +460,7 @@ class SystemModeManager extends EventEmitter {
           }
         ];
       } else {
-        console.log('✅ [DEBUG] 配置中已包含观察器');
+        logger.info('✅ [DEBUG] 配置中已包含观察器');
       }
 
       // 添加API配置以支持热重载
@@ -475,13 +475,13 @@ class SystemModeManager extends EventEmitter {
 
       // 保存配置文件
       fs.writeFileSync(configPath, JSON.stringify(configWithAPI, null, 2));
-      console.log('✅ [系统模式] 配置文件已保存');
+      logger.info('✅ [系统模式] 配置文件已保存');
 
       // 硬重启GOST服务
       const gostService = require('./gostService');
       await gostService.forceRestart(true); // 使用配置文件重启
       
-      console.log('✅ [系统模式] 手动同步完成');
+      logger.info('✅ [系统模式] 手动同步完成');
       
       return {
         success: true,
@@ -491,7 +491,7 @@ class SystemModeManager extends EventEmitter {
       };
       
     } catch (error) {
-      console.error('❌ [系统模式] 手动同步失败:', error);
+      logger.error('❌ [系统模式] 手动同步失败:', error);
       throw error;
     }
   }

@@ -870,12 +870,13 @@ router.delete('/:id', auth, async (req, res) => {
           const ruleInfo = `规则: ${rule.name} (ID: ${rule.id}, 端口: ${rule.sourcePort})`;
           fs.appendFileSync(logFile, `删除${ruleInfo}\n`);
           console.log(`删除${ruleInfo}`);
-          
+
           try {
             await rule.destroy({ transaction });
             fs.appendFileSync(logFile, `成功删除${ruleInfo}\n`);
-            
+
             // 清理规则相关缓存
+            const cacheCoordinator = require('../services/cacheCoordinator');
             await cacheCoordinator.clearPortRelatedCache(rule.sourcePort, 'rule_delete_with_user');
           } catch (singleRuleError) {
             fs.appendFileSync(logFile, `删除${ruleInfo}失败: ${singleRuleError.message}\n`);

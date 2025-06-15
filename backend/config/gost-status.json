@@ -1,6 +1,6 @@
 {
-  "isRunning": true,
-  "pid": 86436,
-  "lastUpdate": "2025-06-15T07:47:27.513Z",
-  "startTime": "2025-06-15T07:47:27.512Z"
+  "isRunning": false,
+  "pid": null,
+  "lastUpdate": "2025-06-15T08:35:27.229Z",
+  "startTime": null
 }

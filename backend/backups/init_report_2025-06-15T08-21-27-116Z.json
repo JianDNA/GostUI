@@ -1,0 +1,61 @@
+{
+  "timestamp": "2025-06-15T08:21:27.115Z",
+  "database_path": "/home/y/vmshare/gost/GostUI/backend/database/database.sqlite",
+  "tables": [
+    {
+      "name": "ForwardRules"
+    },
+    {
+      "name": "Rules"
+    },
+    {
+      "name": "SequelizeMeta"
+    },
+    {
+      "name": "SystemConfigs"
+    },
+    {
+      "name": "TrafficLogs"
+    },
+    {
+      "name": "UserForwardRules"
+    },
+    {
+      "name": "Users"
+    },
+    {
+      "name": "speed_minutely"
+    },
+    {
+      "name": "sqlite_sequence"
+    },
+    {
+      "name": "traffic_hourly"
+    }
+  ],
+  "admin_user": [
+    {
+      "id": 1,
+      "username": "admin",
+      "role": "admin",
+      "createdAt": "2025-06-15T08:21:27.092Z"
+    }
+  ],
+  "system_configs": [
+    {
+      "key": "default_performance_mode",
+      "description": "默认性能模式",
+      "category": "performance"
+    },
+    {
+      "key": "initialized_at",
+      "description": "系统初始化时间",
+      "category": "system"
+    },
+    {
+      "key": "system_version",
+      "description": "系统版本",
+      "category": "system"
+    }
+  ]
+}

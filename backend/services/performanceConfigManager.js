@@ -403,25 +403,25 @@ class PerformanceConfigManager extends EventEmitter {
   /**
    * 应用预设配置
    */
-  async applyPreset(presetName, updatedBy = 'admin') {
+  async applyPreset(presetName, updatedBy = 'admin', description = '') {
     try {
       // 重新读取配置文件以获取最新的预设
       const configData = await fs.readFile(this.configPath, 'utf8');
       const fullConfig = JSON.parse(configData);
-      
+
       const preset = fullConfig.presets?.[presetName];
       if (!preset) {
         throw new Error(`预设配置不存在: ${presetName}`);
       }
-      
+
       console.log(`🎯 [性能配置] 应用预设: ${preset.name}`);
-      
+
       await this.updateConfig(
         preset.config,
         updatedBy,
-        `应用预设配置: ${preset.name} - ${preset.description}`
+        description || `应用预设配置: ${preset.name} - ${preset.description}`
       );
-      
+
       return preset;
     } catch (error) {
       console.error('❌ [性能配置] 应用预设失败:', error);
@@ -505,6 +505,24 @@ class PerformanceConfigManager extends EventEmitter {
           }
         } catch (error) {
           console.warn('⚠️ 通知多实例缓存服务失败:', error.message);
+        }
+      }
+
+      // 🚀 新增: 触发GOST配置重新生成（如果GOST插件配置发生变化）
+      if (updates.gostPlugins) {
+        try {
+          const gostSyncCoordinator = require('./gostSyncCoordinator');
+          if (gostSyncCoordinator.requestSync) {
+            await gostSyncCoordinator.requestSync({
+              trigger: 'performance_config_update',
+              force: true,
+              priority: 2,
+              description: `GOST插件配置更新，重新生成配置 (观察器周期: ${updates.gostPlugins.observerPeriod || '未指定'}秒)`
+            });
+            console.log(`🔄 [性能配置] 已触发GOST配置重新生成 (观察器周期: ${updates.gostPlugins.observerPeriod || '未指定'}秒)`);
+          }
+        } catch (error) {
+          console.warn('⚠️ 触发GOST配置重新生成失败:', error.message);
         }
       }
 

@@ -93,7 +93,7 @@ async function debugObserverPipeline() {
       include: [{
         model: User,
         as: 'user',
-        attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'expiryDate', 'portRangeStart', 'portRangeEnd', 'trafficQuota', 'usedTraffic']
+        attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'expiryDate', 'portRangeStart', 'portRangeEnd', 'additionalPorts', 'trafficQuota', 'usedTraffic']
       }],
       attributes: ['id', 'name', 'sourcePort', 'userId', 'usedTraffic']
     });

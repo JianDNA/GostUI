@@ -392,6 +392,7 @@ onMounted(async () => {
 <style scoped>
 .dashboard {
   padding: 20px;
+  background: #f5f7fa;
 }
 
 .dashboard-card {

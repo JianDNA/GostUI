@@ -8,7 +8,7 @@
  * @returns {boolean}
  */
 export const isDevelopment = () => {
-  return process.env.NODE_ENV === 'development';
+  return import.meta.env.DEV;
 };
 
 /**
@@ -16,7 +16,7 @@ export const isDevelopment = () => {
  * @returns {boolean}
  */
 export const isProduction = () => {
-  return process.env.NODE_ENV === 'production';
+  return import.meta.env.PROD;
 };
 
 /**
@@ -24,7 +24,7 @@ export const isProduction = () => {
  * @returns {boolean}
  */
 export const isTesting = () => {
-  return process.env.NODE_ENV === 'test';
+  return import.meta.env.MODE === 'test';
 };
 
 /**
@@ -134,13 +134,13 @@ export const disableApiTestMode = () => {
  */
 export const getEnvironmentInfo = () => {
   return {
-    nodeEnv: process.env.NODE_ENV,
+    nodeEnv: import.meta.env.MODE,
     isDevelopment: isDevelopment(),
     isProduction: isProduction(),
     isTesting: isTesting(),
     isDebugEnabled: isDebugEnabled(),
-    buildTime: process.env.VUE_APP_BUILD_TIME || 'unknown',
-    version: process.env.VUE_APP_VERSION || '1.0.0'
+    buildTime: import.meta.env.VITE_BUILD_TIME || 'unknown',
+    version: import.meta.env.VITE_APP_VERSION || '1.0.0'
   };
 };
 

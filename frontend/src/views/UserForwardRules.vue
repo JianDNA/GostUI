@@ -89,6 +89,8 @@
           v-loading="loading"
           @selection-change="(selection) => handleGroupSelectionChange(selection, group.userId)"
           style="width: 100%; margin-bottom: 20px;"
+          stripe
+          :header-cell-style="{ background: '#f5f7fa', color: '#606266', fontWeight: '600' }"
         >
           <el-table-column type="selection" width="55" />
           <el-table-column prop="name" label="规则名称" min-width="120" />
@@ -160,12 +162,15 @@
 
     <div v-else>
       <!-- 单用户显示（普通用户或从用户管理跳转） -->
-      <el-table
-        :data="rules"
-        v-loading="loading"
-        @selection-change="handleSelectionChange"
-        style="width: 100%"
-      >
+      <el-card class="table-card">
+        <el-table
+          :data="rules"
+          v-loading="loading"
+          @selection-change="handleSelectionChange"
+          style="width: 100%"
+          stripe
+          :header-cell-style="{ background: '#f5f7fa', color: '#606266', fontWeight: '600' }"
+        >
         <el-table-column type="selection" width="55" />
         <el-table-column prop="name" label="规则名称" min-width="120" />
         <el-table-column prop="sourcePort" label="源端口" width="100" />
@@ -230,7 +235,8 @@
             </el-button>
           </template>
         </el-table-column>
-      </el-table>
+        </el-table>
+      </el-card>
     </div>
 
     <!-- 创建/编辑规则对话框 -->
@@ -1045,6 +1051,7 @@ export default {
 <style scoped>
 .user-forward-rules {
   padding: 20px;
+  background: #f5f7fa;
 }
 
 .header {
@@ -1052,11 +1059,18 @@ export default {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
+  padding: 16px 20px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.08);
+  border: 1px solid #ebeef5;
 }
 
 .header h2 {
   margin: 0;
   color: #303133;
+  font-size: 20px;
+  font-weight: 600;
 }
 
 .header-actions {
@@ -1066,6 +1080,8 @@ export default {
 
 .user-info-card {
   margin-bottom: 20px;
+  box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.08);
+  border: 1px solid #ebeef5;
 }
 
 .user-info {
@@ -1094,14 +1110,16 @@ export default {
 }
 
 .user-group {
-  margin-bottom: 30px;
+  margin-bottom: 24px;
   border: 1px solid #EBEEF5;
-  border-radius: 4px;
+  border-radius: 8px;
   overflow: hidden;
+  background: white;
+  box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.08);
 }
 
 .group-header {
-  background: #F5F7FA;
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
   padding: 15px 20px;
   border-bottom: 1px solid #EBEEF5;
   display: flex;
@@ -1113,6 +1131,7 @@ export default {
   margin: 0;
   color: #303133;
   font-size: 16px;
+  font-weight: 600;
 }
 
 .group-info {
@@ -1218,6 +1237,38 @@ export default {
   padding: 2px 8px;
   border-radius: 4px;
   border: 1px solid #e1f3d8;
+}
+
+.table-card {
+  box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.08);
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* 表格样式优化 */
+:deep(.el-table) {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+:deep(.el-table th) {
+  background: #f5f7fa !important;
+  color: #606266 !important;
+  font-weight: 600 !important;
+  border-bottom: 1px solid #ebeef5;
+}
+
+:deep(.el-table td) {
+  border-bottom: 1px solid #f0f2f5;
+}
+
+:deep(.el-table--striped .el-table__body tr.el-table__row--striped td) {
+  background: #fafbfc;
+}
+
+:deep(.el-table__body tr:hover > td) {
+  background-color: #f5f7fa !important;
 }
 
 /* 修复错误提示样式 */

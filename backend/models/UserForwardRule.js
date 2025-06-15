@@ -224,6 +224,45 @@ module.exports = (sequelize) => {
     }
 
     /**
+     * 异步计算规则是否应该激活（用于解决数据加载问题）
+     * @returns {Promise<boolean>} 规则是否应该激活
+     */
+    async getComputedIsActiveAsyncWithPortCheck() {
+      // 如果没有关联用户信息，无法进行状态检查，返回 false
+      if (!this.user) {
+        console.warn(`⚠️ 规则 ${this.name || this.id} 缺少用户关联信息，无法计算 isActive 状态`);
+        return false;
+      }
+
+      const user = this.user;
+
+      // 1. 检查用户基本状态
+      if (!user.isActive || user.userStatus !== 'active') {
+        return false;
+      }
+
+      // 2. 检查用户是否过期（Admin用户不受限制）
+      if (user.role !== 'admin' && user.isExpired && user.isExpired()) {
+        return false;
+      }
+
+      // 3. 异步检查端口是否在用户允许范围内（Admin用户不受限制）
+      if (user.role !== 'admin') {
+        const isPortAllowed = await user.isPortInRangeAsync(this.sourcePort);
+        if (!isPortAllowed) {
+          return false;
+        }
+      }
+
+      // 4. 检查流量配额（Admin用户不受限制）
+      if (user.role !== 'admin' && user.isTrafficExceeded && user.isTrafficExceeded()) {
+        return false;
+      }
+
+      return true;
+    }
+
+    /**
      * 重写 toJSON 方法，确保包含计算属性
      * @returns {Object} JSON 对象
      */

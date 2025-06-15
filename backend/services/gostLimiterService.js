@@ -32,7 +32,7 @@ class GostLimiterService {
       const userInfo = await this.parseUserFromRequest(request);
       if (!userInfo) {
         console.log(`⚠️ [限制器] 无法解析用户信息，允许通过`);
-        return { in: -1, out: -1 }; // 无限制
+        return { in: 0, out: 0 }; // 无限制
       }
 
       // 检查用户配额
@@ -47,20 +47,20 @@ class GostLimiterService {
 
       // 返回限制策略
       if (quotaCheck.allowed) {
-        return { in: -1, out: -1 }; // 无限制
+        return { in: 0, out: 0 }; // 无限制 (根据GOST文档，0或负值表示无限制)
       } else {
-        console.log(`🚫 [限制器] 用户 ${userInfo.username} 流量超限，禁止转发`);
-        // 🔧 设置极小的限速值来阻止传输（0表示无限制）
+        console.log(`🚫 [限制器] 用户 ${userInfo.username} 流量超限，返回极低限速`);
+        // 🔧 修复：返回极低限速（认证器应该已经拒绝了，这里是双重保险）
         return {
-          in: 1,    // 1 字节/秒 - 极小限速
-          out: 1    // 1 字节/秒 - 极小限速
+          in: 1,    // 1 字节/秒 - 极低限速
+          out: 1    // 1 字节/秒 - 极低限速
         };
       }
 
     } catch (error) {
       console.error(`❌ [限制器] 处理请求失败:`, error);
       // 出错时允许通过，避免影响正常服务
-      return { in: -1, out: -1 };
+      return { in: 0, out: 0 };
     }
   }
 
@@ -156,7 +156,7 @@ class GostLimiterService {
   async getUserById(userId) {
     try {
       const user = await User.findByPk(userId, {
-        attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'trafficQuota', 'usedTraffic']
+        attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'trafficQuota', 'usedTraffic', 'additionalPorts', 'portRangeStart', 'portRangeEnd']
       });
       return user;
     } catch (error) {

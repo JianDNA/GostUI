@@ -15,9 +15,18 @@
     <el-card class="status-card overview-card">
       <template #header>
         <div class="card-header">
-          <span>系统概览</span>
-          <el-tag type="success" v-if="isSystemHealthy">系统正常</el-tag>
-          <el-tag type="danger" v-else>系统异常</el-tag>
+          <div class="header-left">
+            <el-icon size="20" color="#409EFF"><Monitor /></el-icon>
+            <span>系统概览</span>
+          </div>
+          <el-tag type="success" v-if="isSystemHealthy" size="large">
+            <el-icon><CircleCheckFilled /></el-icon>
+            系统正常
+          </el-tag>
+          <el-tag type="danger" v-else size="large">
+            <el-icon><CircleCloseFilled /></el-icon>
+            系统异常
+          </el-tag>
         </div>
       </template>
       <el-row :gutter="20" v-loading="loading">
@@ -49,11 +58,15 @@
     </el-card>
 
     <!-- 服务状态 -->
-    <el-card class="status-card">
+    <el-card class="status-card services-card">
       <template #header>
         <div class="card-header">
-          <span>服务状态</span>
+          <div class="header-left">
+            <el-icon size="20" color="#67C23A"><Setting /></el-icon>
+            <span>服务状态</span>
+          </div>
           <el-button type="primary" size="small" @click="forceSync" :loading="syncLoading">
+            <el-icon><Refresh /></el-icon>
             强制同步
           </el-button>
         </div>
@@ -182,7 +195,7 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Refresh, Monitor, Setting, Connection, RefreshRight, View } from '@element-plus/icons-vue'
+import { Refresh, Monitor, Setting, Connection, RefreshRight, View, CircleCheckFilled, CircleCloseFilled } from '@element-plus/icons-vue'
 import api from '@/utils/api'
 
 const store = useStore()
@@ -479,6 +492,7 @@ onUnmounted(() => {
   padding: 20px;
   max-width: 1400px;
   margin: 0 auto;
+  background: #f5f7fa;
 }
 
 .page-header {
@@ -486,8 +500,11 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 24px;
-  padding: 16px 0;
-  border-bottom: 1px solid #ebeef5;
+  padding: 16px 20px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.08);
+  border: 1px solid #ebeef5;
 }
 
 .header-actions {
@@ -498,12 +515,18 @@ onUnmounted(() => {
 
 .status-card {
   margin-bottom: 24px;
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.08);
   border: 1px solid #ebeef5;
+  border-radius: 8px;
+  overflow: hidden;
 }
 
 .overview-card {
   background: linear-gradient(135deg, #f0f9ff 0%, #ffffff 100%);
+}
+
+.services-card {
+  background: linear-gradient(135deg, #f0f9eb 0%, #ffffff 100%);
 }
 
 .gost-card {
@@ -522,6 +545,7 @@ onUnmounted(() => {
 .header-left {
   display: flex;
   align-items: center;
+  gap: 8px;
 }
 
 .header-actions {

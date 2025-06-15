@@ -53,13 +53,27 @@ router.get('/current', auth, adminAuth, async (req, res) => {
 router.post('/sync', auth, adminAuth, productionSafetyMiddleware, async (req, res) => {
   try {
     const gostSyncCoordinator = require('../services/gostSyncCoordinator');
-    const result = await gostSyncCoordinator.requestSync('manual_admin', true, 10);
+    const { force = false } = req.body; // 允许前端指定是否强制同步
+
+    const result = await gostSyncCoordinator.requestSync('manual_admin', force, 10);
+
+    // 🔧 更详细的响应信息
+    let message = '配置无变化';
+    if (result.updated) {
+      message = '配置已更新并同步';
+    } else if (result.skipped) {
+      message = result.reason === 'interval_not_reached' ? '同步间隔未到，已跳过' : '同步已跳过';
+    } else if (result.queued) {
+      message = '同步已加入队列';
+    }
+
     res.json({
       success: true,
-      data: result,
-      message: result.updated ? '配置已更新并同步' :
-               result.skipped ? '同步已跳过' :
-               result.queued ? '同步已加入队列' : '配置无变化'
+      data: {
+        ...result,
+        timestamp: new Date().toISOString()
+      },
+      message
     });
   } catch (error) {
     logger.error('手动同步失败:', error);
@@ -76,7 +90,8 @@ router.post('/sync', auth, adminAuth, productionSafetyMiddleware, async (req, re
  */
 router.post('/auto-sync/start', auth, adminAuth, async (req, res) => {
   try {
-    gostConfigService.startAutoSync();
+    const gostSyncCoordinator = require('../services/gostSyncCoordinator');
+    gostSyncCoordinator.startAutoSync();
     res.json({
       success: true,
       message: '自动同步已启动'
@@ -96,7 +111,8 @@ router.post('/auto-sync/start', auth, adminAuth, async (req, res) => {
  */
 router.post('/auto-sync/stop', auth, adminAuth, async (req, res) => {
   try {
-    gostConfigService.stopAutoSync();
+    const gostSyncCoordinator = require('../services/gostSyncCoordinator');
+    gostSyncCoordinator.stopAutoSync();
     res.json({
       success: true,
       message: '自动同步已停止'

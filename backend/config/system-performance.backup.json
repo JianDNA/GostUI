@@ -1,20 +1,20 @@
 {
   "version": "1.0.0",
-  "lastUpdated": "2025-06-13T14:04:13.542Z",
+  "lastUpdated": "2025-06-15T06:26:22.556Z",
   "lastUpdatedBy": "admin",
-  "description": "应用预设配置: 高性能模式 - 追求最佳转发性能，适合高并发场景",
+  "description": "管理员更新性能配置",
   "systemMode": {
-    "isSimpleMode": true
+    "isSimpleMode": false
   },
   "gostPlugins": {
-    "authTimeout": 3,
-    "observerTimeout": 15,
-    "limiterTimeout": 3,
-    "observerPeriod": 120,
+    "authTimeout": 8,
+    "observerTimeout": 20,
+    "limiterTimeout": 4,
+    "observerPeriod": 8,
     "observerAsyncProcessing": true,
-    "disableQuotaEnforcement": true,
-    "disableConfigSync": true,
-    "batchDatabaseOperations": true
+    "disableQuotaEnforcement": false,
+    "disableConfigSync": false,
+    "batchDatabaseOperations": false
   },
   "cacheConfig": {
     "authCacheTimeout": 900000,
@@ -22,45 +22,45 @@
     "multiInstanceCacheTTL": 300000
   },
   "syncConfig": {
-    "autoSyncInterval": 300000,
-    "healthCheckInterval": 120000
+    "autoSyncInterval": 60000,
+    "healthCheckInterval": 30000,
+    "cacheCoordinatorSyncInterval": 15000
   },
   "presets": {
     "highPerformance": {
       "name": "高性能模式",
-      "description": "追求最佳转发性能，适合高并发场景",
+      "description": "追求最佳转发性能和快速流量统计，适合高并发场景",
       "config": {
-        "systemMode": {
-          "isSimpleMode": true
-        },
         "gostPlugins": {
           "authTimeout": 3,
           "observerTimeout": 15,
-          "limiterTimeout": 3,
-          "observerPeriod": 120,
+          "limiterTimeout": 2,
+          "observerPeriod": 6,
           "observerAsyncProcessing": true,
-          "disableQuotaEnforcement": true,
-          "disableConfigSync": true,
+          "disableQuotaEnforcement": false,
+          "disableConfigSync": false,
           "batchDatabaseOperations": true
         },
         "cacheConfig": {
           "authCacheTimeout": 900000,
           "limiterCacheTimeout": 600000,
           "multiInstanceCacheTTL": 300000
+        },
+        "syncConfig": {
+          "autoSyncInterval": 60000,
+          "healthCheckInterval": 30000
         }
       }
     },
     "balanced": {
       "name": "平衡模式",
-      "description": "性能和功能的平衡，适合大多数场景",
+      "description": "性能和功能的平衡，适合日常使用场景",
       "config": {
-        "systemMode": {
-          "isSimpleMode": false
-        },
         "gostPlugins": {
           "authTimeout": 5,
           "observerTimeout": 10,
-          "limiterTimeout": 5
+          "limiterTimeout": 2,
+          "observerPeriod": 30
         },
         "cacheConfig": {
           "authCacheTimeout": 600000,
@@ -75,15 +75,13 @@
     },
     "highAvailability": {
       "name": "高可用模式",
-      "description": "追求最佳稳定性和实时性，适合关键业务",
+      "description": "追求最佳稳定性和节约性能，适合关键业务长期运行",
       "config": {
-        "systemMode": {
-          "isSimpleMode": false
-        },
         "gostPlugins": {
           "authTimeout": 10,
           "observerTimeout": 15,
-          "limiterTimeout": 10
+          "limiterTimeout": 2,
+          "observerPeriod": 60
         },
         "cacheConfig": {
           "authCacheTimeout": 300000,
@@ -124,13 +122,21 @@
         "impact": "低 - 仅影响统计准确性",
         "recommendation": "一般设置10-15秒即可"
       },
+      "observerPeriod": {
+        "name": "观察器周期",
+        "description": "流量统计的报告间隔，影响统计实时性和系统负载",
+        "unit": "秒",
+        "range": "6-600",
+        "impact": "中等 - 影响统计频率和性能消耗",
+        "recommendation": "高性能模式6秒(快速统计)，平衡模式30秒(日常使用)，高可用模式60秒(节约性能)"
+      },
       "limiterTimeout": {
         "name": "限制器超时",
-        "description": "流量限制检查的最大等待时间，直接影响每次数据传输的延迟",
+        "description": "流量限制检查的最大等待时间，直接影响每次数据传输的延迟。已优化为2秒以确保最小延迟",
         "unit": "秒",
         "range": "1-60",
         "impact": "高 - 直接影响转发性能",
-        "recommendation": "高性能场景3秒，一般场景5秒，严格限制场景10秒"
+        "recommendation": "所有模式统一使用2秒以确保最小传输延迟"
       }
     },
     "cacheConfig": {

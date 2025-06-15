@@ -51,8 +51,9 @@ class GostConfigService {
           include: [{
             model: User,
             as: 'user',
-            attributes: ['id', 'username', 'role']
-          }]
+            attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'expiryDate', 'trafficQuota', 'usedTraffic', 'portRangeStart', 'portRangeEnd', 'additionalPorts']
+          }],
+          attributes: ['id', 'name', 'description', 'protocol', 'sourcePort', 'targetAddress', 'listenAddress', 'listenAddressType', 'userId']
         });
         
       defaultLogger.info(`查询到 ${allRules.length} 条转发规则`);
@@ -66,17 +67,50 @@ class GostConfigService {
       
       // 转换规则格式并添加用户信息
       let formattedRules = [];
+
       try {
       // 确保allRules是数组
       if (!Array.isArray(allRules)) {
         defaultLogger.warn('查询结果不是数组，使用空数组');
         allRules = [];
       }
-      
-      formattedRules = allRules
+
+      // 🔧 修复：异步过滤活跃规则，使用新的异步端口检查方法
+      const activeRules = [];
+      defaultLogger.info(`🔍 开始异步检查 ${allRules.length} 条规则`);
+
+      for (const rule of allRules) {
+        try {
+          defaultLogger.info(`🔍 检查规则 ${rule.id} (端口 ${rule.sourcePort})，用户: ${rule.user?.username}`);
+
+          // 检查方法是否存在
+          if (typeof rule.getComputedIsActiveAsyncWithPortCheck !== 'function') {
+            defaultLogger.error(`❌ 规则 ${rule.id} 缺少 getComputedIsActiveAsyncWithPortCheck 方法`);
+            continue;
+          }
+
+          // 使用新的异步方法检查规则状态
+          const isActive = await rule.getComputedIsActiveAsyncWithPortCheck();
+          defaultLogger.info(`🔍 规则 ${rule.id} 异步检查结果: ${isActive}`);
+
+          if (isActive) {
+            activeRules.push(rule);
+            defaultLogger.info(`✅ 规则 ${rule.id} (端口 ${rule.sourcePort}) 通过异步检查，用户: ${rule.user?.username}`);
+          } else {
+            defaultLogger.info(`❌ 规则 ${rule.id} (端口 ${rule.sourcePort}) 未通过异步检查，用户: ${rule.user?.username}`);
+          }
+        } catch (error) {
+          defaultLogger.error(`❌ 检查规则 ${rule.id} 状态失败: ${error.message}`);
+          defaultLogger.error(`❌ 错误堆栈: ${error.stack}`);
+        }
+      }
+
+      defaultLogger.info(`🔍 异步检查完成，${activeRules.length} 条规则通过检查`);
+
+      formattedRules = activeRules
         .map(rule => this._formatRule(rule))
         .filter(Boolean); // 过滤掉null值
-      
+
       defaultLogger.info(`格式化了 ${formattedRules.length} 条有效规则`);
     } catch (formatError) {
       defaultLogger.error(`格式化规则失败: ${formatError ? formatError.message : '未知错误'}`);
@@ -105,6 +139,9 @@ class GostConfigService {
       // 添加观察器插件以支持流量统计
       this._addObserverPlugin(gostConfig, pluginConfig);
 
+      // 🔧 修复：添加限制器插件以支持流量限制
+      this._addLimiterPlugin(gostConfig, pluginConfig, isSimpleMode);
+
       // 为每个转发规则创建服务和链
       this._createServicesAndChains(gostConfig, formattedRules, disabledProtocols, pluginConfig, isSimpleMode);
 
@@ -130,6 +167,16 @@ class GostConfigService {
               type: "http",
               addr: "http://localhost:3000/api/gost-plugin/observer",
               timeout: "10s"
+            }
+          }
+        ],
+        limiters: [
+          {
+            name: "limiter-0",
+            plugin: {
+              type: "http",
+              addr: "http://localhost:3000/api/gost-plugin/limiter",
+              timeout: "5s"
             }
           }
         ],
@@ -161,12 +208,97 @@ class GostConfigService {
           }
         }
       ],
+      limiters: [
+        {
+          name: "limiter-0",
+          plugin: {
+            type: "http",
+            addr: "http://localhost:3000/api/gost-plugin/limiter",
+            timeout: "5s"
+          }
+        }
+      ],
       api: {
         addr: ":18080",
         pathPrefix: "/api",
         accesslog: false
       }
     };
+  }
+
+  /**
+   * 检查规则是否应该激活 - 使用模型的计算属性
+   * @private
+   */
+  async _isRuleActive(rule) {
+    try {
+      const user = rule.user;
+      if (!user) {
+        defaultLogger.warn(`规则 ${rule.id || 'unknown'} 没有关联用户，跳过`);
+        return false;
+      }
+
+      const ruleId = rule.id || 'unknown';
+      const username = user.username || 'unknown';
+
+      // 🔧 修复：如果用户的 additionalPorts 字段未加载，重新查询用户数据
+      if (user.additionalPorts === undefined) {
+        defaultLogger.warn(`规则 ${ruleId} 用户 ${username} 的 additionalPorts 字段未加载，重新查询用户数据`);
+        try {
+          const { User } = models;
+          const fullUser = await User.findByPk(user.id, {
+            attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'expiryDate', 'trafficQuota', 'usedTraffic', 'portRangeStart', 'portRangeEnd', 'additionalPorts']
+          });
+
+          if (fullUser) {
+            // 将完整的用户数据复制到当前用户对象
+            Object.assign(user, fullUser.dataValues);
+            defaultLogger.info(`✅ 已重新加载用户 ${username} 的完整数据，additionalPorts: ${user.additionalPorts}`);
+          } else {
+            defaultLogger.error(`❌ 无法重新查询用户 ${username} (ID: ${user.id})`);
+            return false;
+          }
+        } catch (reloadError) {
+          defaultLogger.error(`❌ 重新查询用户 ${username} 数据失败: ${reloadError.message}`);
+          return false;
+        }
+      }
+
+      // 使用模型的计算属性 isActive，它已经包含了所有必要的检查：
+      // - 用户基本状态 (isActive, userStatus)
+      // - 用户过期状态
+      // - 端口范围检查
+      // - 流量配额检查
+      const isActive = rule.isActive;
+
+      if (!isActive) {
+        defaultLogger.debug(`规则 ${ruleId} 用户 ${username} 计算状态为禁用`);
+        return false;
+      }
+
+      // 额外的基本验证
+      if (!rule.sourcePort || rule.sourcePort < 1 || rule.sourcePort > 65535) {
+        defaultLogger.debug(`规则 ${ruleId} 端口无效: ${rule.sourcePort}`);
+        return false;
+      }
+
+      if (!rule.targetAddress || rule.targetAddress.trim() === '') {
+        defaultLogger.debug(`规则 ${ruleId} 目标地址无效: ${rule.targetAddress}`);
+        return false;
+      }
+
+      const validProtocols = ['tcp', 'udp', 'tls'];
+      if (!rule.protocol || !validProtocols.includes(rule.protocol.toLowerCase())) {
+        defaultLogger.debug(`规则 ${ruleId} 协议无效: ${rule.protocol}`);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      const ruleId = rule ? (rule.id || 'unknown') : 'unknown';
+      defaultLogger.error(`检查规则活跃状态失败: ${ruleId}: ${error ? error.message : '未知错误'}`);
+      return false;
+    }
   }
 
   /**
@@ -343,9 +475,15 @@ class GostConfigService {
         return;
       }
 
-      // 确保pluginConfig存在
-      const timeout = pluginConfig && pluginConfig.observerTimeout ? pluginConfig.observerTimeout : "10s";
-      
+      // 确保pluginConfig存在，并正确处理timeout格式
+      let timeout = "10s"; // 默认值
+      if (pluginConfig && pluginConfig.observerTimeout) {
+        // 如果是数字，添加"s"后缀；如果已经是字符串，直接使用
+        timeout = typeof pluginConfig.observerTimeout === 'number'
+          ? `${pluginConfig.observerTimeout}s`
+          : pluginConfig.observerTimeout;
+      }
+
         gostConfig.observers = [
           {
             name: "observer-0",
@@ -365,7 +503,7 @@ class GostConfigService {
         };
     } catch (error) {
       defaultLogger.error(`配置观察器失败: ${error ? error.message : '未知错误'}`);
-      
+
         // 使用默认观察器配置
       if (gostConfig) {
         gostConfig.observers = [
@@ -388,6 +526,64 @@ class GostConfigService {
   }
 
   /**
+   * 🔧 修复：添加限制器插件以支持流量限制
+   * @private
+   */
+  _addLimiterPlugin(gostConfig, pluginConfig, isSimpleMode) {
+    try {
+      // 确保参数有效
+      if (!gostConfig) {
+        defaultLogger.warn('添加限制器失败: 无效的配置对象');
+        return;
+      }
+
+      // 🔧 只有在自动模式下才添加限制器插件
+      if (isSimpleMode) {
+        defaultLogger.info('🔧 单机模式下跳过限制器插件配置');
+        return;
+      }
+
+      // 确保pluginConfig存在，并正确处理timeout格式
+      let timeout = "5s"; // 默认值
+      if (pluginConfig && pluginConfig.limiterTimeout) {
+        // 如果是数字，添加"s"后缀；如果已经是字符串，直接使用
+        timeout = typeof pluginConfig.limiterTimeout === 'number'
+          ? `${pluginConfig.limiterTimeout}s`
+          : pluginConfig.limiterTimeout;
+      }
+
+      gostConfig.limiters = [
+        {
+          name: "limiter-0",
+          plugin: {
+            type: "http",
+            addr: "http://localhost:3000/api/gost-plugin/limiter",
+            timeout: timeout
+          }
+        }
+      ];
+
+      defaultLogger.info('🔧 已添加限制器插件配置');
+    } catch (error) {
+      defaultLogger.error(`配置限制器失败: ${error ? error.message : '未知错误'}`);
+
+      // 使用默认限制器配置
+      if (gostConfig && !isSimpleMode) {
+        gostConfig.limiters = [
+          {
+            name: "limiter-0",
+            plugin: {
+              type: "http",
+              addr: "http://localhost:3000/api/gost-plugin/limiter",
+              timeout: "5s"
+            }
+          }
+        ];
+      }
+    }
+  }
+
+  /**
    * 创建服务和链
    * @private
    */
@@ -402,17 +598,21 @@ class GostConfigService {
     if (!Array.isArray(gostConfig.services)) {
       gostConfig.services = [];
     }
-    
+
     if (!Array.isArray(gostConfig.chains)) {
       gostConfig.chains = [];
     }
-    
+
     // 确保pluginConfig存在
     if (!pluginConfig) {
       pluginConfig = {
         observerPeriod: "30s"
       };
     }
+
+    // 获取观察器周期配置
+    const observerPeriod = pluginConfig.observerPeriod || "30s";
+    defaultLogger.info(`🔧 使用观察器周期配置: ${observerPeriod}`);
     
     formattedRules.forEach((rule, index) => {
           try {
@@ -442,7 +642,7 @@ class GostConfigService {
             // 创建服务，包含完整的插件支持和IPv6监听地址支持
             const service = {
               name: serviceName,
-          addr: rule.getGostListenAddress ? rule.getGostListenAddress() : 
+          addr: rule.getGostListenAddress ? rule.getGostListenAddress() :
                 (rule.user && rule.user.role === 'admin') ? `0.0.0.0:${rule.sourcePort}` : `:${rule.sourcePort}`, // 支持IPv6监听地址和admin用户绑定所有接口
               observer: "observer-0",  // 服务级别的观察器
               handler: {
@@ -450,7 +650,7 @@ class GostConfigService {
                 chain: chainName,
                 metadata: {
                   // Handler 级别的观察器配置 - 使用动态配置
-                  "observer.period": pluginConfig.observerPeriod || "30s",
+                  "observer.period": observerPeriod,  // 使用配置文件中的观察器周期
                   "observer.resetTraffic": true,  // 启用增量流量模式
                 }
               },
@@ -461,7 +661,7 @@ class GostConfigService {
                 // 启用统计功能
                 enableStats: true,
                 // 观测器配置 - 使用动态配置
-                "observer.period": pluginConfig.observerPeriod || "30s",
+                "observer.period": observerPeriod,  // 使用配置文件中的观察器周期
                 "observer.resetTraffic": true,  // 启用增量流量模式
                 // 用户和规则信息
             userId: rule.userId || 0,
@@ -474,6 +674,11 @@ class GostConfigService {
             listenAddressType: rule.listenAddressType || 'ipv4'
               }
             };
+
+            // 🔧 修复：只有在自动模式下才添加限制器引用
+            if (!isSimpleMode) {
+              service.limiter = "limiter-0";
+            }
 
             // 创建链
             const chain = {

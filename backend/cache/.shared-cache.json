@@ -7,11 +7,16 @@
       "expiryDate": null,
       "trafficQuota": null,
       "trafficLimitBytes": 0,
-      "usedTraffic": 1180489913,
+      "usedTraffic": 1187844194,
       "status": "active",
       "portRanges": [],
+      "additionalPorts": [
+        12001,
+        12005,
+        12008
+      ],
       "isActive": true,
-      "lastUpdate": 1749902067389
+      "lastUpdate": 1749974702094
     },
     "2": {
       "id": 2,
@@ -20,7 +25,7 @@
       "expiryDate": "2025-08-09T00:00:00.000Z",
       "trafficQuota": 0.5,
       "trafficLimitBytes": 536870912,
-      "usedTraffic": 104859884,
+      "usedTraffic": 2350,
       "status": "active",
       "portRanges": [
         {
@@ -28,8 +33,15 @@
           "end": 10005
         }
       ],
+      "additionalPorts": [
+        12001,
+        12005,
+        12008,
+        16220,
+        6443
+      ],
       "isActive": true,
-      "lastUpdate": 1749902067389
+      "lastUpdate": 1749974702094
     },
     "5": {
       "id": 5,
@@ -46,22 +58,29 @@
           "end": 10063
         }
       ],
+      "additionalPorts": [],
       "isActive": true,
-      "lastUpdate": 1749902067389
+      "lastUpdate": 1749974702094
     }
   },
   "portMapping": {
-    "9080": {
-      "userId": 1,
-      "username": "admin",
-      "ruleId": 7,
-      "ruleName": "Admin HTTP Proxy"
+    "6443": {
+      "userId": 2,
+      "username": "test",
+      "ruleId": 10,
+      "ruleName": "6443"
     },
     "12001": {
       "userId": 1,
       "username": "admin",
       "ruleId": 8,
       "ruleName": "Test Auto Mode"
+    },
+    "28888": {
+      "userId": 1,
+      "username": "admin",
+      "ruleId": 9,
+      "ruleName": "Traffic Test Rule"
     },
     "29082": {
       "userId": 1,
@@ -70,6 +89,6 @@
       "ruleName": "Admin Rule 23"
     }
   },
-  "lastUpdate": 1749902067390,
+  "lastUpdate": 1749974702094,
   "updatedBy": "0"
 }

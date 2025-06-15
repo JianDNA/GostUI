@@ -163,8 +163,8 @@ router.post('/limiter', async (req, res) => {
     const { client, scope, service } = req.body;
     const multiInstanceCacheService = require('../services/multiInstanceCacheService');
 
-    // 无限制的网速 (不限制传输速度)
-    const unlimitedSpeed = 1073741824; // 1GB/s
+    // 无限制的网速 (根据GOST文档，0或负值表示无限制)
+    const unlimitedSpeed = 0; // 0 = 无限制
 
     if (!client) {
       // 没有用户标识，尝试从服务名解析
@@ -174,6 +174,7 @@ router.post('/limiter', async (req, res) => {
           const port = parseInt(portMatch[1]);
           const userMapping = multiInstanceCacheService.getPortUserMapping();
 
+          // 首先检查激活的端口映射
           if (userMapping[port]) {
             const { userId } = userMapping[port];
             const userCache = multiInstanceCacheService.getUserCache(userId);
@@ -188,20 +189,66 @@ router.post('/limiter', async (req, res) => {
               }
 
               if (userCache.status !== 'active') {
-                console.log(`🚫 用户 ${userCache.username} 状态异常: ${userCache.status}，禁止访问`);
-                return res.json({ in: 0, out: 0 });
+                console.log(`🚫 用户 ${userCache.username} 状态异常: ${userCache.status}，返回极低限速`);
+                return res.json({ in: 1, out: 1 }); // 极低限速
               }
 
               const trafficLimitBytes = userCache.trafficLimitBytes || 0;
               const usedTraffic = userCache.usedTraffic || 0;
 
               if (trafficLimitBytes > 0 && usedTraffic >= trafficLimitBytes) {
-                console.log(`🚫 用户 ${userCache.username} 流量超限: ${usedTraffic}/${trafficLimitBytes} 字节，禁止访问`);
-                return res.json({ in: 0, out: 0 });
+                console.log(`🚫 用户 ${userCache.username} 流量超限: ${usedTraffic}/${trafficLimitBytes} 字节，返回极低限速`);
+                return res.json({ in: 1, out: 1 }); // 极低限速
               }
 
               console.log(`✅ 用户 ${userCache.username} 可正常访问，流量使用: ${trafficLimitBytes > 0 ? (usedTraffic / trafficLimitBytes * 100).toFixed(1) : 0}%`);
               return res.json({ in: unlimitedSpeed, out: unlimitedSpeed });
+            }
+          } else {
+            // 🔧 新增：如果激活映射中没有找到，查询数据库中的历史规则
+            console.log(`🔍 端口 ${port} 不在激活映射中，查询数据库历史规则...`);
+            try {
+              const { UserForwardRule } = require('../models');
+              const rule = await UserForwardRule.findOne({
+                where: { sourcePort: port },
+                include: [{
+                  model: require('../models').User,
+                  as: 'user',
+                  attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'trafficQuota', 'usedTraffic']
+                }]
+              });
+
+              if (rule && rule.user) {
+                console.log(`🔍 通过数据库找到端口 ${port} 的用户: ${rule.user.username}`);
+
+                // 检查流量限制
+                if (rule.user.role === 'admin') {
+                  console.log(`👑 管理员用户 ${rule.user.username} 不受流量限制`);
+                  return res.json({ in: unlimitedSpeed, out: unlimitedSpeed });
+                }
+
+                if (!rule.user.isActive || rule.user.userStatus !== 'active') {
+                  console.log(`🚫 用户 ${rule.user.username} 状态异常，返回极低限速`);
+                  return res.json({ in: 1, out: 1 }); // 极低限速
+                }
+
+                // 检查流量是否超限
+                const trafficQuota = rule.user.trafficQuota || 0; // GB
+                const usedTraffic = rule.user.usedTraffic || 0;   // bytes
+
+                if (trafficQuota > 0) {
+                  const quotaBytes = trafficQuota * 1024 * 1024 * 1024; // 转换为字节
+                  if (usedTraffic >= quotaBytes) {
+                    console.log(`🚫 用户 ${rule.user.username} 流量超限: ${(usedTraffic / 1024 / 1024 / 1024).toFixed(2)}GB/${trafficQuota}GB，返回极低限速`);
+                    return res.json({ in: 1, out: 1 }); // 极低限速
+                  }
+                }
+
+                console.log(`✅ 用户 ${rule.user.username} 可正常访问，流量使用: ${trafficQuota > 0 ? ((usedTraffic / (trafficQuota * 1024 * 1024 * 1024)) * 100).toFixed(1) : 0}%`);
+                return res.json({ in: unlimitedSpeed, out: unlimitedSpeed });
+              }
+            } catch (error) {
+              console.error(`❌ 查询端口 ${port} 历史规则失败:`, error);
             }
           }
         }
@@ -226,8 +273,9 @@ router.post('/limiter', async (req, res) => {
 
     const userCache = multiInstanceCacheService.getUserCache(userId);
     if (!userCache) {
-      console.log(`🚫 用户 ${userId} 不存在，禁止访问`);
-      return res.json({ in: 0, out: 0 });
+      console.log(`🚫 用户 ${userId} 不存在，返回极低限速`);
+      // 🔧 修复：返回极低限速（认证器应该已经拒绝了，这里是双重保险）
+      return res.json({ in: 1, out: 1 }); // 极低限速
     }
 
     // Admin 用户不受任何限制
@@ -238,8 +286,9 @@ router.post('/limiter', async (req, res) => {
 
     // 检查用户状态
     if (userCache.status !== 'active') {
-      console.log(`🚫 用户 ${userCache.username} 状态异常: ${userCache.status}，禁止访问`);
-      return res.json({ in: 0, out: 0 });
+      console.log(`🚫 用户 ${userCache.username} 状态异常: ${userCache.status}，返回极低限速`);
+      // 🔧 修复：返回极低限速（认证器应该已经拒绝了，这里是双重保险）
+      return res.json({ in: 1, out: 1 }); // 极低限速
     }
 
     // 检查流量是否超限
@@ -247,8 +296,9 @@ router.post('/limiter', async (req, res) => {
     const usedTraffic = userCache.usedTraffic || 0;
 
     if (trafficLimitBytes > 0 && usedTraffic >= trafficLimitBytes) {
-      console.log(`🚫 用户 ${userCache.username} 流量超限: ${usedTraffic}/${trafficLimitBytes} 字节，禁止访问`);
-      return res.json({ in: 0, out: 0 });
+      console.log(`🚫 用户 ${userCache.username} 流量超限: ${usedTraffic}/${trafficLimitBytes} 字节，返回极低限速`);
+      // 🔧 修复：返回极低限速（认证器应该已经拒绝了，这里是双重保险）
+      return res.json({ in: 1, out: 1 }); // 极低限速
     }
 
     // 用户状态正常且未超限，返回无限制网速
@@ -262,7 +312,7 @@ router.post('/limiter', async (req, res) => {
   } catch (error) {
     console.error('❌ GOST 限制器处理失败:', error);
     // 出错时返回无限制，避免影响服务
-    res.json({ in: 1073741824, out: 1073741824 });
+    res.json({ in: 0, out: 0 });
   }
 });
 

@@ -15,7 +15,10 @@ class UserService {
 
   async authenticate(username, password) {
     try {
-      const user = await User.findOne({ where: { username } });
+      const user = await User.findOne({
+      where: { username },
+      attributes: ['id', 'username', 'email', 'role', 'password', 'trafficQuota', 'portRange', 'isActive', 'additionalPorts', 'portRangeStart', 'portRangeEnd', 'userStatus']
+    });
       if (!user) {
         throw new Error('User not found');
       }
@@ -54,7 +57,9 @@ class UserService {
 
   async updateUser(userId, updateData) {
     try {
-      const user = await User.findByPk(userId);
+      const user = await User.findByPk(userId, {
+      attributes: ['id', 'username', 'email', 'role', 'trafficQuota', 'portRange', 'isActive', 'additionalPorts', 'portRangeStart', 'portRangeEnd', 'userStatus']
+    });
       if (!user) {
         throw new Error('User not found');
       }
@@ -68,7 +73,9 @@ class UserService {
 
   async deleteUser(userId) {
     try {
-      const user = await User.findByPk(userId);
+      const user = await User.findByPk(userId, {
+      attributes: ['id', 'username', 'email', 'role', 'trafficQuota', 'portRange', 'isActive', 'additionalPorts', 'portRangeStart', 'portRangeEnd', 'userStatus']
+    });
       if (!user) {
         throw new Error('User not found');
       }

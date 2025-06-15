@@ -203,7 +203,7 @@ class MultiInstanceCacheService {
         include: [{
           model: User,
           as: 'user',
-          attributes: ['id', 'username', 'expiryDate', 'isActive', 'userStatus', 'role', 'portRangeStart', 'portRangeEnd']
+          attributes: ['id', 'username', 'expiryDate', 'isActive', 'userStatus', 'role', 'portRangeStart', 'portRangeEnd', 'additionalPorts']
         }]
       });
 
@@ -230,6 +230,9 @@ class MultiInstanceCacheService {
           });
         }
 
+        // 🔧 修复：处理额外端口
+        const additionalPorts = user.getAdditionalPorts ? user.getAdditionalPorts() : [];
+
         // 🔧 修复：添加 trafficLimitBytes 字段，用于限制器检查
         const trafficLimitBytes = user.trafficQuota ? user.trafficQuota * 1024 * 1024 * 1024 : 0; // 转换 GB 到字节
 
@@ -243,6 +246,7 @@ class MultiInstanceCacheService {
           usedTraffic: user.usedTraffic || 0,
           status: (!user.expiryDate || new Date(user.expiryDate) > new Date()) ? 'active' : 'inactive', // 🔧 添加状态字段
           portRanges: portRanges,
+          additionalPorts: additionalPorts, // 🔧 新增：额外端口列表
           isActive: !user.expiryDate || new Date(user.expiryDate) > new Date(), // 简化活跃状态判断
           lastUpdate: Date.now()
         };
@@ -351,12 +355,16 @@ class MultiInstanceCacheService {
       // 先检查内存缓存
       const cachedUser = this.getUserCache(userId);
       if (cachedUser) {
-        return this.checkPortInRanges(port, cachedUser.portRanges) && cachedUser.isActive;
+        // 检查端口范围
+        const inRange = this.checkPortInRanges(port, cachedUser.portRanges);
+        // 检查额外端口
+        const inAdditional = cachedUser.additionalPorts && cachedUser.additionalPorts.includes(port);
+        return (inRange || inAdditional) && cachedUser.isActive;
       }
 
       // 缓存未命中，查询数据库
       const user = await User.findByPk(userId, {
-        attributes: ['id', 'expiryDate', 'portRangeStart', 'portRangeEnd']
+        attributes: ['id', 'expiryDate', 'portRangeStart', 'portRangeEnd', 'additionalPorts', 'userStatus', 'isActive']
       });
 
       if (!user) {
@@ -374,7 +382,13 @@ class MultiInstanceCacheService {
         });
       }
 
-      return this.checkPortInRanges(port, portRanges) && isActive;
+      // 检查端口范围
+      const inRange = this.checkPortInRanges(port, portRanges);
+      // 检查额外端口
+      const additionalPorts = user.getAdditionalPorts ? user.getAdditionalPorts() : [];
+      const inAdditional = additionalPorts.includes(port);
+
+      return (inRange || inAdditional) && isActive;
     } catch (error) {
       console.error(`❌ 检查用户 ${userId} 端口 ${port} 权限失败:`, error);
       return false;
@@ -548,7 +562,7 @@ class MultiInstanceCacheService {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         return await User.findAll({
-          attributes: ['id', 'username', 'role', 'expiryDate', 'trafficQuota', 'usedTraffic', 'portRangeStart', 'portRangeEnd']
+          attributes: ['id', 'username', 'role', 'expiryDate', 'trafficQuota', 'usedTraffic', 'portRangeStart', 'portRangeEnd', 'additionalPorts', 'userStatus', 'isActive']
         });
       } catch (error) {
         if (error.name === 'SequelizeDatabaseError' && error.original?.code === 'SQLITE_IOERR') {

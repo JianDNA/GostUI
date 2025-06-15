@@ -2,16 +2,18 @@
   "name": "gost-manager-frontend",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
-    "serve": "vue-cli-service serve",
-    "build": "vue-cli-service build",
-    "lint": "vue-cli-service lint",
+    "dev": "node scripts/vite-dev.js",
+    "serve": "node scripts/vite-dev.js",
+    "build": "node scripts/vite-build.js",
+    "preview": "node scripts/vite-preview.js",
+    "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs --fix --ignore-path .gitignore",
     "format": "prettier --write \"src/**/*.{js,vue,scss,css}\""
   },
   "dependencies": {
     "axios": "^1.4.0",
     "chart.js": "^4.3.0",
-    "core-js": "^3.30.2",
     "echarts": "^5.6.0",
     "element-plus": "^2.3.4",
     "vue": "^3.3.2",
@@ -20,22 +22,12 @@
     "vuex": "^4.1.0"
   },
   "devDependencies": {
-    "@babel/core": "^7.22.5",
-    "@babel/eslint-parser": "^7.22.5",
-    "@babel/preset-env": "^7.22.5",
-    "@vue/cli-plugin-babel": "~5.0.8",
-    "@vue/cli-plugin-eslint": "~5.0.8",
-    "@vue/cli-plugin-router": "~5.0.8",
-    "@vue/cli-plugin-vuex": "~5.0.8",
-    "@vue/cli-service": "~5.0.8",
-    "@vue/compiler-sfc": "^3.3.2",
-    "babel-eslint": "^10.1.0",
-    "eslint": "^7.32.0",
-    "eslint-config-prettier": "^8.8.0",
-    "eslint-plugin-prettier": "^4.2.1",
-    "eslint-plugin-vue": "^9.11.0",
-    "prettier": "^2.8.8",
+    "@vitejs/plugin-vue": "^4.2.3",
+    "@vue/eslint-config-prettier": "^8.0.0",
+    "eslint": "^8.45.0",
+    "eslint-plugin-vue": "^9.15.1",
+    "prettier": "^3.0.0",
     "sass": "^1.63.6",
-    "sass-loader": "^13.3.2"
+    "vite": "^4.4.5"
   }
 }

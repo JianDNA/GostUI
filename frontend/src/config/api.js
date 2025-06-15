@@ -11,21 +11,21 @@
 const API_CONFIGS = {
   // 直连后端 (开发模式)
   direct: {
-    baseURL: 'http://localhost:3000/api',
+    baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api',
     description: '直连后端服务 (不经过 GOST)',
     useFor: '开发调试'
   },
-  
+
   // 通过 GOST 代理 (流量测试模式)
   gost: {
     baseURL: 'http://localhost:6443/api',
     description: '通过 GOST 端口 6443 代理',
     useFor: '流量统计测试'
   },
-  
+
   // 生产环境
   production: {
-    baseURL: '/api',
+    baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
     description: '生产环境相对路径',
     useFor: '生产部署'
   }
@@ -35,8 +35,8 @@ const API_CONFIGS = {
 // 可以通过环境变量或手动修改来切换
 const getCurrentConfig = () => {
   // 检查环境变量
-  if (process.env.VUE_APP_API_MODE) {
-    const mode = process.env.VUE_APP_API_MODE;
+  if (import.meta.env.VITE_API_MODE) {
+    const mode = import.meta.env.VITE_API_MODE;
     if (API_CONFIGS[mode]) {
       console.log(`🔧 使用环境变量指定的 API 模式: ${mode}`);
       return API_CONFIGS[mode];
@@ -51,7 +51,7 @@ const getCurrentConfig = () => {
   }
   
   // 默认配置
-  const defaultMode = process.env.NODE_ENV === 'production' ? 'production' : 'direct';
+  const defaultMode = import.meta.env.MODE === 'production' ? 'production' : 'direct';
   console.log(`🔧 使用默认 API 模式: ${defaultMode}`);
   return API_CONFIGS[defaultMode];
 };

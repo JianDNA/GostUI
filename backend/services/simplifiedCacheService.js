@@ -67,7 +67,7 @@ class SimplifiedCacheService {
     try {
       // 获取用户数据
       const users = await User.findAll({
-        attributes: ['id', 'username', 'role', 'expiryDate', 'trafficQuota', 'usedTraffic']
+        attributes: ['id', 'username', 'role', 'expiryDate', 'trafficQuota', 'usedTraffic', 'portRangeStart', 'portRangeEnd', 'additionalPorts', 'userStatus', 'isActive']
       });
 
       // 🔧 修复: 获取所有规则，然后使用计算属性过滤活跃规则
@@ -75,7 +75,7 @@ class SimplifiedCacheService {
         include: [{
           model: User,
           as: 'user',
-          attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'expiryDate', 'portRangeStart', 'portRangeEnd', 'trafficQuota', 'usedTraffic']
+          attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'expiryDate', 'portRangeStart', 'portRangeEnd', 'trafficQuota', 'usedTraffic', 'additionalPorts']
         }]
       });
 

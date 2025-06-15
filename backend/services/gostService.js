@@ -1626,26 +1626,57 @@ class GostService {
     }
 
     try {
-      // 比较关键配置项
+      // 🔧 智能配置比较：按服务名称排序后比较，忽略顺序差异
       const oldServices = oldConfig.services || [];
       const newServices = newConfig.services || [];
 
-      // 服务数量变化
-      if (oldServices.length !== newServices.length) {
-        console.log(`🔍 服务数量变化: ${oldServices.length} -> ${newServices.length}`);
+      // 创建服务映射表
+      const oldServiceMap = new Map();
+      const newServiceMap = new Map();
+
+      oldServices.forEach(service => {
+        oldServiceMap.set(service.name, service);
+      });
+
+      newServices.forEach(service => {
+        newServiceMap.set(service.name, service);
+      });
+
+      // 比较服务集合
+      const oldServiceNames = Array.from(oldServiceMap.keys()).sort();
+      const newServiceNames = Array.from(newServiceMap.keys()).sort();
+
+      if (oldServiceNames.length !== newServiceNames.length) {
+        console.log(`🔍 服务数量变化: ${oldServiceNames.length} -> ${newServiceNames.length}`);
+        console.log(`🔍 旧服务: [${oldServiceNames.join(', ')}]`);
+        console.log(`🔍 新服务: [${newServiceNames.join(', ')}]`);
         return true;
       }
 
-      // 逐个比较服务配置
-      for (let i = 0; i < newServices.length; i++) {
-        const oldService = oldServices[i];
-        const newService = newServices[i];
+      // 检查服务名称是否有变化
+      for (let i = 0; i < oldServiceNames.length; i++) {
+        if (oldServiceNames[i] !== newServiceNames[i]) {
+          console.log(`🔍 服务名称变化: ${oldServiceNames[i]} -> ${newServiceNames[i]}`);
+          return true;
+        }
+      }
 
-        if (!oldService ||
-            oldService.name !== newService.name ||
-            oldService.addr !== newService.addr ||
-            JSON.stringify(oldService.handler) !== JSON.stringify(newService.handler)) {
-          console.log(`🔍 服务配置变化: ${newService.name}`);
+      // 逐个比较相同名称的服务配置
+      for (const serviceName of newServiceNames) {
+        const oldService = oldServiceMap.get(serviceName);
+        const newService = newServiceMap.get(serviceName);
+
+        if (!oldService) {
+          console.log(`🔍 新增服务: ${serviceName}`);
+          return true;
+        }
+
+        // 比较关键配置项
+        if (oldService.addr !== newService.addr ||
+            JSON.stringify(oldService.handler) !== JSON.stringify(newService.handler) ||
+            JSON.stringify(oldService.listener) !== JSON.stringify(newService.listener)) {
+          console.log(`🔍 服务配置变化: ${serviceName}`);
+          console.log(`🔍   地址: ${oldService.addr} -> ${newService.addr}`);
           return true;
         }
       }

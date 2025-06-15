@@ -77,19 +77,88 @@ module.exports = (sequelize) => {
       return additionalPorts.includes(port);
     }
 
+    // 异步检查端口是否在用户允许的范围内（用于解决数据加载问题）
+    async isPortInRangeAsync(port) {
+      // Admin 用户可以使用任意端口
+      if (this.role === 'admin') {
+        return true;
+      }
+
+      // 检查端口范围
+      if (this.portRangeStart && this.portRangeEnd) {
+        if (port >= this.portRangeStart && port <= this.portRangeEnd) {
+          return true;
+        }
+      }
+
+      // 异步检查额外端口列表
+      const additionalPorts = await this.getAdditionalPortsAsync();
+      return additionalPorts.includes(port);
+    }
+
     // 获取额外端口列表
     getAdditionalPorts() {
       console.log(`[getAdditionalPorts] 用户 ${this.id} 的原始额外端口数据:`, this.additionalPorts);
-      
+
+      // 🔧 修复：如果字段未加载，尝试从数据库重新获取
+      if (this.additionalPorts === undefined) {
+        console.log(`[getAdditionalPorts] 用户 ${this.id} 的 additionalPorts 字段未加载，尝试同步获取`);
+
+        // 尝试从当前实例的 dataValues 中获取
+        if (this.dataValues && this.dataValues.additionalPorts !== undefined) {
+          console.log(`[getAdditionalPorts] 从 dataValues 获取用户 ${this.id} 的额外端口:`, this.dataValues.additionalPorts);
+          const additionalPorts = this.dataValues.additionalPorts;
+          if (additionalPorts) {
+            try {
+              const parsed = JSON.parse(additionalPorts);
+              if (Array.isArray(parsed)) {
+                console.log(`[getAdditionalPorts] 用户 ${this.id} 从 dataValues 解析后的额外端口:`, parsed);
+                return parsed;
+              }
+            } catch (error) {
+              console.warn(`[getAdditionalPorts] 用户 ${this.id} 从 dataValues 解析额外端口失败:`, error);
+            }
+          }
+        }
+
+        // 🔧 最后的fallback：尝试同步查询数据库
+        try {
+          console.log(`[getAdditionalPorts] 尝试从数据库同步查询用户 ${this.id} 的额外端口`);
+          const sequelize = require('sequelize');
+          const { QueryTypes } = sequelize;
+          const dbService = require('../services/dbService');
+
+          // 使用原生SQL查询，避免Sequelize缓存问题
+          const result = dbService.sequelize.query(
+            'SELECT additionalPorts FROM Users WHERE id = ?',
+            {
+              replacements: [this.id],
+              type: QueryTypes.SELECT,
+              raw: true
+            }
+          );
+
+          // 注意：这是一个同步方法，但我们需要异步查询
+          // 作为临时解决方案，我们返回空数组并记录警告
+          console.warn(`[getAdditionalPorts] 用户 ${this.id} 需要异步查询数据库，暂时返回空数组`);
+
+        } catch (dbError) {
+          console.error(`[getAdditionalPorts] 数据库查询失败:`, dbError);
+        }
+
+        console.log(`[getAdditionalPorts] 用户 ${this.id} 无法获取额外端口数据，返回空数组`);
+        return [];
+      }
+
       if (!this.additionalPorts) {
         console.log(`[getAdditionalPorts] 用户 ${this.id} 没有额外端口数据`);
         return [];
       }
-      
+
       try {
         const parsed = JSON.parse(this.additionalPorts);
         console.log(`[getAdditionalPorts] 用户 ${this.id} 解析后的额外端口:`, parsed);
-        
+
         if (Array.isArray(parsed)) {
           return parsed;
         } else {
@@ -98,6 +167,56 @@ module.exports = (sequelize) => {
         }
       } catch (error) {
         console.warn(`[getAdditionalPorts] 用户 ${this.id} 的额外端口数据格式错误:`, error);
+        return [];
+      }
+    }
+
+    // 异步获取额外端口列表（用于解决数据加载问题）
+    async getAdditionalPortsAsync() {
+      console.log(`[getAdditionalPortsAsync] 用户 ${this.id} 异步获取额外端口`);
+
+      // 首先尝试同步方法
+      if (this.additionalPorts !== undefined) {
+        return this.getAdditionalPorts();
+      }
+
+      // 如果字段未加载，从数据库重新查询
+      try {
+        console.log(`[getAdditionalPortsAsync] 从数据库重新查询用户 ${this.id} 的额外端口`);
+        const dbService = require('../services/dbService');
+        const { User } = dbService.models;
+
+        const fullUser = await User.findByPk(this.id, {
+          attributes: ['additionalPorts']
+        });
+
+        if (fullUser && fullUser.additionalPorts !== undefined) {
+          console.log(`[getAdditionalPortsAsync] 查询到用户 ${this.id} 的额外端口:`, fullUser.additionalPorts);
+
+          // 更新当前实例的数据
+          this.additionalPorts = fullUser.additionalPorts;
+
+          // 解析并返回
+          if (!fullUser.additionalPorts) {
+            return [];
+          }
+
+          try {
+            const parsed = JSON.parse(fullUser.additionalPorts);
+            if (Array.isArray(parsed)) {
+              console.log(`[getAdditionalPortsAsync] 用户 ${this.id} 解析后的额外端口:`, parsed);
+              return parsed;
+            }
+          } catch (parseError) {
+            console.warn(`[getAdditionalPortsAsync] 解析额外端口失败:`, parseError);
+          }
+        }
+
+        console.log(`[getAdditionalPortsAsync] 用户 ${this.id} 没有额外端口数据`);
+        return [];
+
+      } catch (error) {
+        console.error(`[getAdditionalPortsAsync] 查询失败:`, error);
         return [];
       }
     }

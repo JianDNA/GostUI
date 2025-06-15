@@ -11,7 +11,7 @@ const request = axios.create({
 });
 
 // 在开发环境下显示当前 API 配置
-if (process.env.NODE_ENV === 'development') {
+if (import.meta.env.DEV) {
   console.log('🔧 当前 API 配置:', API_CONFIG);
   console.log('📡 API 基础地址:', API_BASE_URL);
 }

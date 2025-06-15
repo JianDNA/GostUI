@@ -54,7 +54,9 @@ const handleCommand = async (command) => {
 
 .left h2 {
   margin: 0;
-  color: #303133;
+  color: #ffffff;
+  font-weight: 600;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 .right {
@@ -66,7 +68,16 @@ const handleCommand = async (command) => {
   cursor: pointer;
   display: flex;
   align-items: center;
-  color: #303133;
+  color: #ffffff;
+  font-weight: 500;
+  padding: 8px 12px;
+  border-radius: 6px;
+  transition: all 0.3s ease;
+}
+
+.el-dropdown-link:hover {
+  background: rgba(255, 255, 255, 0.1);
+  transform: translateY(-1px);
 }
 
 .el-icon--right {

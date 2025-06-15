@@ -221,6 +221,33 @@ class QuotaEnforcementService {
   }
 
   /**
+   * 🔧 新增：立即触发GOST配置同步
+   */
+  async triggerImmediateSync(userId, trigger, reason) {
+    try {
+      console.log(`🔄 [配额强制] 立即同步GOST配置 - 触发: ${trigger}, 原因: ${reason}`);
+
+      // 使用同步协调器立即执行同步
+      const gostSyncCoordinator = require('./gostSyncCoordinator');
+
+      const result = await gostSyncCoordinator.requestSync(
+        trigger,
+        true,  // 强制同步
+        9      // 高优先级
+      );
+
+      if (result.success || result.queued) {
+        console.log(`✅ [配额强制] GOST配置同步已触发 - 触发: ${trigger}`);
+      } else {
+        console.error(`❌ [配额强制] GOST配置同步失败 - 触发: ${trigger}, 错误: ${result.error}`);
+      }
+
+    } catch (error) {
+      console.error(`❌ [配额强制] 立即同步失败 - 触发: ${trigger}:`, error);
+    }
+  }
+
+  /**
    * 手动执行配额检查
    */
   async manualCheck() {
@@ -271,6 +298,9 @@ class QuotaEnforcementService {
             console.log(`🚫 [配额强制] 立即禁用规则 ${rule.id} (${rule.name}) - 原因: ${quotaCheck.reason}`);
             await this.disableRule(rule, quotaCheck.reason);
             enforcedCount++;
+
+            // 🔧 新增：立即触发GOST配置同步
+            await this.triggerImmediateSync(userId, `rule_disabled_${rule.id}`, quotaCheck.reason);
           }
         } else {
           // 用户配额正常，恢复被禁用的规则
@@ -278,6 +308,9 @@ class QuotaEnforcementService {
             console.log(`✅ [配额强制] 立即恢复规则 ${rule.id} (${rule.name})`);
             await this.enableRule(rule);
             restoredCount++;
+
+            // 🔧 新增：立即触发GOST配置同步
+            await this.triggerImmediateSync(userId, `rule_enabled_${rule.id}`, 'quota_restored');
           }
         }
       }

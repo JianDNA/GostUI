@@ -723,6 +723,11 @@ router.put('/:id', auth, async (req, res) => {
             const cacheCoordinator = require('../services/cacheCoordinator');
             await cacheCoordinator.clearUserRelatedCache(user.id, 'quota_update');
             console.log(`✅ 用户 ${user.id} 所有相关缓存已清理`);
+
+            // 🔄 新增: 触发GOST配置同步
+            const gostSyncTrigger = require('../services/gostSyncTrigger');
+            await gostSyncTrigger.onUserUpdate(user.id, 'quota_change', true);
+            console.log(`✅ 用户 ${user.id} 配额变更后GOST配置同步已触发`);
           } catch (cacheError) {
             console.warn('⚠️ 清理用户缓存失败:', cacheError.message);
           }
@@ -747,9 +752,9 @@ router.put('/:id', auth, async (req, res) => {
         await cacheCoordinator.clearUserRelatedCache(user.id, 'status_update');
         console.log(`✅ 用户 ${user.id} 状态更新相关缓存已清理`);
 
-        // 强制触发GOST配置同步
-        const gostConfigService = require('../services/gostConfigService');
-        await gostConfigService.triggerSync('status_update', true, 10);
+        // 🔄 新增: 使用同步触发器
+        const gostSyncTrigger = require('../services/gostSyncTrigger');
+        await gostSyncTrigger.onUserUpdate(user.id, 'status_change', true);
 
         console.log(`✅ 用户 ${user.id} 状态更新后GOST配置同步成功`);
       } catch (error) {
@@ -775,9 +780,9 @@ router.put('/:id', auth, async (req, res) => {
         await cacheCoordinator.clearUserRelatedCache(user.id, 'port_range_update');
         console.log(`✅ 用户 ${user.id} 端口范围更新相关缓存已清理`);
 
-        // 触发 Gost 配置同步
-        const gostConfigService = require('../services/gostConfigService');
-        gostConfigService.triggerSync().catch(error => {
+        // 🔄 新增: 使用同步触发器
+        const gostSyncTrigger = require('../services/gostSyncTrigger');
+        gostSyncTrigger.onPortUpdate(user.id, 'port_range_change', false).catch(error => {
           console.error('更新用户后同步配置失败:', error);
         });
       } catch (error) {
@@ -1260,7 +1265,9 @@ router.post('/:id/reset-traffic', auth, async (req, res) => {
         process.env.FORCE_GOST_UPDATE = 'true';
 
         try {
-          await gostConfigService.triggerSync('traffic_reset', true, 10);
+          // 🔄 新增: 使用同步触发器
+          const gostSyncTrigger = require('../services/gostSyncTrigger');
+          await gostSyncTrigger.onTrafficUpdate(userId, 'traffic_reset', true);
           console.log('✅ 流量重置后GOST配置同步成功');
 
           // 强制触发配额重新评估，确保规则立即激活

@@ -13,7 +13,10 @@ router.post('/login', async (req, res) => {
     console.log('Login attempt:', { username });
 
     // 查找用户
-    const user = await User.findOne({ where: { username } });
+    const user = await User.findOne({
+      where: { username },
+      attributes: ['id', 'username', 'role', 'password', 'isActive', 'userStatus', 'additionalPorts', 'portRangeStart', 'portRangeEnd']
+    });
     if (!user) {
       console.log('User not found:', username);
       return res.status(401).json({ message: '用户名或密码错误' });

@@ -120,6 +120,22 @@ class GostAuthService {
         return result;
       }
 
+      // 🔧 新增：检查流量限制（管理员除外）
+      if (user.role !== 'admin') {
+        const trafficQuota = user.trafficQuota || 0; // GB
+        const usedTraffic = user.usedTraffic || 0;   // bytes
+
+        if (trafficQuota > 0) {
+          const quotaBytes = trafficQuota * 1024 * 1024 * 1024; // 转换为字节
+          if (usedTraffic >= quotaBytes) {
+            console.log(`🚫 [认证器] 用户 ${user.username} 流量超限: ${(usedTraffic / 1024 / 1024 / 1024).toFixed(2)}GB/${trafficQuota}GB，拒绝连接`);
+            const result = { ok: false, id: '', secret: '' };
+            this.authResultCache.set(authCacheKey, { result, timestamp: Date.now() });
+            return result;
+          }
+        }
+      }
+
       // 认证成功，返回用户标识
       const clientId = `user_${user.id}`;
       console.log(`✅ [认证器] 用户 ${user.username} 认证成功，客户端ID: ${clientId}`);
@@ -249,7 +265,7 @@ class GostAuthService {
       // 🚀 优化: 最后才查询数据库 (并优化查询字段)
       console.log(`🔍 [认证器] 从数据库查询用户 ${userId}`);
       const user = await User.findByPk(userId, {
-        attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'trafficQuota', 'usedTraffic']
+        attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'trafficQuota', 'usedTraffic', 'additionalPorts', 'portRangeStart', 'portRangeEnd']
       });
 
       this.stats.dbQueries++;
@@ -439,7 +455,7 @@ class GostAuthService {
       // 目前简化处理，主要依赖端口映射
       const user = await User.findOne({
         where: { username },
-        attributes: ['id', 'username', 'role', 'isActive', 'userStatus']
+        attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'additionalPorts', 'portRangeStart', 'portRangeEnd']
       });
 
       if (!user) {

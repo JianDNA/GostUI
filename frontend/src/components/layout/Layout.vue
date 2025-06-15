@@ -79,7 +79,7 @@ const canUseTrafficTest = computed(() => {
 
 <style scoped>
 .app-wrapper {
-  height: 100vh;
+  min-height: 100vh;
 }
 
 .sidebar-container {
@@ -98,14 +98,17 @@ const canUseTrafficTest = computed(() => {
 }
 
 .header {
-  background-color: #fff;
-  border-bottom: 1px solid #dcdfe6;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   padding: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .el-main {
-  padding: 20px;
+  padding: 0;
   margin-left: 200px;
+  background: #f5f7fa;
+  min-height: calc(100vh - 60px);
 }
 
 /* 过渡动画 */

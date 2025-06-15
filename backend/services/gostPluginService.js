@@ -31,6 +31,9 @@ class GostPluginService {
     // 累积值跟踪 - 用于计算增量流量 (解决GOST累积值重复计算问题)
     this.lastCumulativeStats = new Map(); // key: "userId:port", value: { inputBytes, outputBytes, timestamp }
 
+    // 🔧 修复：累积流量跟踪 (修复resetTraffic=false模式下的流量计算)
+    this.lastReportedTraffic = new Map(); // key: serviceName, value: totalBytes
+
     // 🔧 用户级别的互斥锁，防止并发更新导致的竞态条件
     this.userUpdateLocks = new Map(); // key: userId, value: Promise
 
@@ -208,8 +211,8 @@ class GostPluginService {
 
       console.log(`🚦 限制器请求: 用户=${client}, 范围=${scope} (检查流量限制)`);
 
-      // 无限制的网速 (不限制传输速度)
-      const unlimitedSpeed = 1073741824; // 1GB/s
+      // 无限制的网速 (根据GOST文档，0或负值表示无限制)
+      const unlimitedSpeed = 0; // 0 = 无限制
 
       if (!client) {
         // 没有用户标识，返回无限制
@@ -277,8 +280,8 @@ class GostPluginService {
       console.error('❌ 限制器处理失败:', error);
       // 出错时返回保守的无限制
       res.json({
-        in: 1073741824,
-        out: 1073741824
+        in: 0,
+        out: 0
       });
     }
   }
@@ -336,6 +339,61 @@ class GostPluginService {
   }
 
   /**
+   * 🔧 修复：过滤错误连接的流量
+   * @param {Object} event - 观察器事件
+   * @returns {boolean} 是否应该统计流量
+   */
+  shouldCountTraffic(event) {
+    const { stats } = event;
+
+    // 如果有错误且没有实际数据传输，不统计流量
+    if (stats.totalErrs > 0 && stats.inputBytes === 0 && stats.outputBytes === 0) {
+      console.log(`⚠️ 服务 ${event.service} 有错误且无数据传输，跳过流量统计`);
+      return false;
+    }
+
+    // 如果连接数为0但有流量，可能是异常情况
+    if (stats.totalConns === 0 && (stats.inputBytes > 0 || stats.outputBytes > 0)) {
+      console.log(`⚠️ 服务 ${event.service} 无连接但有流量，可能是异常情况`);
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * 🔧 修复：计算真实的增量流量 (处理resetTraffic=false模式)
+   * @param {string} serviceName - 服务名
+   * @param {Object} currentStats - 当前统计数据
+   * @returns {Object} 真实的增量流量
+   */
+  calculateRealIncrement(serviceName, currentStats) {
+    const { inputBytes = 0, outputBytes = 0 } = currentStats;
+    const currentTotal = inputBytes + outputBytes;
+
+    // 获取上次报告的流量
+    const lastReported = this.lastReportedTraffic.get(serviceName) || 0;
+
+    // 计算增量
+    let increment = currentTotal - lastReported;
+
+    // 处理重置情况：如果当前值小于上次值，说明发生了重置
+    if (currentTotal < lastReported) {
+      console.log(`🔄 检测到服务 ${serviceName} 流量重置，使用当前值作为增量`);
+      increment = currentTotal;
+    }
+
+    // 更新记录
+    this.lastReportedTraffic.set(serviceName, currentTotal);
+
+    return {
+      inputBytes: Math.max(0, inputBytes),
+      outputBytes: Math.max(0, outputBytes),
+      totalIncrement: Math.max(0, increment)
+    };
+  }
+
+  /**
    * 处理 Service 级别的流量统计事件
    * @param {Object} event - Service 级别的流量统计事件
    */
@@ -345,6 +403,11 @@ class GostPluginService {
 
       if (!stats || !service) {
         console.log('⚠️ Service 事件缺少必要字段:', event);
+        return;
+      }
+
+      // 🔧 修复：过滤错误连接的流量
+      if (!this.shouldCountTraffic(event)) {
         return;
       }
 
@@ -393,8 +456,17 @@ class GostPluginService {
       console.log(`🔍 [DEBUG] Service 流量统计 - 服务: ${service}, 端口: ${port}, 用户: ${userInfo.username} (ID: ${userId})`);
       console.log(`🔍 [DEBUG] GOST累积数据: 输入=${inputBytes}, 输出=${outputBytes}, 总计=${cumulativeTotalBytes}`);
 
-      // 🔧 重构：GOST现在发送增量数据（resetTraffic=true），直接使用即可
-      const incrementalTotalBytes = cumulativeTotalBytes;
+      // 🔧 修复：使用真实增量计算，处理resetTraffic=false模式
+      const realIncrement = this.calculateRealIncrement(service, stats);
+      const incrementalTotalBytes = realIncrement.totalIncrement;
+
+      console.log(`🔧 [修复] 真实增量计算: ${incrementalTotalBytes} 字节 (原始: ${cumulativeTotalBytes})`);
+
+      // 🔧 修复：如果增量为0或负数，跳过处理
+      if (incrementalTotalBytes <= 0) {
+        console.log(`⏭️ 无有效流量增量 (${incrementalTotalBytes})，跳过处理`);
+        return;
+      }
 
       // 🔧 增量合理性检查（防止异常数据）- Phase 3 修复：提高限制到50GB
       const maxReasonableIncrement = 50 * 1024 * 1024 * 1024; // 50GB
@@ -1056,7 +1128,8 @@ class GostPluginService {
           // 这里应该使用 bcrypt 比较加密密码
           // 为了简化示例，直接比较明文密码
           password
-        }
+        },
+        attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'trafficQuota', 'usedTraffic', 'additionalPorts', 'portRangeStart', 'portRangeEnd']
       });
 
       // 缓存认证结果 (包括失败的结果)
@@ -1355,7 +1428,7 @@ class GostPluginService {
       // 从数据库重新加载用户数据
       const { User } = require('../models');
       const user = await User.findByPk(userId, {
-        attributes: ['id', 'username', 'role', 'expiryDate', 'trafficQuota', 'usedTraffic', 'portRangeStart', 'portRangeEnd']
+        attributes: ['id', 'username', 'role', 'expiryDate', 'trafficQuota', 'usedTraffic', 'portRangeStart', 'portRangeEnd', 'additionalPorts', 'userStatus', 'isActive']
       });
 
       if (user) {

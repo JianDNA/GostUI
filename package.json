@@ -6,7 +6,9 @@
   "scripts": {
     "start": "cd backend && node app.js",
     "dev": "cd backend && nodemon app.js",
-    "frontend": "cd frontend && npm run serve",
+    "frontend": "cd frontend && npm run dev",
+    "frontend:serve": "cd frontend && npm run serve",
+    "frontend:build": "cd frontend && npm run build",
     "install:all": "npm install && cd frontend && npm install && cd ../backend && npm install",
     "test": "cd backend && npm test"
   },

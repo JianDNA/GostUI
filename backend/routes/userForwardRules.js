@@ -199,6 +199,7 @@ router.get('/', auth, async (req, res) => {
           model: UserForwardRule,
           as: 'forwardRules'
         }],
+        attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'portRangeStart', 'portRangeEnd', 'additionalPorts', 'expiryDate', 'trafficQuota', 'usedTraffic'],
         order: [['username', 'ASC'], ['forwardRules', 'createdAt', 'DESC']]
       });
 
@@ -282,7 +283,7 @@ router.get('/', auth, async (req, res) => {
         include: [{
           model: User,
           as: 'user',
-          attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'portRangeStart', 'portRangeEnd']
+          attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'portRangeStart', 'portRangeEnd', 'additionalPorts', 'expiryDate', 'trafficQuota', 'usedTraffic']
         }],
         order: [['createdAt', 'DESC']]
       });
@@ -485,7 +486,7 @@ router.post('/', auth, async (req, res) => {
       include: [{
         model: User,
         as: 'user',
-        attributes: ['id', 'username', 'portRangeStart', 'portRangeEnd', 'expiryDate']
+        attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'portRangeStart', 'portRangeEnd', 'additionalPorts', 'expiryDate', 'trafficQuota', 'usedTraffic']
       }]
     });
 
@@ -496,17 +497,12 @@ router.post('/', auth, async (req, res) => {
       await cacheCoordinator.clearPortRelatedCache(createdRule.sourcePort, 'rule_create');
       await cacheCoordinator.clearUserRelatedCache(createdRule.userId, 'rule_create');
 
-      // 强制同步GOST配置
-      const gostSyncCoordinator = require('../services/gostSyncCoordinator');
+      // 🔄 新增: 使用同步触发器
+      const gostSyncTrigger = require('../services/gostSyncTrigger');
       console.log(`➕ 创建规则 ${createdRule.name} (端口${createdRule.sourcePort})，触发强制同步`);
 
-      const syncResult = await gostSyncCoordinator.requestSync('rule_create', true, 9);
-
-      if (syncResult.success) {
-        console.log(`✅ 创建规则后GOST同步成功: ${createdRule.name}`);
-      } else {
-        console.error(`❌ 创建规则后GOST同步失败: ${createdRule.name}`, syncResult.error);
-      }
+      await gostSyncTrigger.onRuleUpdate(createdRule.id, 'create', true);
+      console.log(`✅ 创建规则后GOST同步成功: ${createdRule.name}`);
     } catch (error) {
       console.error('创建规则后处理失败:', error);
       // 即使处理失败，也不影响创建操作的成功响应
@@ -686,7 +682,7 @@ router.put('/:id', auth, async (req, res) => {
       include: [{
         model: User,
         as: 'user',
-        attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'portRangeStart', 'portRangeEnd']
+        attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'portRangeStart', 'portRangeEnd', 'additionalPorts', 'expiryDate', 'trafficQuota', 'usedTraffic']
       }]
     });
 
@@ -702,17 +698,12 @@ router.put('/:id', auth, async (req, res) => {
         await cacheCoordinator.clearPortRelatedCache(rule.sourcePort, 'rule_update_old_port');
       }
 
-      // 强制同步GOST配置
-      const gostSyncCoordinator = require('../services/gostSyncCoordinator');
+      // 🔄 新增: 使用同步触发器
+      const gostSyncTrigger = require('../services/gostSyncTrigger');
       console.log(`📝 更新规则 ${updatedRule.name} (端口${updatedRule.sourcePort})，触发强制同步`);
 
-      const syncResult = await gostSyncCoordinator.requestSync('rule_update', true, 9);
-
-      if (syncResult.success) {
-        console.log(`✅ 更新规则后GOST同步成功: ${updatedRule.name}`);
-      } else {
-        console.error(`❌ 更新规则后GOST同步失败: ${updatedRule.name}`, syncResult.error);
-      }
+      await gostSyncTrigger.onRuleUpdate(updatedRule.id, 'update', true);
+      console.log(`✅ 更新规则后GOST同步成功: ${updatedRule.name}`);
     } catch (error) {
       console.error('更新规则后处理失败:', error);
       // 即使处理失败，也不影响更新操作的成功响应
@@ -756,17 +747,12 @@ router.delete('/:id', auth, async (req, res) => {
       await cacheCoordinator.clearPortRelatedCache(rule.sourcePort, 'rule_delete');
       await cacheCoordinator.clearUserRelatedCache(rule.userId, 'rule_delete');
 
-      // 强制同步GOST配置
-      const gostSyncCoordinator = require('../services/gostSyncCoordinator');
+      // 🔄 新增: 使用同步触发器
+      const gostSyncTrigger = require('../services/gostSyncTrigger');
       console.log(`🗑️ 删除规则 ${rule.name} (端口${rule.sourcePort})，触发强制同步`);
 
-      const syncResult = await gostSyncCoordinator.requestSync('rule_delete', true, 9);
-
-      if (syncResult.success) {
-        console.log(`✅ 删除规则后GOST同步成功: ${rule.name}`);
-      } else {
-        console.error(`❌ 删除规则后GOST同步失败: ${rule.name}`, syncResult.error);
-      }
+      await gostSyncTrigger.onRuleUpdate(rule.id, 'delete', true);
+      console.log(`✅ 删除规则后GOST同步成功: ${rule.name}`);
     } catch (error) {
       console.error('删除规则后处理失败:', error);
       // 即使处理失败，也不影响删除操作的成功响应
@@ -877,17 +863,13 @@ router.post('/batch-delete', auth, async (req, res) => {
     // 🔧 修复：批量删除规则后强制立即同步GOST配置
     if (deletedCount > 0) {
       try {
-        const gostSyncCoordinator = require('../services/gostSyncCoordinator');
+        // 🔄 新增: 使用同步触发器
+        const gostSyncTrigger = require('../services/gostSyncTrigger');
         console.log(`🗑️ 批量删除 ${deletedCount} 个规则，触发强制同步`);
 
         // 使用await等待同步完成，确保GOST立即更新
-        const syncResult = await gostSyncCoordinator.requestSync('batch_rule_delete', true, 9);
-
-        if (syncResult.success) {
-          console.log(`✅ 批量删除规则后GOST同步成功，删除数量: ${deletedCount}`);
-        } else {
-          console.error(`❌ 批量删除规则后GOST同步失败，删除数量: ${deletedCount}`, syncResult.error);
-        }
+        await gostSyncTrigger.triggerSync('batch_rule_delete', true, { priority: 9, force: true });
+        console.log(`✅ 批量删除规则后GOST同步成功，删除数量: ${deletedCount}`);
       } catch (error) {
         console.error('批量删除规则后触发配置同步失败:', error);
         // 即使同步失败，也不影响删除操作的成功响应

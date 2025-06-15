@@ -66,12 +66,12 @@
       </div>
     </el-card>
 
-    <!-- 预设配置 -->
-    <el-card class="preset-card" shadow="hover">
+    <!-- 预设配置 - 只在自动模式下显示 -->
+    <el-card v-if="!isSimpleMode" class="preset-card" shadow="hover">
       <template #header>
-        <span>🎯 预设配置</span>
+        <span>🎯 性能预设配置</span>
       </template>
-      
+
       <div class="preset-buttons">
         <el-button
           v-for="(preset, key) in presets"
@@ -83,13 +83,22 @@
           {{ preset.name }}
         </el-button>
       </div>
-      
+
       <div class="preset-descriptions">
         <div v-for="(preset, key) in presets" :key="key" class="preset-item">
           <h4>{{ preset.name }}</h4>
           <p>{{ preset.description }}</p>
         </div>
       </div>
+
+      <el-alert
+        title="提示"
+        type="info"
+        description="性能预设会覆盖当前的详细配置参数，应用后可以在下方详细配置中进一步调整"
+        show-icon
+        :closable="false"
+        style="margin-top: 15px;"
+      />
     </el-card>
 
     <!-- 协议屏蔽配置 -->
@@ -168,6 +177,22 @@
                     size="small"
                   />
                   <p class="param-help">{{ getParamHelp('gostPlugins', 'observerTimeout') }}</p>
+                </div>
+              </el-col>
+            </el-row>
+
+            <el-row :gutter="20" style="margin-top: 20px;">
+              <el-col :span="8">
+                <div class="config-item">
+                  <label>观察器周期 (秒)</label>
+                  <el-input-number
+                    v-model="observerPeriodSeconds"
+                    :min="5"
+                    :max="300"
+                    size="small"
+                    @change="updateObserverPeriod"
+                  />
+                  <p class="param-help">GOST观察器报告流量统计的周期，影响流量统计的实时性</p>
                 </div>
               </el-col>
               
@@ -382,7 +407,8 @@ export default {
       syncConfig: {
         autoSyncInterval: 300000,
         healthCheckInterval: 120000
-      }
+      },
+      observerPeriod: 120
     })
     
     // 系统状态
@@ -435,6 +461,17 @@ export default {
       get: () => configForm.syncConfig.healthCheckInterval / 60000,
       set: (value) => {
         configForm.syncConfig.healthCheckInterval = value * 60000
+      }
+    })
+
+    // 观察器周期 (秒)
+    const observerPeriodSeconds = computed({
+      get: () => configForm.gostPlugins?.observerPeriod || 120,
+      set: (value) => {
+        if (!configForm.gostPlugins) {
+          configForm.gostPlugins = {}
+        }
+        configForm.gostPlugins.observerPeriod = value
       }
     })
 
@@ -619,9 +656,15 @@ export default {
       try {
         presetLoading.value = presetName
 
+        // 检查是否为自动模式
+        if (isSimpleMode.value) {
+          ElMessage.error('性能预设只能在自动模式下应用，请先切换到自动模式')
+          return
+        }
+
         const preset = presets.value[presetName]
         const result = await ElMessageBox.confirm(
-          `确定要应用"${preset.name}"预设配置吗？\n\n${preset.description}\n\n这将覆盖当前的配置设置。`,
+          `确定要应用"${preset.name}"预设配置吗？\n\n${preset.description}\n\n这将覆盖当前的详细配置参数。`,
           '确认应用预设',
           {
             confirmButtonText: '确定应用',
@@ -642,7 +685,8 @@ export default {
         }
       } catch (error) {
         if (error !== 'cancel') {
-          ElMessage.error('应用预设失败: ' + error.message)
+          const errorMessage = error.response?.data?.message || error.message || '应用预设失败'
+          ElMessage.error(errorMessage)
         }
       } finally {
         presetLoading.value = ''
@@ -686,6 +730,10 @@ export default {
       configForm.syncConfig.healthCheckInterval = value * 60000
     }
 
+    const updateObserverPeriod = () => {
+      // 观察器周期已通过计算属性自动更新
+    }
+
     // 生命周期
     onMounted(async () => {
       await loadConfig()
@@ -714,6 +762,7 @@ export default {
       multiInstanceCacheMinutes,
       autoSyncMinutes,
       healthCheckMinutes,
+      observerPeriodSeconds,
       disabledProtocols,
       loadConfig,
       loadProtocolConfig,
@@ -730,7 +779,8 @@ export default {
       updateLimiterCacheTimeout,
       updateMultiInstanceCacheTTL,
       updateAutoSyncInterval,
-      updateHealthCheckInterval
+      updateHealthCheckInterval,
+      updateObserverPeriod
     }
   }
 }

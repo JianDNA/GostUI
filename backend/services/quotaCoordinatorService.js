@@ -62,14 +62,19 @@ class QuotaCoordinatorService {
         }
 
         try {
-          const gostSyncCoordinator = require('./gostSyncCoordinator');
+          // 🔄 新增: 使用同步触发器
+          const gostSyncTrigger = require('./gostSyncTrigger');
 
-          // 使用最高优先级和强制模式，确保立即生效
-          await gostSyncCoordinator.requestSync(
-            syncTrigger,
-            true, // 强制更新
-            10    // 最高优先级
-          );
+          if (syncTrigger.includes('quota_exceeded')) {
+            // 配额超限时使用紧急同步
+            await gostSyncTrigger.emergencySync(`quota_exceeded_${userId}`, {
+              reason: result.reason,
+              userId: userId
+            });
+          } else {
+            // 其他情况使用流量更新触发器
+            await gostSyncTrigger.onTrafficUpdate(userId, 'quota_check', true);
+          }
 
           console.log(`✅ [配额协调] 强制同步已触发: 用户 ${userId}, 类型: ${syncTrigger}`);
         } catch (syncError) {
@@ -114,7 +119,7 @@ class QuotaCoordinatorService {
 
       // 获取用户信息
       const user = await User.findByPk(userId, {
-        attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'trafficQuota', 'usedTraffic', 'expiryDate']
+        attributes: ['id', 'username', 'role', 'isActive', 'userStatus', 'trafficQuota', 'usedTraffic', 'expiryDate', 'additionalPorts', 'portRangeStart', 'portRangeEnd']
       });
 
       if (!user) {

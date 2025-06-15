@@ -135,6 +135,10 @@ class RealTimeTrafficMonitor {
             // 立即暂停用户
             await this.suspendUser(userId, user.username, quotaResult.reason);
 
+            // 🔧 新增：立即触发GOST配置同步
+            console.log(`🔄 [实时监控] 用户 ${user.username} 超配额，立即同步GOST配置`);
+            await this.triggerImmediateSync(userId, user.username, quotaResult.reason);
+
             // 🔧 修复：只有在违反配额且快速增长时才执行紧急控制
             if (trafficGrowth > this.rapidGrowthThreshold) {
               console.log(`⚡ [实时监控] 用户 ${user.username} 违反配额且快速增长 ${this.formatBytes(trafficGrowth)}，执行紧急限制`);
@@ -262,14 +266,41 @@ class RealTimeTrafficMonitor {
       console.log(`🚫 [实时监控] 已暂停用户 ${username} - ${reason}`);
       console.log(`💡 所有转发规则将通过计算属性自动禁用`);
 
-      // 触发GOST配置同步
-      const gostSyncCoordinator = require('./gostSyncCoordinator');
-      gostSyncCoordinator.requestSync('realtime_user_suspend', false, 9).catch(error => {
+      // 🔄 新增: 使用同步触发器
+      const gostSyncTrigger = require('./gostSyncTrigger');
+      gostSyncTrigger.onUserUpdate(userId, 'status_change', true).catch(error => {
         console.error('实时监控暂停用户后同步失败:', error);
       });
 
     } catch (error) {
       console.error(`❌ [实时监控] 暂停用户 ${username} 失败:`, error);
+    }
+  }
+
+  /**
+   * 🔧 新增：立即触发GOST配置同步
+   */
+  async triggerImmediateSync(userId, username, quotaReason) {
+    try {
+      console.log(`🔄 [实时监控] 立即同步GOST配置 - 用户: ${username}, 原因: ${quotaReason}`);
+
+      // 使用同步协调器立即执行同步
+      const gostSyncCoordinator = require('./gostSyncCoordinator');
+
+      const result = await gostSyncCoordinator.requestSync(
+        `quota_exceeded_${userId}`,
+        true,  // 强制同步
+        10     // 最高优先级
+      );
+
+      if (result.success || result.queued) {
+        console.log(`✅ [实时监控] GOST配置同步已触发 - 用户: ${username}`);
+      } else {
+        console.error(`❌ [实时监控] GOST配置同步失败 - 用户: ${username}, 错误: ${result.error}`);
+      }
+
+    } catch (error) {
+      console.error(`❌ [实时监控] 立即同步失败 - 用户: ${username}:`, error);
     }
   }
 
@@ -290,7 +321,14 @@ class RealTimeTrafficMonitor {
         timestamp: new Date()
       });
 
-      // 3. 可以考虑其他措施，如临时禁用用户等
+      // 3. 🔄 新增: 触发紧急同步
+      const gostSyncTrigger = require('./gostSyncTrigger');
+      await gostSyncTrigger.emergencySync(`quota_exceeded_${userId}`, {
+        reason: quotaReason,
+        userId: userId
+      });
+
+      // 4. 可以考虑其他措施，如临时禁用用户等
       // await this.temporarilyDisableUser(userId);
 
     } catch (error) {

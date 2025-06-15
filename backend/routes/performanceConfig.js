@@ -188,15 +188,22 @@ router.post('/apply-preset', auth, adminAuth, async (req, res) => {
       });
     }
 
+    // 检查当前是否为自动模式
+    if (systemModeManager.isSimpleMode()) {
+      return res.status(400).json({
+        success: false,
+        message: '性能预设只能在自动模式下应用，请先切换到自动模式'
+      });
+    }
+
     const preset = await performanceConfigManager.applyPreset(
       presetName,
-      req.user.username || req.user.id
+      req.user.username || req.user.id,
+      description || `应用预设配置: ${presetName}`
     );
 
-    // 如果预设包含模式切换，需要切换系统模式
-    if (preset.config.systemMode?.isSimpleMode !== undefined) {
-      await systemModeManager.switchMode(preset.config.systemMode.isSimpleMode);
-    }
+    // 性能预设不应该切换系统模式，只更新参数配置
+    // 移除了原来的系统模式切换逻辑
 
     res.json({
       success: true,

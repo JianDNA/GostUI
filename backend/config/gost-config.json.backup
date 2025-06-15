@@ -1,0 +1,197 @@
+{
+  "services": [
+    {
+      "name": "forward-tcp-29082",
+      "addr": ":29082",
+      "observer": "observer-0",
+      "handler": {
+        "type": "tcp",
+        "chain": "chain-tcp-29082",
+        "metadata": {
+          "observer.period": "10s",
+          "observer.resetTraffic": true
+        }
+      },
+      "listener": {
+        "type": "tcp"
+      },
+      "metadata": {
+        "enableStats": true,
+        "observer.period": "10s",
+        "observer.resetTraffic": true,
+        "userId": 1,
+        "username": "admin",
+        "ruleId": 5,
+        "ruleName": "Admin Rule 23",
+        "description": "",
+        "listenAddress": "127.0.0.1",
+        "listenAddressType": "ipv4"
+      }
+    },
+    {
+      "name": "forward-tcp-9081",
+      "addr": "127.0.0.1:9081",
+      "observer": "observer-0",
+      "handler": {
+        "type": "tcp",
+        "chain": "chain-tcp-9081",
+        "metadata": {
+          "observer.period": "10s",
+          "observer.resetTraffic": true
+        }
+      },
+      "listener": {
+        "type": "tcp"
+      },
+      "metadata": {
+        "enableStats": true,
+        "observer.period": "10s",
+        "observer.resetTraffic": true,
+        "userId": 1,
+        "username": "admin",
+        "ruleId": 7,
+        "ruleName": "Admin HTTP Proxy",
+        "description": "管理员HTTP代理规则",
+        "listenAddress": "127.0.0.1",
+        "listenAddressType": "ipv4"
+      }
+    },
+    {
+      "name": "forward-tcp-12001",
+      "addr": "127.0.0.1:12001",
+      "observer": "observer-0",
+      "handler": {
+        "type": "tcp",
+        "chain": "chain-tcp-12001",
+        "metadata": {
+          "observer.period": "10s",
+          "observer.resetTraffic": true
+        }
+      },
+      "listener": {
+        "type": "tcp"
+      },
+      "metadata": {
+        "enableStats": true,
+        "observer.period": "10s",
+        "observer.resetTraffic": true,
+        "userId": 1,
+        "username": "admin",
+        "ruleId": 8,
+        "ruleName": "Test Auto Mode",
+        "description": "Test rule for auto mode",
+        "listenAddress": "127.0.0.1",
+        "listenAddressType": "ipv4"
+      }
+    },
+    {
+      "name": "forward-tcp-28888",
+      "addr": "127.0.0.1:28888",
+      "observer": "observer-0",
+      "handler": {
+        "type": "tcp",
+        "chain": "chain-tcp-28888",
+        "metadata": {
+          "observer.period": "10s",
+          "observer.resetTraffic": true
+        }
+      },
+      "listener": {
+        "type": "tcp"
+      },
+      "metadata": {
+        "enableStats": true,
+        "observer.period": "10s",
+        "observer.resetTraffic": true,
+        "userId": 1,
+        "username": "admin",
+        "ruleId": 9,
+        "ruleName": "Traffic Test Rule",
+        "description": "Test rule for traffic bug testing",
+        "listenAddress": "127.0.0.1",
+        "listenAddressType": "ipv4"
+      }
+    }
+  ],
+  "chains": [
+    {
+      "name": "chain-tcp-29082",
+      "hops": [
+        {
+          "name": "hop-0",
+          "nodes": [
+            {
+              "addr": "127.0.0.1:3000",
+              "connector": {
+                "type": "tcp"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "chain-tcp-9081",
+      "hops": [
+        {
+          "name": "hop-1",
+          "nodes": [
+            {
+              "addr": "127.0.0.1:8081",
+              "connector": {
+                "type": "tcp"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "chain-tcp-12001",
+      "hops": [
+        {
+          "name": "hop-2",
+          "nodes": [
+            {
+              "addr": "127.0.0.1:8080",
+              "connector": {
+                "type": "tcp"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "chain-tcp-28888",
+      "hops": [
+        {
+          "name": "hop-3",
+          "nodes": [
+            {
+              "addr": "127.0.0.1:8888",
+              "connector": {
+                "type": "tcp"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "observers": [
+    {
+      "name": "observer-0",
+      "plugin": {
+        "type": "http",
+        "addr": "http://localhost:3000/api/gost-plugin/observer",
+        "timeout": "15s"
+      }
+    }
+  ],
+  "api": {
+    "addr": ":18080",
+    "pathPrefix": "/api",
+    "accesslog": false
+  }
+}

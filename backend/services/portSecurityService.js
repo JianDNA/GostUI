@@ -132,7 +132,7 @@ class PortSecurityService {
             errorMsg += `。用户端口范围：${user.portRangeStart}-${user.portRangeEnd}`;
           }
           
-          const additionalPorts = user.getAdditionalPorts();
+          const additionalPorts = await user.getAdditionalPortsAsync();
           if (additionalPorts && additionalPorts.length > 0) {
             errorMsg += `，额外端口：${additionalPorts.join(', ')}`;
           }
@@ -324,7 +324,7 @@ class PortSecurityService {
         return [];
       }
 
-      const additionalPorts = user.getAdditionalPorts();
+      const additionalPorts = await user.getAdditionalPortsAsync();
       console.log(`✅ 用户 ${userId} 额外端口: ${JSON.stringify(additionalPorts)}`);
       return additionalPorts;
     } catch (error) {

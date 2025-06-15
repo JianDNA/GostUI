@@ -30,6 +30,7 @@
     "axios": "^1.9.0",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.10.0",
     "body-parser": "^1.20.2",
     "chalk": "^5.4.1",
     "cors": "^2.8.5",
@@ -42,6 +43,7 @@
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
     "node-cron": "^3.0.3",
+    "node-pre-gyp": "^0.17.0",
     "sequelize": "^6.35.1",
     "sqlite3": "^5.1.6",
     "winston": "^3.11.0",
@@ -50,7 +52,7 @@
   },
   "devDependencies": {
     "jest": "^29.7.0",
-    "nodemon": "^3.0.1",
+    "nodemon": "^3.1.10",
     "sequelize-cli": "^6.6.2",
     "supertest": "^6.3.3"
   },

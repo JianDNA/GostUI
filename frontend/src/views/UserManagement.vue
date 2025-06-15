@@ -8,12 +8,14 @@
       </el-button>
     </div>
 
-    <el-table
-      v-loading="loading"
-      :data="displayUsers"
-      border
-      style="width: 100%"
-    >
+    <div class="table-container">
+      <el-table
+        v-loading="loading"
+        :data="displayUsers"
+        border
+        style="width: 100%"
+        class="user-table"
+      >
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column prop="username" label="用户名" width="120" />
       <el-table-column prop="email" label="邮箱" width="180" />
@@ -144,7 +146,8 @@
           </el-button-group>
         </template>
       </el-table-column>
-    </el-table>
+      </el-table>
+    </div>
 
     <!-- 添加/编辑用户对话框 -->
     <el-dialog
@@ -983,6 +986,7 @@ export default {
 <style scoped>
 .user-management {
   padding: 20px;
+  background: #f5f7fa;
 }
 
 .page-header {
@@ -990,11 +994,38 @@ export default {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
+  padding: 20px;
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .page-header h2 {
   margin: 0;
   color: #303133;
+}
+
+.table-container {
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.user-table {
+  background: #ffffff;
+}
+
+.user-table :deep(.el-table__header) {
+  background: #f8f9fa;
+}
+
+.user-table :deep(.el-table__row) {
+  background: #ffffff;
+}
+
+.user-table :deep(.el-table__row:hover) {
+  background: #f5f7fa;
 }
 
 .text-muted {

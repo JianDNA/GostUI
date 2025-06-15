@@ -57,7 +57,7 @@ class GostSyncCoordinator {
       const syncConfig = performanceConfigManager.getSyncConfig();
 
       this.minSyncInterval = syncConfig.minSyncInterval || 10000;
-      this.autoSyncInterval = syncConfig.autoSyncInterval || 5 * 60 * 1000; // 5分钟
+      this.autoSyncInterval = syncConfig.autoSyncInterval || 2 * 60 * 1000; // 2分钟 (减少频率)
 
       logger.info(`🔧 [同步协调器] 配置已更新: 自动同步${this.autoSyncInterval / 1000}秒, 最小间隔${this.minSyncInterval / 1000}秒`);
     } catch (error) {
@@ -414,15 +414,20 @@ class GostSyncCoordinator {
 
       const shouldForceUpdate = request.force || forceUpdateScenarios.includes(request.trigger);
 
-      // 检查配置是否有变化
+      // 🔧 智能配置变化检测
       if (!shouldForceUpdate && this.lastConfigHash === newConfigHash) {
-        logger.info(`📋 [同步协调] 配置无变化，跳过更新: ${request.id}`);
+        logger.info(`📋 [同步协调] 配置哈希无变化，跳过更新: ${request.id}`);
+
+        // 更新统计信息
+        this.stats.skippedSyncs++;
+
         return {
           success: true,
           updated: false,
           reason: 'no_changes',
           configHash: newConfigHash,
-          servicesCount: newConfig.services.length
+          servicesCount: newConfig.services.length,
+          lastSyncTime: this.lastSyncTime
         };
       }
 

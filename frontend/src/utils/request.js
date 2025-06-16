@@ -61,6 +61,12 @@ let isLoggingOut = false;
 // 智能容错标志
 let isAutoSwitching = false;
 
+// 页面初始化标志 - 防止页面刷新时立即清空localStorage
+let isPageInitializing = true;
+setTimeout(() => {
+  isPageInitializing = false;
+}, 3000); // 3秒后认为页面初始化完成
+
 // 响应拦截器
 request.interceptors.response.use(
   response => {
@@ -80,25 +86,18 @@ request.interceptors.response.use(
             break;
           }
 
-          // 设置登出标志，防止重复处理
-          isLoggingOut = true;
-
-          console.log('🔐 收到401错误，开始清理用户状态');
-
-          // 直接清理本地状态，不发送logout请求
-          store.commit('user/CLEAR_USER_STATE');
-
-          // 跳转到登录页面
-          if (router.currentRoute.value.name !== 'Login') {
-            router.push('/login');
-            ElMessage.error('登录已过期，请重新登录');
+          // 如果页面正在初始化，延迟处理401错误
+          if (isPageInitializing) {
+            console.log('🔄 页面初始化中，延迟处理401错误');
+            setTimeout(() => {
+              if (!isLoggingOut) {
+                handleUnauthorized();
+              }
+            }, 1000);
+            break;
           }
 
-          // 重置标志
-          setTimeout(() => {
-            isLoggingOut = false;
-          }, 1000);
-
+          handleUnauthorized();
           break;
         case 403:
           ElMessage.error('没有权限访问该资源');
@@ -121,6 +120,30 @@ request.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+/**
+ * 处理401未授权错误
+ */
+function handleUnauthorized() {
+  // 设置登出标志，防止重复处理
+  isLoggingOut = true;
+
+  console.log('🔐 收到401错误，开始清理用户状态');
+
+  // 直接清理本地状态，不发送logout请求
+  store.commit('user/CLEAR_USER_STATE');
+
+  // 跳转到登录页面
+  if (router.currentRoute.value.name !== 'Login') {
+    router.push('/login');
+    ElMessage.error('登录已过期，请重新登录');
+  }
+
+  // 重置标志
+  setTimeout(() => {
+    isLoggingOut = false;
+  }, 1000);
+}
 
 /**
  * 处理GOST代理失败的情况

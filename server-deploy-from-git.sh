@@ -92,7 +92,13 @@ install_dependencies() {
     if [ -d "backend" ]; then
         echo "📦 安装后端依赖..."
         cd backend
-        npm install --only=production
+        npm install --only=production --no-bin-links || {
+            echo "⚠️ npm install失败，尝试使用备用方法..."
+            npm install --no-bin-links --legacy-peer-deps || {
+                echo "❌ 后端依赖安装失败，请检查网络连接"
+                exit 1
+            }
+        }
         cd ..
     fi
     
@@ -100,8 +106,14 @@ install_dependencies() {
     if [ -d "frontend" ]; then
         echo "🔨 构建前端..."
         cd frontend
-        npm install
-        npm run build
+        npm install --no-bin-links || {
+            echo "❌ 前端依赖安装失败"
+            exit 1
+        }
+        npm run build || {
+            echo "❌ 前端构建失败"
+            exit 1
+        }
         
         # 将构建产物复制到后端public目录
         if [ -d "dist" ]; then
@@ -151,6 +163,15 @@ setup_gost() {
         chmod +x backend/assets/gost/gost
     fi
 
+    # 创建linux_amd64目录和符号链接（修复路径问题）
+    echo "🔧 修复GOST路径配置..."
+    mkdir -p backend/assets/gost/linux_amd64
+    if [ -f "backend/bin/gost" ]; then
+        cp backend/bin/gost backend/assets/gost/linux_amd64/gost
+        chmod +x backend/assets/gost/linux_amd64/gost
+        echo "✅ 已创建linux_amd64/gost路径"
+    fi
+
     # 验证GOST是否可用
     if [ -f "backend/bin/gost" ]; then
         echo "🧪 测试GOST版本..."
@@ -164,6 +185,44 @@ setup_gost() {
         echo "💡 请确保Git仓库中包含GOST二进制文件"
         echo "   - backend/bin/gost"
         echo "   - backend/assets/gost/gost"
+    fi
+}
+
+# 初始化数据库
+initialize_database() {
+    echo "🗄️ 初始化数据库..."
+    cd $DEPLOY_DIR/backend
+
+    # 创建数据库目录
+    mkdir -p database
+
+    # 检查是否有complete_schema.sql
+    if [ -f "complete_schema.sql" ]; then
+        echo "📋 使用complete_schema.sql创建数据库..."
+        sqlite3 database/database.sqlite < complete_schema.sql
+
+        # 创建默认管理员用户
+        echo "👤 创建默认管理员用户..."
+        sqlite3 database/database.sqlite "
+        INSERT OR IGNORE INTO Users (username, password, email, role, isActive, createdAt, updatedAt, usedTraffic, userStatus)
+        VALUES ('admin', '\$2a\$10\$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', null, 'admin', 1, datetime('now'), datetime('now'), 0, 'active');
+        "
+
+        # 添加系统配置
+        echo "⚙️ 添加系统配置..."
+        sqlite3 database/database.sqlite "
+        INSERT OR IGNORE INTO SystemConfigs (key, value, description, category, updatedBy, createdAt, updatedAt) VALUES
+        ('system_version', '\"1.0.0\"', '系统版本', 'system', 'system', datetime('now'), datetime('now')),
+        ('performanceMode', '\"balanced\"', '当前性能模式', 'performance', 'system', datetime('now'), datetime('now')),
+        ('observerPeriod', '30', '观察器周期(秒)', 'performance', 'system', datetime('now'), datetime('now')),
+        ('autoSyncEnabled', 'true', '自动同步是否启用', 'sync', 'system', datetime('now'), datetime('now')),
+        ('syncInterval', '60', '同步间隔(秒)', 'sync', 'system', datetime('now'), datetime('now'));
+        "
+
+        echo "✅ 数据库初始化完成"
+    else
+        echo "⚠️ 未找到complete_schema.sql，跳过数据库初始化"
+        echo "💡 应用启动时会自动创建数据库"
     fi
 }
 
@@ -318,18 +377,30 @@ create_management_scripts() {
 #!/bin/bash
 echo "🔄 更新GOST管理系统..."
 cd /opt/gost-management
+
+# 拉取最新代码
 git pull origin main
+
+# 更新后端依赖
 cd backend
-npm install --only=production
+npm install --only=production --no-bin-links
+
+# 构建前端
 cd ../frontend
-npm install
+npm install --no-bin-links
 npm run build
+
+# 更新前端文件
 rm -rf ../backend/public
 mkdir -p ../backend/public
 cp -r dist/* ../backend/public/
+
+# 重启服务
 cd ../backend
 pm2 restart gost-management
+
 echo "✅ 更新完成"
+echo "🌐 访问地址: http://localhost:3000"
 EOF
     
     chmod +x *.sh
@@ -342,6 +413,7 @@ main() {
     deploy_code
     install_dependencies
     setup_gost
+    initialize_database
     configure_app
     start_service
     create_management_scripts

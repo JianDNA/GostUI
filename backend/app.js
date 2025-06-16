@@ -45,6 +45,9 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(helmet());
 
+// 静态文件服务 - 提供前端页面
+app.use(express.static(path.join(__dirname, 'public')));
+
 // 全局错误处理中间件 (必须在所有路由之后)
 app.use(errorMiddleware);
 
@@ -85,6 +88,22 @@ app.get('/api/test-forward', (req, res) => {
     message: '如果你能看到这条消息，说明通过 6443 端口成功访问了本服务',
     info: '这条消息由 Node.js 服务通过端口转发提供'
   });
+});
+
+// 前端路由回退 - 所有非API请求都返回index.html
+app.get('*', (req, res) => {
+  // 如果是API请求，返回404
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ message: 'API endpoint not found' });
+  }
+
+  // 其他请求返回前端页面
+  const indexPath = path.join(__dirname, 'public', 'index.html');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.status(404).send('Frontend not built. Please run: npm run build in frontend directory');
+  }
 });
 
 // 启动服务器并初始化

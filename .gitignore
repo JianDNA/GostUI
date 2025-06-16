@@ -114,17 +114,18 @@ test_*/
 release/
 gost-management-*/
 
-# GOST二进制文件和多余的发行版
-bin/gost*
-gost
-
-# GOST多平台发行版（只保留当前平台需要的）
+# GOST多平台发行版（排除不需要的平台和压缩包）
 backend/assets/gost/*.tar.gz
 backend/assets/gost/*.zip
 backend/assets/gost/windows_*
 backend/assets/gost/linux_386
 backend/assets/gost/darwin_*
 backend/assets/gost/freebsd_*
+
+# 允许必要的GOST二进制文件
+!backend/bin/gost
+!backend/assets/gost/gost
+!backend/assets/gost/linux_amd64/gost
 
 # 配置文件中的敏感信息
 config/production.js
@@ -137,6 +138,20 @@ config/secrets.js
 .sass-cache/
 connect.lock
 typings/
+
+# 部署过程中的临时文件
+backend/app.pid
+backend/app.log
+backend/logs/
+backend/cache/
+backend/backups/
+
+# 临时文件和清理脚本
+clean-gost-assets.sh
+fix-gost-path.sh
+
+# 旧版本文件夹
+old/
 # 打包文件
 *.tar.gz
 *.zip

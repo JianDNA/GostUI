@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gost 管理系统</title>
+    <meta name="description" content="基于 Vue 3 + Node.js 的现代化 Gost 代理服务管理平台" />
+    <meta name="keywords" content="Gost,代理,管理,Vue3,Node.js" />
+    
+    <!-- 预加载关键资源 -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    
+    <!-- 防止 FOUC (Flash of Unstyled Content) -->
+    <style>
+      #app {
+        height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      }
+      
+      .loading {
+        text-align: center;
+        color: white;
+      }
+      
+      .loading-spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid rgba(255, 255, 255, 0.3);
+        border-top: 4px solid white;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin: 0 auto 20px;
+      }
+      
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    </style>
+    <script type="module" crossorigin src="/assets/index-1003864c.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/vue-9e38bd25.js">
+    <link rel="modulepreload" crossorigin href="/assets/element-plus-a98c71bf.js">
+    <link rel="modulepreload" crossorigin href="/assets/utils-c29d00eb.js">
+    <link rel="stylesheet" href="/assets/index-84de1c65.css">
+  </head>
+  <body>
+    <div id="app">
+      <div class="loading">
+        <div class="loading-spinner"></div>
+        <div>正在加载 Gost 管理系统...</div>
+      </div>
+    </div>
+    
+    
+  </body>
+</html>

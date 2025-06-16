@@ -13,7 +13,7 @@ node_modules
 .pnp.js
 
 # Build outputs
-dist
+# dist - 注释掉，允许预构建文件提交到Git
 dist-ssr
 *.local
 

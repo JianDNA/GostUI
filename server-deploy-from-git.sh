@@ -2,8 +2,8 @@
 
 # 🚀 服务器Git部署脚本
 
-# 配置变量（请修改为你的实际值）
-GIT_REPO="https://github.com/your-username/gost-management.git"  # 替换为你的Git仓库地址
+# 配置变量
+GIT_REPO="https://github.com/JianDNA/GostUI.git"  # 公开仓库，无需登录
 PROJECT_NAME="gost-management"
 DEPLOY_DIR="/opt/${PROJECT_NAME}"
 SERVICE_NAME="gost-management"
@@ -114,6 +114,57 @@ install_dependencies() {
     fi
     
     echo "✅ 依赖安装完成"
+}
+
+# 配置GOST二进制文件
+setup_gost() {
+    echo "⚙️ 配置GOST二进制文件..."
+    cd $DEPLOY_DIR
+
+    # 检查GOST文件是否存在
+    if [ -f "backend/bin/gost" ]; then
+        echo "✅ 发现backend/bin/gost"
+        chmod +x backend/bin/gost
+    else
+        echo "⚠️ backend/bin/gost 不存在"
+    fi
+
+    if [ -f "backend/assets/gost/gost" ]; then
+        echo "✅ 发现backend/assets/gost/gost"
+        chmod +x backend/assets/gost/gost
+    else
+        echo "⚠️ backend/assets/gost/gost 不存在"
+    fi
+
+    # 如果bin目录下没有gost，尝试从assets复制
+    if [ ! -f "backend/bin/gost" ] && [ -f "backend/assets/gost/gost" ]; then
+        echo "📋 从assets复制gost到bin目录"
+        cp backend/assets/gost/gost backend/bin/
+        chmod +x backend/bin/gost
+    fi
+
+    # 如果assets下没有gost，尝试从bin复制
+    if [ ! -f "backend/assets/gost/gost" ] && [ -f "backend/bin/gost" ]; then
+        echo "📋 从bin复制gost到assets目录"
+        mkdir -p backend/assets/gost
+        cp backend/bin/gost backend/assets/gost/
+        chmod +x backend/assets/gost/gost
+    fi
+
+    # 验证GOST是否可用
+    if [ -f "backend/bin/gost" ]; then
+        echo "🧪 测试GOST版本..."
+        if backend/bin/gost -V 2>/dev/null; then
+            echo "✅ GOST配置完成"
+        else
+            echo "⚠️ GOST可能无法正常运行，但继续部署"
+        fi
+    else
+        echo "❌ 未找到GOST二进制文件"
+        echo "💡 请确保Git仓库中包含GOST二进制文件"
+        echo "   - backend/bin/gost"
+        echo "   - backend/assets/gost/gost"
+    fi
 }
 
 # 配置应用
@@ -290,6 +341,7 @@ main() {
     check_environment
     deploy_code
     install_dependencies
+    setup_gost
     configure_app
     start_service
     create_management_scripts

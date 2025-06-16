@@ -24,54 +24,82 @@ echo "   📁 源码目录: $(pwd)"
 echo "   📁 部署目录: $DEPLOY_DIR"
 echo ""
 
-# 确认更新
-read -p "🤔 确认开始智能更新？(y/N): " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo "❌ 更新已取消"
-    exit 0
-fi
-
-# 0. 检查并更新智能更新脚本本身
+# 确认更新和脚本检查选项
+echo "🤔 更新选项:"
+echo "   1) 完整更新 (包含脚本自检，较慢)"
+echo "   2) 快速更新 (跳过脚本自检，推荐)"
+echo "   3) 取消更新"
 echo ""
-echo "🔄 步骤0: 检查智能更新脚本更新..."
+read -p "请选择 (1/2/3) [默认: 2]: " -n 1 -r
+echo
 
-# 创建临时目录检查脚本更新
-TEMP_CHECK_DIR="/tmp/gost-script-check-$(date +%Y%m%d_%H%M%S)"
-mkdir -p "$TEMP_CHECK_DIR"
+case $REPLY in
+    1)
+        echo "✅ 选择完整更新模式"
+        CHECK_SCRIPT_UPDATE=true
+        ;;
+    3)
+        echo "❌ 更新已取消"
+        exit 0
+        ;;
+    *)
+        echo "✅ 选择快速更新模式"
+        CHECK_SCRIPT_UPDATE=false
+        ;;
+esac
 
-# 克隆最新代码到临时目录检查
-git clone https://github.com/JianDNA/GostUI.git "$TEMP_CHECK_DIR/GostUI" >/dev/null 2>&1
+# 0. 检查并更新智能更新脚本本身 (可选)
+if [ "$CHECK_SCRIPT_UPDATE" = true ]; then
+    echo ""
+    echo "🔄 步骤0: 检查智能更新脚本更新..."
+    echo "⏳ 正在检查脚本更新，请稍候..."
 
-if [ -f "$TEMP_CHECK_DIR/GostUI/smart-update.sh" ]; then
-    # 比较脚本文件
-    if ! cmp -s "smart-update.sh" "$TEMP_CHECK_DIR/GostUI/smart-update.sh"; then
-        echo "🔄 检测到智能更新脚本有更新，正在应用..."
+    # 检查是否能快速连接到Git仓库
+    if git ls-remote --exit-code origin >/dev/null 2>&1; then
+        echo "✅ Git连接正常，检查脚本更新..."
 
-        # 备份当前脚本
-        cp "smart-update.sh" "smart-update.sh.backup"
+        # 快速获取远程信息
+        if git fetch origin main --quiet 2>/dev/null; then
+            # 检查smart-update.sh是否有更新
+            if git diff HEAD origin/main --name-only 2>/dev/null | grep -q "smart-update.sh"; then
+                echo "🔄 检测到智能更新脚本有更新，正在应用..."
 
-        # 更新脚本
-        cp "$TEMP_CHECK_DIR/GostUI/smart-update.sh" "smart-update.sh"
-        chmod +x "smart-update.sh"
+                # 备份当前脚本
+                cp "smart-update.sh" "smart-update.sh.backup.$(date +%Y%m%d_%H%M%S)"
 
-        # 清理临时目录
-        rm -rf "$TEMP_CHECK_DIR"
+                # 获取最新的脚本文件
+                if git show origin/main:smart-update.sh > "smart-update.sh.new" 2>/dev/null; then
+                    # 检查新脚本是否有效
+                    if [ -s "smart-update.sh.new" ] && head -1 "smart-update.sh.new" | grep -q "#!/bin/bash"; then
+                        # 替换脚本
+                        mv "smart-update.sh.new" "smart-update.sh"
+                        chmod +x "smart-update.sh"
 
-        echo "✅ 智能更新脚本已更新，重新启动更新流程..."
-        echo ""
+                        echo "✅ 智能更新脚本已更新，重新启动更新流程..."
+                        echo ""
 
-        # 重新执行更新的脚本
-        exec "./smart-update.sh"
+                        # 重新执行更新的脚本
+                        exec "./smart-update.sh"
+                    else
+                        echo "❌ 新脚本文件无效，继续使用当前版本"
+                        rm -f "smart-update.sh.new"
+                    fi
+                else
+                    echo "❌ 无法获取新脚本内容，继续使用当前版本"
+                fi
+            else
+                echo "✅ 智能更新脚本已是最新版本"
+            fi
+        else
+            echo "⚠️ 无法获取远程更新信息，跳过脚本更新检查"
+        fi
     else
-        echo "✅ 智能更新脚本已是最新版本"
+        echo "⚠️ Git连接失败，跳过脚本更新检查"
     fi
 else
-    echo "⚠️ 无法检查脚本更新，继续使用当前版本"
+    echo ""
+    echo "⏭️ 跳过脚本自检，使用快速更新模式"
 fi
-
-# 清理临时目录
-rm -rf "$TEMP_CHECK_DIR"
 
 # 1. 智能更新源码（完全无冲突）
 echo "📥 步骤1: 智能更新源码..."

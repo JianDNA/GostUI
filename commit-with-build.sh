@@ -75,12 +75,12 @@ echo "📤 添加文件到Git..."
 if [ "$BUILD_ONLY" = true ]; then
     # 仅添加构建文件
     git add frontend/dist/
-    
+
     if git diff --cached --quiet; then
         echo "⚠️ 构建文件没有变更"
         exit 0
     fi
-    
+
     # 提交构建文件
     COMMIT_MSG="build: 更新前端构建产物 $(date '+%Y-%m-%d %H:%M:%S')"
     git commit -m "$COMMIT_MSG"
@@ -88,17 +88,17 @@ if [ "$BUILD_ONLY" = true ]; then
 else
     # 添加所有更改
     git add .
-    
+
     # 获取提交信息
     echo ""
     echo "📝 请输入提交信息:"
     read -p "提交信息: " COMMIT_MSG
-    
+
     if [ -z "$COMMIT_MSG" ]; then
         echo "❌ 提交信息不能为空"
         exit 1
     fi
-    
+
     # 提交所有更改
     git commit -m "$COMMIT_MSG"
     echo "✅ 代码和构建文件已提交"

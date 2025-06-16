@@ -172,7 +172,6 @@ install_dependencies() {
             return
         fi
         cd ..
-        fi
     else
         echo "⚠️ 未找到frontend目录，使用预构建文件"
     fi

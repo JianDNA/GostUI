@@ -21,23 +21,38 @@ const getters = {
 const actions = {
   // 初始化用户状态
   async initializeAuth({ dispatch, state }) {
+    console.log('🔐 [Store] 初始化认证状态');
+    console.log('🔐 [Store] 本地存储的token:', state.token ? state.token.substring(0, 20) + '...' : 'null');
+    console.log('🔐 [Store] 本地存储的用户:', state.currentUser ? state.currentUser.username : 'null');
+
     if (state.token) {
       try {
+        console.log('🔐 [Store] 尝试获取当前用户信息');
         await dispatch('getCurrentUser');
+        console.log('🔐 [Store] 认证状态初始化成功');
       } catch (error) {
-        console.error('Failed to initialize auth:', error);
+        console.error('🔐 [Store] 认证状态初始化失败:', error);
         dispatch('logout');
       }
+    } else {
+      console.log('🔐 [Store] 没有token，跳过认证初始化');
     }
   },
 
   async login({ commit, dispatch }, credentials) {
     try {
+      console.log('🔐 [Store] 开始登录:', credentials.username);
       const { data } = await request.post('/auth/login', credentials);
+      console.log('🔐 [Store] 登录成功，收到token:', data.token ? data.token.substring(0, 20) + '...' : 'null');
+      console.log('🔐 [Store] 登录成功，收到用户:', data.user.username);
+
       commit('SET_TOKEN', data.token);
       commit('SET_CURRENT_USER', data.user);
+
+      console.log('🔐 [Store] Token和用户信息已保存到store');
       return data.user;
     } catch (error) {
+      console.error('🔐 [Store] 登录失败:', error);
       throw error.response?.data?.message || '登录失败';
     }
   },
@@ -124,11 +139,14 @@ const mutations = {
     state.error = null;
   },
   SET_TOKEN(state, token) {
+    console.log('🔐 [Store] 设置token:', token ? token.substring(0, 20) + '...' : 'null');
     state.token = token;
     if (token) {
       localStorage.setItem('token', token);
+      console.log('🔐 [Store] Token已保存到localStorage');
     } else {
       localStorage.removeItem('token');
+      console.log('🔐 [Store] Token已从localStorage移除');
     }
   },
   CLEAR_USER_STATE(state) {

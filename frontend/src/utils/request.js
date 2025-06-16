@@ -39,7 +39,10 @@ request.interceptors.request.use(
   config => {
     // 在请求发送之前做一些处理
     const token = store.getters['user/token'];
+    console.log('🔐 [Request] 发送请求:', config.method?.toUpperCase(), config.url);
+    console.log('🔐 [Request] Token存在:', !!token);
     if (token) {
+      console.log('🔐 [Request] Token preview:', token.substring(0, 20) + '...');
       // 让每个请求携带token
       config.headers['Authorization'] = `Bearer ${token}`;
     }

@@ -459,150 +459,58 @@ init_database() {
 
     mkdir -p database logs backups cache
 
-    # 检查并安装sqlite3包
-    echo "📦 检查sqlite3依赖..."
-    if ! npm list sqlite3 >/dev/null 2>&1; then
-        echo "📥 安装sqlite3包..."
-        if [ "$PKG_MANAGER" = "yarn" ]; then
-            yarn add sqlite3 || npm install sqlite3
-        else
-            npm install sqlite3
-        fi
-        echo "✅ sqlite3包安装完成"
-    else
-        echo "✅ sqlite3包已存在"
-    fi
-
     if [ "$DEPLOYMENT_TYPE" = "initial" ]; then
         echo "🆕 初始化新数据库..."
 
-        # 如果有数据库初始化脚本，使用Node.js执行
-        if [ -f "complete_schema.sql" ]; then
-            echo "📋 使用complete_schema.sql初始化数据库..."
-
-            # 创建临时的数据库初始化脚本
-            cat > init_db.js << 'EOF'
-const sqlite3 = require('sqlite3').verbose();
-const fs = require('fs');
-const path = require('path');
-
-const dbPath = path.join(__dirname, 'database', 'database.sqlite');
-const schemaPath = path.join(__dirname, 'complete_schema.sql');
-
-// 确保数据库目录存在
-if (!fs.existsSync(path.dirname(dbPath))) {
-    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-}
-
-const db = new sqlite3.Database(dbPath);
-
-// 读取并执行SQL脚本
-if (fs.existsSync(schemaPath)) {
-    const schema = fs.readFileSync(schemaPath, 'utf8');
-
-    db.serialize(() => {
-        // 执行建表语句
-        db.exec(schema, (err) => {
-            if (err) {
-                console.error('❌ 数据库初始化失败:', err);
-                process.exit(1);
+        # 使用Sequelize迁移系统初始化数据库
+        echo "📋 运行数据库迁移..."
+        if [ "$PKG_MANAGER" = "yarn" ]; then
+            yarn run migrate || {
+                echo "⚠️ yarn迁移失败，尝试npm..."
+                npm run migrate
             }
-
-            // 创建默认管理员
-            const insertAdmin = `
-            INSERT OR IGNORE INTO Users (username, password, email, role, isActive, createdAt, updatedAt, usedTraffic, userStatus)
-            VALUES ('admin', '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', null, 'admin', 1, datetime('now'), datetime('now'), 0, 'active');
-            `;
-
-            db.run(insertAdmin, (err) => {
-                if (err) {
-                    console.error('❌ 创建默认用户失败:', err);
-                } else {
-                    console.log('✅ 数据库初始化完成');
-                }
-
-                db.close((err) => {
-                    if (err) {
-                        console.error('❌ 关闭数据库失败:', err);
-                    }
-                    process.exit(err ? 1 : 0);
-                });
-            });
-        });
-    });
-} else {
-    console.log('⚠️ 未找到数据库初始化脚本，应用启动时会自动创建');
-    db.close();
-}
-EOF
-
-            # 执行数据库初始化
-            node init_db.js
-
-            # 清理临时文件
-            rm -f init_db.js
-
         else
-            echo "⚠️ 未找到数据库初始化脚本，应用启动时会自动创建"
+            npm run migrate || {
+                echo "❌ 数据库迁移失败"
+                exit 1
+            }
         fi
+
+        # 检查是否需要创建默认管理员用户
+        echo "👤 检查默认管理员用户..."
+        if [ -f "scripts/init-production-database.js" ]; then
+            echo "📋 创建默认管理员用户..."
+            if [ "$PKG_MANAGER" = "yarn" ]; then
+                yarn run init-db || npm run init-db
+            else
+                npm run init-db
+            fi
+        else
+            echo "⚠️ 未找到用户初始化脚本，请手动创建管理员用户"
+        fi
+
+        echo "✅ 数据库初始化完成"
     else
         echo "🔄 更新部署，保留现有数据库"
+
+        # 运行数据库迁移以更新结构
+        echo "📋 运行数据库迁移更新..."
+        if [ "$PKG_MANAGER" = "yarn" ]; then
+            yarn run migrate || npm run migrate
+        else
+            npm run migrate
+        fi
+
         if [ ! -f "database/database.sqlite" ]; then
-            echo "⚠️ 未找到现有数据库，将创建新数据库"
-            if [ -f "complete_schema.sql" ]; then
-                # 使用相同的Node.js脚本创建数据库
-                cat > init_db.js << 'EOF'
-const sqlite3 = require('sqlite3').verbose();
-const fs = require('fs');
-const path = require('path');
-
-const dbPath = path.join(__dirname, 'database', 'database.sqlite');
-const schemaPath = path.join(__dirname, 'complete_schema.sql');
-
-if (!fs.existsSync(path.dirname(dbPath))) {
-    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-}
-
-const db = new sqlite3.Database(dbPath);
-
-if (fs.existsSync(schemaPath)) {
-    const schema = fs.readFileSync(schemaPath, 'utf8');
-
-    db.serialize(() => {
-        db.exec(schema, (err) => {
-            if (err) {
-                console.error('❌ 数据库创建失败:', err);
-                process.exit(1);
-            }
-
-            const insertAdmin = `
-            INSERT OR IGNORE INTO Users (username, password, email, role, isActive, createdAt, updatedAt, usedTraffic, userStatus)
-            VALUES ('admin', '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', null, 'admin', 1, datetime('now'), datetime('now'), 0, 'active');
-            `;
-
-            db.run(insertAdmin, (err) => {
-                if (err) {
-                    console.error('❌ 创建默认用户失败:', err);
-                } else {
-                    console.log('✅ 数据库创建完成');
-                }
-
-                db.close((err) => {
-                    if (err) {
-                        console.error('❌ 关闭数据库失败:', err);
-                    }
-                    process.exit(err ? 1 : 0);
-                });
-            });
-        });
-    });
-}
-EOF
-
-                node init_db.js
-                rm -f init_db.js
+            echo "⚠️ 数据库文件不存在，这可能是迁移问题"
+            echo "💡 尝试重新运行迁移..."
+            if [ "$PKG_MANAGER" = "yarn" ]; then
+                yarn run migrate || npm run migrate
+            else
+                npm run migrate
             fi
         fi
+
         echo "✅ 数据库处理完成"
     fi
 }

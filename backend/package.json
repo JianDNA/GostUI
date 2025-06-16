@@ -7,7 +7,8 @@
     "start": "node app.js",
     "dev": "nodemon app.js",
     "dev:smart": "node scripts/start-dev.js",
-    "init-db": "node scripts/init-db.js",
+    "init-db": "node scripts/init-production-database.js",
+    "init-db-structure": "sequelize-cli db:migrate",
     "check-db": "node scripts/check-db.js",
     "migrate": "sequelize-cli db:migrate",
     "migrate:undo": "sequelize-cli db:migrate:undo",
@@ -29,7 +30,7 @@
     "@influxdata/influxdb-client": "^1.33.2",
     "axios": "^1.6.0",
     "bcryptjs": "^2.4.3",
-
+    "sqlite3": "^5.1.7",
     "body-parser": "^1.20.2",
     "chalk": "^4.1.2",
     "cors": "^2.8.5",

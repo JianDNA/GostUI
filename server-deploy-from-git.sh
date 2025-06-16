@@ -57,17 +57,50 @@ check_environment() {
         exit 1
     fi
     
+    # 安装Yarn
+    if ! command -v yarn >/dev/null 2>&1; then
+        echo "📦 安装Yarn..."
+        npm install -g yarn || {
+            echo "⚠️ 全局安装Yarn失败，尝试使用corepack..."
+            corepack enable || {
+                echo "❌ 无法安装Yarn，将使用npm"
+                USE_NPM=true
+            }
+        }
+    fi
+
+    # 检查包管理器
+    if [ "$USE_NPM" = "true" ] || ! command -v yarn >/dev/null 2>&1; then
+        echo "📋 使用包管理器: npm"
+        PKG_MANAGER="npm"
+        INSTALL_CMD="npm install"
+        BUILD_CMD="npm run build"
+        INSTALL_PROD="npm install --only=production --no-bin-links"
+        INSTALL_DEV="npm install --no-bin-links"
+    else
+        echo "📋 使用包管理器: yarn"
+        PKG_MANAGER="yarn"
+        INSTALL_CMD="yarn install"
+        BUILD_CMD="yarn build"
+        INSTALL_PROD="yarn install --production --no-bin-links"
+        INSTALL_DEV="yarn install --no-bin-links"
+    fi
+
     # 检查PM2
     if ! command -v pm2 >/dev/null 2>&1; then
         echo "📦 安装PM2..."
         sudo npm install -g pm2
     fi
-    
+
     echo "✅ 环境检查完成"
     echo "   Git: $(git --version)"
     echo "   Node.js: $(node -v)"
     echo "   npm: $(npm -v)"
+    if command -v yarn >/dev/null 2>&1; then
+        echo "   Yarn: $(yarn -v)"
+    fi
     echo "   PM2: $(pm2 -v)"
+    echo "   包管理器: $PKG_MANAGER"
 }
 
 # 克隆或更新代码
@@ -109,29 +142,48 @@ install_dependencies() {
         cd backend
 
         # 清理可能存在的问题文件
-        rm -rf node_modules package-lock.json
+        rm -rf node_modules package-lock.json yarn.lock
 
-        # 尝试多种安装方式
-        echo "🔄 尝试标准安装..."
-        npm install --only=production --no-bin-links || {
-            echo "⚠️ 标准安装失败，尝试使用legacy-peer-deps..."
-            npm install --only=production --no-bin-links --legacy-peer-deps || {
-                echo "⚠️ legacy-peer-deps安装失败，尝试跳过可选依赖..."
-                npm install --only=production --no-bin-links --no-optional || {
-                    echo "⚠️ 跳过可选依赖安装失败，尝试忽略脚本..."
-                    npm install --only=production --no-bin-links --ignore-scripts || {
-                        echo "❌ 所有安装方式都失败了"
-                        echo "💡 可能的解决方案:"
-                        echo "   1. 检查网络连接"
-                        echo "   2. 手动运行: sudo apt install build-essential python3-dev"
-                        echo "   3. 清理npm缓存: npm cache clean --force"
-                        exit 1
+        # 使用选定的包管理器安装
+        echo "🔄 使用 $PKG_MANAGER 安装后端依赖..."
+        if [ "$PKG_MANAGER" = "yarn" ]; then
+            # Yarn安装策略
+            yarn install --production --no-bin-links || {
+                echo "⚠️ Yarn标准安装失败，尝试忽略引擎检查..."
+                yarn install --production --no-bin-links --ignore-engines || {
+                    echo "⚠️ Yarn忽略引擎安装失败，尝试网络超时设置..."
+                    yarn install --production --no-bin-links --network-timeout 300000 || {
+                        echo "❌ Yarn所有安装方式都失败了，回退到npm"
+                        PKG_MANAGER="npm"
+                        INSTALL_PROD="npm install --only=production --no-bin-links"
                     }
-
-                    echo "⚠️ 使用忽略脚本方式安装，可能需要手动处理native依赖"
                 }
             }
-        }
+        fi
+
+        # 如果Yarn失败或使用npm
+        if [ "$PKG_MANAGER" = "npm" ]; then
+            # npm安装策略
+            npm install --only=production --no-bin-links || {
+                echo "⚠️ npm标准安装失败，尝试使用legacy-peer-deps..."
+                npm install --only=production --no-bin-links --legacy-peer-deps || {
+                    echo "⚠️ legacy-peer-deps安装失败，尝试跳过可选依赖..."
+                    npm install --only=production --no-bin-links --no-optional || {
+                        echo "⚠️ 跳过可选依赖安装失败，尝试忽略脚本..."
+                        npm install --only=production --no-bin-links --ignore-scripts || {
+                            echo "❌ 所有安装方式都失败了"
+                            echo "💡 可能的解决方案:"
+                            echo "   1. 检查网络连接"
+                            echo "   2. 手动运行: sudo apt install build-essential python3-dev"
+                            echo "   3. 清理缓存: npm cache clean --force"
+                            exit 1
+                        }
+
+                        echo "⚠️ 使用忽略脚本方式安装，可能需要手动处理native依赖"
+                    }
+                }
+            }
+        fi
 
         echo "✅ 后端依赖安装完成"
         cd ..
@@ -154,29 +206,61 @@ install_dependencies() {
 
         # 清理前端构建环境
         echo "🧹 清理前端构建环境..."
-        rm -rf node_modules dist package-lock.json
+        rm -rf node_modules dist package-lock.json yarn.lock
 
-        # 安装依赖
-        echo "📦 安装前端依赖..."
-        npm install --no-bin-links || {
-            echo "❌ 前端依赖安装失败"
-            cd ..
-            echo "⚠️ 创建基础前端目录"
-            mkdir -p backend/public
-            echo '<!DOCTYPE html><html><head><title>GOST管理系统</title></head><body><h1>系统正在初始化...</h1><p>前端构建失败，请检查日志</p></body></html>' > backend/public/index.html
-            return
-        }
+        # 安装前端依赖
+        echo "📦 使用 $PKG_MANAGER 安装前端依赖..."
+        if [ "$PKG_MANAGER" = "yarn" ]; then
+            yarn install --no-bin-links || {
+                echo "⚠️ Yarn前端安装失败，尝试忽略引擎..."
+                yarn install --no-bin-links --ignore-engines || {
+                    echo "❌ Yarn前端依赖安装失败，回退到npm"
+                    rm -rf node_modules yarn.lock
+                    npm install --no-bin-links || {
+                        echo "❌ 前端依赖安装失败"
+                        cd ..
+                        echo "⚠️ 创建基础前端目录"
+                        mkdir -p backend/public
+                        echo '<!DOCTYPE html><html><head><title>GOST管理系统</title></head><body><h1>系统正在初始化...</h1><p>前端构建失败，请检查日志</p></body></html>' > backend/public/index.html
+                        return
+                    }
+                }
+            }
+        else
+            npm install --no-bin-links || {
+                echo "❌ 前端依赖安装失败"
+                cd ..
+                echo "⚠️ 创建基础前端目录"
+                mkdir -p backend/public
+                echo '<!DOCTYPE html><html><head><title>GOST管理系统</title></head><body><h1>系统正在初始化...</h1><p>前端构建失败，请检查日志</p></body></html>' > backend/public/index.html
+                return
+            }
+        fi
 
         # 构建前端
-        echo "🔨 构建前端项目..."
-        npm run build || {
-            echo "❌ 前端构建失败"
-            cd ..
-            echo "⚠️ 创建基础前端目录"
-            mkdir -p backend/public
-            echo '<!DOCTYPE html><html><head><title>GOST管理系统</title></head><body><h1>系统正在初始化...</h1><p>前端构建失败，请检查日志</p></body></html>' > backend/public/index.html
-            return
-        }
+        echo "🔨 使用 $PKG_MANAGER 构建前端项目..."
+        if [ "$PKG_MANAGER" = "yarn" ]; then
+            yarn build || {
+                echo "❌ Yarn前端构建失败，尝试npm构建..."
+                npm run build || {
+                    echo "❌ 前端构建失败"
+                    cd ..
+                    echo "⚠️ 创建基础前端目录"
+                    mkdir -p backend/public
+                    echo '<!DOCTYPE html><html><head><title>GOST管理系统</title></head><body><h1>系统正在初始化...</h1><p>前端构建失败，请检查日志</p></body></html>' > backend/public/index.html
+                    return
+                }
+            }
+        else
+            npm run build || {
+                echo "❌ 前端构建失败"
+                cd ..
+                echo "⚠️ 创建基础前端目录"
+                mkdir -p backend/public
+                echo '<!DOCTYPE html><html><head><title>GOST管理系统</title></head><body><h1>系统正在初始化...</h1><p>前端构建失败，请检查日志</p></body></html>' > backend/public/index.html
+                return
+            }
+        fi
 
         # 复制构建产物
         if [ -d "dist" ] && [ -f "dist/index.html" ]; then

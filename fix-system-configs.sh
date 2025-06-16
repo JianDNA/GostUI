@@ -8,9 +8,54 @@ if [ ! -f "deploy.sh" ]; then
     exit 1
 fi
 
-# 1. 获取最新代码
-echo "📥 获取最新代码..."
-git pull
+# 1. 智能更新代码（处理Git冲突）
+echo "📥 智能更新代码..."
+
+# 保存当前工作目录状态
+ORIGINAL_DIR=$(pwd)
+
+# 检查Git状态
+if git status --porcelain | grep -q .; then
+    echo "📋 检测到本地修改，正在处理..."
+
+    # 备份可能的用户配置文件
+    BACKUP_DIR="/tmp/gost-update-backup-$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "$BACKUP_DIR"
+
+    # 备份重要的用户文件（如果存在）
+    if [ -f "backend/.env" ]; then
+        cp "backend/.env" "$BACKUP_DIR/"
+        echo "✅ 已备份 backend/.env"
+    fi
+
+    if [ -f "backend/config/custom.js" ]; then
+        cp "backend/config/custom.js" "$BACKUP_DIR/"
+        echo "✅ 已备份自定义配置"
+    fi
+
+    # 强制重置到远程最新版本
+    echo "🔄 重置到远程最新版本..."
+    git fetch origin main
+    git reset --hard origin/main
+    git clean -fd
+
+    # 恢复用户配置文件
+    if [ -f "$BACKUP_DIR/.env" ]; then
+        cp "$BACKUP_DIR/.env" "backend/"
+        echo "✅ 已恢复 backend/.env"
+    fi
+
+    if [ -f "$BACKUP_DIR/custom.js" ]; then
+        cp "$BACKUP_DIR/custom.js" "backend/config/"
+        echo "✅ 已恢复自定义配置"
+    fi
+
+    echo "✅ 代码更新完成（已处理冲突）"
+else
+    # 没有本地修改，直接拉取
+    git pull origin main
+    echo "✅ 代码更新完成"
+fi
 
 # 2. 更新前端文件
 echo "📦 更新前端文件..."

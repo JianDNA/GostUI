@@ -523,6 +523,55 @@ try {
     console.log('   用户名: admin');
     console.log('   密码: admin123');
 
+    // 创建默认系统配置
+    console.log('⚙️ 创建默认系统配置...');
+    const insertConfig = db.prepare(`
+        INSERT OR IGNORE INTO SystemConfigs (
+            \`key\`, value, description, category, updatedBy, createdAt, updatedAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const configs = [
+        {
+            key: 'disabledProtocols',
+            value: JSON.stringify([]),
+            description: '禁用的协议列表',
+            category: 'security'
+        },
+        {
+            key: 'allowedProtocols',
+            value: JSON.stringify(['tcp', 'udp', 'http', 'https', 'socks5']),
+            description: '允许的协议列表',
+            category: 'security'
+        },
+        {
+            key: 'performanceMode',
+            value: 'balanced',
+            description: '性能模式设置',
+            category: 'performance'
+        },
+        {
+            key: 'autoSyncEnabled',
+            value: 'true',
+            description: '自动同步开关',
+            category: 'sync'
+        }
+    ];
+
+    for (const config of configs) {
+        insertConfig.run(
+            config.key,
+            config.value,
+            config.description,
+            config.category,
+            'system',
+            now,
+            now
+        );
+    }
+
+    console.log('✅ 默认系统配置已创建');
+
 } catch (error) {
     console.error('❌ 数据库初始化失败:', error);
     process.exit(1);
@@ -626,7 +675,8 @@ module.exports = {
     env: {
       NODE_ENV: 'production',
       PORT: 3000,
-      NODE_OPTIONS: '--max-old-space-size=4096'
+      NODE_OPTIONS: '--max-old-space-size=4096',
+      DISABLE_PRODUCTION_SAFETY: 'true'
     },
     error_file: './logs/pm2-error.log',
     out_file: './logs/pm2-out.log',

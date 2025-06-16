@@ -9,8 +9,8 @@ const getApiConfig = async () => {
   return { API_BASE_URL, API_CONFIG, API_CONFIGS };
 };
 
-// 初始化时获取API配置
-let API_BASE_URL = 'http://localhost:3000/api';
+// 初始化时获取API配置 - 使用相对路径避免NAT端口问题
+let API_BASE_URL = '/api';  // 默认使用相对路径
 let API_CONFIG = { timeout: 15000 };
 
 // 异步初始化API配置
@@ -39,10 +39,7 @@ request.interceptors.request.use(
   config => {
     // 在请求发送之前做一些处理
     const token = store.getters['user/token'];
-    console.log('🔐 [Request] 发送请求:', config.method?.toUpperCase(), config.url);
-    console.log('🔐 [Request] Token存在:', !!token);
     if (token) {
-      console.log('🔐 [Request] Token preview:', token.substring(0, 20) + '...');
       // 让每个请求携带token
       config.headers['Authorization'] = `Bearer ${token}`;
     }

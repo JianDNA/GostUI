@@ -43,7 +43,7 @@ app.use(cors());
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-// 配置Helmet安全策略，允许HTTP协议
+// 配置Helmet安全策略，允许HTTP协议和同源API请求
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -51,7 +51,7 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'"],
       scriptSrc: ["'self'"],
       imgSrc: ["'self'", "data:", "https:"],
-      connectSrc: ["'self'"],
+      connectSrc: ["'self'"], // 允许同源API请求（相对路径）
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'"],

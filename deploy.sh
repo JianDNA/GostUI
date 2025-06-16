@@ -211,19 +211,36 @@ install_backend() {
 
 # 选择构建模式
 choose_build_mode() {
+    echo ""
     echo "🤔 选择前端构建模式:"
     echo "   1) 使用预构建文件 (推荐，速度快)"
     echo "   2) 服务器端构建 (需要更多内存和时间)"
     echo ""
 
-    # 先检查当前目录是否有预构建文件（如果是在项目目录中运行）
+    # 检查部署目录中是否有预构建文件
     local has_prebuilt=false
+    cd $DEPLOY_DIR
+
     if [ -d "frontend/dist" ] && [ -f "frontend/dist/index.html" ]; then
         has_prebuilt=true
         echo "✅ 检测到预构建文件"
+
+        # 显示预构建文件信息
+        echo "📊 预构建文件统计:"
+        echo "   HTML文件: $(find frontend/dist -name "*.html" | wc -l)"
+        echo "   JS文件: $(find frontend/dist -name "*.js" | wc -l)"
+        echo "   CSS文件: $(find frontend/dist -name "*.css" | wc -l)"
+        echo "   总大小: $(du -sh frontend/dist | cut -f1)"
     else
         echo "⚠️ 未检测到预构建文件"
+        if [ -d "frontend" ]; then
+            echo "🔍 frontend目录存在，但没有dist目录"
+        else
+            echo "🔍 frontend目录不存在"
+        fi
     fi
+
+    echo ""
 
     # 让用户选择
     if [ "$has_prebuilt" = true ]; then
@@ -231,22 +248,25 @@ choose_build_mode() {
         echo
         if [[ $REPLY =~ ^[2]$ ]]; then
             BUILD_MODE="server"
+            echo "📋 选择: 服务器端构建"
         else
             BUILD_MODE="local"
+            echo "📋 选择: 使用预构建文件"
         fi
     else
-        echo "💡 由于没有预构建文件，推荐使用服务器端构建"
-        read -p "是否使用服务器端构建？(Y/n): " -n 1 -r
+        echo "💡 由于没有预构建文件，将使用服务器端构建"
+        read -p "是否继续？(Y/n): " -n 1 -r
         echo
         if [[ $REPLY =~ ^[Nn]$ ]]; then
             echo "❌ 部署已取消"
             exit 0
         else
             BUILD_MODE="server"
+            echo "📋 选择: 服务器端构建"
         fi
     fi
 
-    echo "📋 选择的构建模式: $BUILD_MODE"
+    echo ""
 }
 
 # 安装和构建前端
@@ -691,17 +711,19 @@ main() {
     # 检查环境
     check_environment
 
-    # 选择构建模式（在代码部署之前）
+    # 备份用户数据（如果是更新部署）
+    backup_user_data
+
+    # 执行代码部署
+    deploy_code
+
+    # 选择构建模式（在代码部署之后）
     choose_build_mode
 
     # 部署前确认
     confirm_deployment
 
-    # 备份用户数据（如果是更新部署）
-    backup_user_data
-
-    # 执行部署步骤
-    deploy_code
+    # 继续执行部署步骤
     setup_node_memory
     install_backend
     install_frontend

@@ -856,33 +856,74 @@ export default {
 
 .preset-buttons {
   display: flex;
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: 16px;
+  margin-bottom: 24px;
   flex-wrap: wrap;
+  justify-content: center;
+}
+
+.preset-buttons .el-button {
+  padding: 12px 24px;
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: 25px;
+  border: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+  min-width: 140px;
+}
+
+.preset-buttons .el-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
 }
 
 .preset-descriptions {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 20px;
 }
 
 .preset-item {
-  padding: 16px;
-  background: #f8f9fa;
-  border-radius: 8px;
-  border-left: 4px solid #409eff;
+  padding: 24px;
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  border-radius: 16px;
+  border: none;
+  box-shadow: 0 6px 20px rgba(240, 147, 251, 0.2);
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.preset-item::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
+}
+
+.preset-item:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 30px rgba(240, 147, 251, 0.3);
 }
 
 .preset-item h4 {
-  margin: 0 0 8px 0;
-  color: #303133;
+  margin: 0 0 12px 0;
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: 700;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .preset-item p {
   margin: 0;
-  color: #606266;
+  color: rgba(255, 255, 255, 0.9);
   font-size: 14px;
+  line-height: 1.6;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .protocol-card {
@@ -944,29 +985,58 @@ export default {
 
 .status-item {
   text-align: center;
-  padding: 16px;
-  background: #f8f9fa;
-  border-radius: 8px;
+  padding: 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+  transition: all 0.3s ease;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.status-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.25);
 }
 
 .status-item h4 {
-  margin: 0 0 8px 0;
-  color: #303133;
+  margin: 0 0 12px 0;
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.status-item .el-tag {
+  font-weight: 600;
   font-size: 14px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.status-item span {
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .last-updated {
   margin-top: 20px;
-  padding: 16px;
-  background: #f0f9ff;
-  border-radius: 8px;
+  padding: 20px;
+  background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+  border-radius: 12px;
   text-align: center;
+  box-shadow: 0 4px 12px rgba(168, 237, 234, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .last-updated p {
-  margin: 4px 0;
-  color: #606266;
+  margin: 6px 0;
+  color: #2d3748;
   font-size: 14px;
+  font-weight: 500;
 }
 
 /* 响应式设计 */
@@ -1000,8 +1070,7 @@ export default {
 /* 深色模式支持 */
 @media (prefers-color-scheme: dark) {
   .preset-item {
-    background: #2d2d2d;
-    border-left-color: #409eff;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   }
 
   .preset-item h4 {
@@ -1009,19 +1078,19 @@ export default {
   }
 
   .preset-item p {
-    color: #cccccc;
+    color: rgba(255, 255, 255, 0.9);
   }
 
   .status-item {
-    background: #2d2d2d;
+    background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
   }
 
   .last-updated {
-    background: #1e3a5f;
+    background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);
   }
 
   .simple-mode-info .manual-sync-section {
-    background: #3d2f1f;
+    background: linear-gradient(135deg, #744210 0%, #553c0f 100%);
   }
 }
 </style>

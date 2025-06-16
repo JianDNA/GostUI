@@ -32,6 +32,47 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     exit 0
 fi
 
+# 0. 检查并更新智能更新脚本本身
+echo ""
+echo "🔄 步骤0: 检查智能更新脚本更新..."
+
+# 创建临时目录检查脚本更新
+TEMP_CHECK_DIR="/tmp/gost-script-check-$(date +%Y%m%d_%H%M%S)"
+mkdir -p "$TEMP_CHECK_DIR"
+
+# 克隆最新代码到临时目录检查
+git clone https://github.com/JianDNA/GostUI.git "$TEMP_CHECK_DIR/GostUI" >/dev/null 2>&1
+
+if [ -f "$TEMP_CHECK_DIR/GostUI/smart-update.sh" ]; then
+    # 比较脚本文件
+    if ! cmp -s "smart-update.sh" "$TEMP_CHECK_DIR/GostUI/smart-update.sh"; then
+        echo "🔄 检测到智能更新脚本有更新，正在应用..."
+
+        # 备份当前脚本
+        cp "smart-update.sh" "smart-update.sh.backup"
+
+        # 更新脚本
+        cp "$TEMP_CHECK_DIR/GostUI/smart-update.sh" "smart-update.sh"
+        chmod +x "smart-update.sh"
+
+        # 清理临时目录
+        rm -rf "$TEMP_CHECK_DIR"
+
+        echo "✅ 智能更新脚本已更新，重新启动更新流程..."
+        echo ""
+
+        # 重新执行更新的脚本
+        exec "./smart-update.sh"
+    else
+        echo "✅ 智能更新脚本已是最新版本"
+    fi
+else
+    echo "⚠️ 无法检查脚本更新，继续使用当前版本"
+fi
+
+# 清理临时目录
+rm -rf "$TEMP_CHECK_DIR"
+
 # 1. 智能更新源码（完全无冲突）
 echo "📥 步骤1: 智能更新源码..."
 

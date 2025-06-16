@@ -557,37 +557,35 @@ onUnmounted(() => {
 .stat-card {
   padding: 24px 20px;
   text-align: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid #ebeef5;
   transition: all 0.3s ease;
   height: 100%;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.15);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .stat-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 10px 30px rgba(102, 126, 234, 0.25);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
 }
 
 .stat-title {
-  font-size: 16px;
-  color: rgba(255, 255, 255, 0.9);
+  font-size: 14px;
+  color: #606266;
   margin-bottom: 12px;
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: 0.5px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .stat-value {
-  font-size: 32px;
+  font-size: 28px;
   font-weight: 700;
-  color: #ffffff;
+  color: #409EFF;
   line-height: 1.2;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .stat-value.success {
@@ -605,87 +603,65 @@ onUnmounted(() => {
 .gost-stat-card {
   position: relative;
   padding-top: 32px;
-  background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 0 6px 20px rgba(252, 182, 159, 0.2);
-}
-
-.gost-stat-card:hover {
-  box-shadow: 0 10px 30px rgba(252, 182, 159, 0.3);
-}
-
-.gost-stat-card .stat-title {
-  color: #744210;
-  font-weight: 700;
-}
-
-.gost-stat-card .stat-value {
-  color: #744210;
-  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.3);
 }
 
 .stat-icon {
   position: absolute;
   top: 16px;
   right: 16px;
-  opacity: 0.9;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+  opacity: 0.8;
 }
 
 .service-card {
   padding: 24px 20px;
-  background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+  background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid #ebeef5;
   text-align: center;
   transition: all 0.3s ease;
   height: 100%;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  box-shadow: 0 6px 20px rgba(168, 237, 234, 0.15);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .service-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 10px 30px rgba(168, 237, 234, 0.25);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
 }
 
 .service-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: #2d3748;
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
   margin-bottom: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.5);
 }
 
 .service-status {
-  font-size: 16px;
-  font-weight: 700;
-  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  color: #F56C6C;
   margin-bottom: 12px;
-  padding: 8px 16px;
-  border-radius: 20px;
-  background: linear-gradient(135deg, #f56c6c 0%, #e53e3e 100%);
+  padding: 4px 12px;
+  border-radius: 16px;
+  background-color: rgba(245, 108, 108, 0.1);
   display: inline-block;
-  box-shadow: 0 4px 12px rgba(245, 108, 108, 0.3);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .service-status.running {
-  background: linear-gradient(135deg, #67c23a 0%, #48bb78 100%);
-  box-shadow: 0 4px 12px rgba(103, 194, 58, 0.3);
+  color: #67C23A;
+  background-color: rgba(103, 194, 58, 0.1);
 }
 
 .service-details {
-  font-size: 14px;
-  color: #4a5568;
+  font-size: 12px;
+  color: #909399;
   line-height: 1.5;
-  font-weight: 500;
 }
 
 .service-details p {

@@ -462,59 +462,145 @@ init_database() {
     if [ "$DEPLOYMENT_TYPE" = "initial" ]; then
         echo "🆕 初始化新数据库..."
 
-        # 使用Sequelize迁移系统初始化数据库
-        echo "📋 运行数据库迁移..."
-        if [ "$PKG_MANAGER" = "yarn" ]; then
-            npx sequelize-cli db:migrate || {
-                echo "⚠️ npx迁移失败，尝试yarn..."
-                yarn run migrate || {
-                    echo "⚠️ yarn迁移失败，尝试npm..."
-                    npm run migrate
-                }
-            }
-        else
-            npx sequelize-cli db:migrate || {
-                echo "⚠️ npx迁移失败，尝试npm..."
-                npm run migrate || {
-                    echo "❌ 数据库迁移失败"
-                    exit 1
-                }
-            }
-        fi
+        # 使用complete_schema.sql直接初始化数据库
+        if [ -f "complete_schema.sql" ]; then
+            echo "📋 使用complete_schema.sql初始化数据库结构..."
 
-        # 检查是否需要创建默认管理员用户
-        echo "👤 检查默认管理员用户..."
-        if [ -f "scripts/init-production-database.js" ]; then
-            echo "📋 创建默认管理员用户..."
-            if [ "$PKG_MANAGER" = "yarn" ]; then
-                yarn run init-db || npm run init-db
-            else
-                npm run init-db
-            fi
+            # 使用better-sqlite3创建数据库
+            cat > init_db_temp.js << 'EOF'
+const Database = require('better-sqlite3');
+const fs = require('fs');
+const path = require('path');
+
+const dbPath = path.join(__dirname, 'database', 'database.sqlite');
+const schemaPath = path.join(__dirname, 'complete_schema.sql');
+
+// 确保数据库目录存在
+if (!fs.existsSync(path.dirname(dbPath))) {
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+}
+
+console.log('📋 连接数据库...');
+const db = new Database(dbPath);
+
+try {
+    console.log('📋 读取SQL脚本...');
+    const schema = fs.readFileSync(schemaPath, 'utf8');
+
+    console.log('📋 执行数据库初始化...');
+    db.exec(schema);
+
+    console.log('✅ 数据库结构创建完成');
+
+    // 创建默认管理员用户
+    console.log('👤 创建默认管理员用户...');
+    const bcrypt = require('bcryptjs');
+    const hashedPassword = bcrypt.hashSync('admin123', 10);
+    const now = new Date().toISOString();
+
+    const insertAdmin = db.prepare(`
+        INSERT OR IGNORE INTO Users (
+            username, password, email, role, isActive,
+            createdAt, updatedAt, usedTraffic, userStatus
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    insertAdmin.run(
+        'admin',
+        hashedPassword,
+        null,
+        'admin',
+        1,
+        now,
+        now,
+        0,
+        'active'
+    );
+
+    console.log('✅ 默认管理员用户已创建');
+    console.log('   用户名: admin');
+    console.log('   密码: admin123');
+
+} catch (error) {
+    console.error('❌ 数据库初始化失败:', error);
+    process.exit(1);
+} finally {
+    db.close();
+}
+
+console.log('🎉 数据库初始化完成！');
+EOF
+
+            # 执行初始化脚本
+            node init_db_temp.js
+
+            # 清理临时文件
+            rm -f init_db_temp.js
+
         else
-            echo "⚠️ 未找到用户初始化脚本，请手动创建管理员用户"
+            echo "❌ 未找到complete_schema.sql文件"
+            exit 1
         fi
 
         echo "✅ 数据库初始化完成"
     else
         echo "🔄 更新部署，保留现有数据库"
 
-        # 运行数据库迁移以更新结构
-        echo "📋 运行数据库迁移更新..."
-        if [ "$PKG_MANAGER" = "yarn" ]; then
-            npx sequelize-cli db:migrate || yarn run migrate || npm run migrate
-        else
-            npx sequelize-cli db:migrate || npm run migrate
-        fi
-
         if [ ! -f "database/database.sqlite" ]; then
-            echo "⚠️ 数据库文件不存在，这可能是迁移问题"
-            echo "💡 尝试重新运行迁移..."
-            if [ "$PKG_MANAGER" = "yarn" ]; then
-                npx sequelize-cli db:migrate || yarn run migrate || npm run migrate
-            else
-                npx sequelize-cli db:migrate || npm run migrate
+            echo "⚠️ 数据库文件不存在，将创建新数据库"
+
+            # 使用complete_schema.sql创建数据库
+            if [ -f "complete_schema.sql" ]; then
+                echo "📋 使用complete_schema.sql创建数据库..."
+
+                cat > init_db_temp.js << 'EOF'
+const Database = require('better-sqlite3');
+const fs = require('fs');
+const path = require('path');
+
+const dbPath = path.join(__dirname, 'database', 'database.sqlite');
+const schemaPath = path.join(__dirname, 'complete_schema.sql');
+
+if (!fs.existsSync(path.dirname(dbPath))) {
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+}
+
+console.log('📋 创建数据库...');
+const db = new Database(dbPath);
+
+try {
+    const schema = fs.readFileSync(schemaPath, 'utf8');
+    db.exec(schema);
+    console.log('✅ 数据库结构创建完成');
+
+    // 创建默认管理员用户
+    const bcrypt = require('bcryptjs');
+    const hashedPassword = bcrypt.hashSync('admin123', 10);
+    const now = new Date().toISOString();
+
+    const insertAdmin = db.prepare(`
+        INSERT OR IGNORE INTO Users (
+            username, password, email, role, isActive,
+            createdAt, updatedAt, usedTraffic, userStatus
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    insertAdmin.run('admin', hashedPassword, null, 'admin', 1, now, now, 0, 'active');
+    console.log('✅ 默认管理员用户已创建');
+
+} catch (error) {
+    console.error('❌ 数据库创建失败:', error);
+    process.exit(1);
+} finally {
+    db.close();
+}
+EOF
+
+                node init_db_temp.js
+                rm -f init_db_temp.js
             fi
+        else
+            echo "✅ 数据库文件已存在，保留现有数据"
         fi
 
         echo "✅ 数据库处理完成"

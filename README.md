@@ -64,6 +64,51 @@ pm2 restart gost-management
 /opt/gost-management/update.sh
 ```
 
+## 🔧 故障排除
+
+### 前端页面卡在加载状态
+
+如果部署后访问页面一直显示"正在加载 Gost 管理系统..."，请运行以下命令：
+
+```bash
+# 诊断问题
+cd /opt/gost-management
+./diagnose-deployment.sh
+
+# 修复前端加载问题
+./fix-frontend-loading.sh
+```
+
+### 常见问题解决
+
+1. **前端文件缺失**
+   ```bash
+   cd /opt/gost-management
+   ./fix-frontend-loading.sh
+   ```
+
+2. **服务未启动**
+   ```bash
+   cd /opt/gost-management/backend
+   pm2 start ecosystem.config.js
+   ```
+
+3. **端口被占用**
+   ```bash
+   # 检查端口占用
+   netstat -tlnp | grep :3000
+   # 如果需要，杀死占用进程
+   sudo kill -9 <PID>
+   ```
+
+4. **GOST二进制文件问题**
+   ```bash
+   # 检查GOST文件
+   ls -la /opt/gost-management/backend/bin/gost
+   # 设置执行权限
+   chmod +x /opt/gost-management/backend/bin/gost
+   ```
+
 ## 🔧 开发环境
 
 ### 后端开发

@@ -102,27 +102,58 @@ install_dependencies() {
         cd ..
     fi
     
-    # 前端构建
+    # 检查前端文件
     if [ -d "frontend" ]; then
-        echo "🔨 构建前端..."
-        cd frontend
-        npm install --no-bin-links || {
-            echo "❌ 前端依赖安装失败"
-            exit 1
-        }
-        npm run build || {
-            echo "❌ 前端构建失败"
-            exit 1
-        }
-        
-        # 将构建产物复制到后端public目录
-        if [ -d "dist" ]; then
-            rm -rf ../backend/public
-            mkdir -p ../backend/public
-            cp -r dist/* ../backend/public/
-            echo "✅ 前端构建完成并集成到后端"
+        echo "🔍 检查前端状态..."
+
+        # 检查是否已有预构建的前端文件
+        if [ -d "backend/public" ] && [ -f "backend/public/index.html" ]; then
+            echo "✅ 发现预构建的前端文件，跳过构建"
+            echo "📁 使用Git仓库中的预构建前端文件"
+        else
+            echo "🔨 构建前端..."
+            cd frontend
+            npm install --no-bin-links || {
+                echo "❌ 前端依赖安装失败，使用备用方案"
+                cd ..
+                # 如果构建失败，尝试使用任何现有的public文件
+                if [ ! -d "backend/public" ]; then
+                    echo "⚠️ 创建基础前端目录"
+                    mkdir -p backend/public
+                    echo '<!DOCTYPE html><html><head><title>GOST管理系统</title></head><body><h1>系统正在初始化...</h1></body></html>' > backend/public/index.html
+                fi
+                return
+            }
+
+            npm run build || {
+                echo "❌ 前端构建失败，使用备用方案"
+                cd ..
+                # 构建失败时不删除现有文件
+                if [ ! -d "backend/public" ]; then
+                    echo "⚠️ 创建基础前端目录"
+                    mkdir -p backend/public
+                    echo '<!DOCTYPE html><html><head><title>GOST管理系统</title></head><body><h1>系统正在初始化...</h1></body></html>' > backend/public/index.html
+                fi
+                return
+            }
+
+            # 只有构建成功才复制文件
+            if [ -d "dist" ] && [ -f "dist/index.html" ]; then
+                echo "📋 备份现有前端文件..."
+                if [ -d "../backend/public" ]; then
+                    mv ../backend/public ../backend/public.backup.$(date +%s)
+                fi
+
+                mkdir -p ../backend/public
+                cp -r dist/* ../backend/public/
+                echo "✅ 前端构建完成并集成到后端"
+            else
+                echo "❌ 构建产物不完整，保持现有文件"
+            fi
+            cd ..
         fi
-        cd ..
+    else
+        echo "⚠️ 未找到frontend目录，使用预构建文件"
     fi
     
     echo "✅ 依赖安装完成"
@@ -224,6 +255,35 @@ initialize_database() {
         echo "⚠️ 未找到complete_schema.sql，跳过数据库初始化"
         echo "💡 应用启动时会自动创建数据库"
     fi
+}
+
+# 验证前端文件
+verify_frontend() {
+    echo "🔍 验证前端文件..."
+    cd $DEPLOY_DIR
+
+    if [ ! -d "backend/public" ]; then
+        echo "❌ 前端public目录不存在"
+        return 1
+    fi
+
+    if [ ! -f "backend/public/index.html" ]; then
+        echo "❌ 前端index.html不存在"
+        return 1
+    fi
+
+    # 检查关键资源文件
+    ASSET_COUNT=$(find backend/public/assets -name "*.js" 2>/dev/null | wc -l)
+    if [ "$ASSET_COUNT" -lt 5 ]; then
+        echo "⚠️ 前端资源文件可能不完整 (找到 $ASSET_COUNT 个JS文件)"
+        echo "📋 当前public目录内容:"
+        ls -la backend/public/ || true
+        ls -la backend/public/assets/ 2>/dev/null || echo "assets目录不存在"
+        return 1
+    fi
+
+    echo "✅ 前端文件验证通过 (找到 $ASSET_COUNT 个JS文件)"
+    return 0
 }
 
 # 配置应用
@@ -385,18 +445,48 @@ git pull origin main
 cd backend
 npm install --only=production --no-bin-links
 
-# 构建前端
-cd ../frontend
-npm install --no-bin-links
-npm run build
+# 检查前端更新
+cd ../
+if [ -d "frontend" ]; then
+    echo "🔍 检查前端更新..."
 
-# 更新前端文件
-rm -rf ../backend/public
-mkdir -p ../backend/public
-cp -r dist/* ../backend/public/
+    # 检查是否已有预构建的前端文件
+    if [ -d "backend/public" ] && [ -f "backend/public/index.html" ]; then
+        echo "✅ 使用Git仓库中的预构建前端文件"
+    else
+        echo "🔨 构建前端..."
+        cd frontend
+        npm install --no-bin-links || {
+            echo "❌ 前端依赖安装失败，保持现有文件"
+            cd ../backend
+            pm2 restart gost-management
+            exit 0
+        }
+
+        npm run build || {
+            echo "❌ 前端构建失败，保持现有文件"
+            cd ../backend
+            pm2 restart gost-management
+            exit 0
+        }
+
+        # 只有构建成功才更新文件
+        if [ -d "dist" ] && [ -f "dist/index.html" ]; then
+            echo "📋 备份现有前端文件..."
+            if [ -d "../backend/public" ]; then
+                mv ../backend/public ../backend/public.backup.$(date +%s)
+            fi
+
+            mkdir -p ../backend/public
+            cp -r dist/* ../backend/public/
+            echo "✅ 前端更新完成"
+        fi
+        cd ..
+    fi
+fi
 
 # 重启服务
-cd ../backend
+cd backend
 pm2 restart gost-management
 
 echo "✅ 更新完成"
@@ -414,6 +504,17 @@ main() {
     install_dependencies
     setup_gost
     initialize_database
+
+    # 验证前端文件
+    if ! verify_frontend; then
+        echo "❌ 前端文件验证失败"
+        echo "💡 可能的解决方案:"
+        echo "   1. 确保Git仓库包含完整的backend/public目录"
+        echo "   2. 检查前端构建是否成功"
+        echo "   3. 手动运行: cd frontend && npm run build"
+        exit 1
+    fi
+
     configure_app
     start_service
     create_management_scripts

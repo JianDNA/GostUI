@@ -48,9 +48,6 @@ app.use(helmet());
 // 静态文件服务 - 提供前端页面
 app.use(express.static(path.join(__dirname, 'public')));
 
-// 全局错误处理中间件 (必须在所有路由之后)
-app.use(errorMiddleware);
-
 // 路由
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));

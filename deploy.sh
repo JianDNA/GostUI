@@ -288,10 +288,12 @@ install_frontend() {
             echo "   CSS文件: $(find dist -name "*.css" | wc -l)"
             echo "   总大小: $(du -sh dist | cut -f1)"
 
-            # 直接复制预构建文件
+            # 完全清理并复制预构建文件
             echo "📋 复制预构建文件到后端..."
+            echo "🗑️ 完全清理旧的前端文件..."
+            rm -rf ../backend/public
             mkdir -p ../backend/public
-            rm -rf ../backend/public/*
+            echo "📁 复制新的前端文件..."
             cp -r dist/* ../backend/public/
 
             # 验证复制结果
@@ -363,13 +365,13 @@ install_frontend() {
             echo "✅ 前端构建成功"
             echo "📋 复制前端文件到后端..."
 
-            # 确保后端public目录存在
+            # 完全清理并重建public目录
+            echo "🗑️ 完全清理旧的前端文件..."
+            rm -rf ../backend/public
             mkdir -p ../backend/public
 
-            # 清空旧的前端文件
-            rm -rf ../backend/public/*
-
             # 复制新的构建文件
+            echo "📁 复制新的前端文件..."
             cp -r dist/* ../backend/public/
             echo "✅ 前端文件复制完成"
 
@@ -740,7 +742,12 @@ else
 fi
 
 if [ -d "dist" ]; then
+    echo "🗑️ 清理旧的前端文件..."
+    rm -rf ../backend/public
+    mkdir -p ../backend/public
+    echo "📁 复制新的前端文件..."
     cp -r dist/* ../backend/public/
+    echo "✅ 前端文件更新完成"
 fi
 
 cd ../backend

@@ -22,8 +22,47 @@ check_environment() {
         sudo apt-get update
 
         echo "📦 安装基础构建工具..."
-        # 不安装系统的node-gyp，避免版本冲突
-        sudo apt-get install -y build-essential python3-dev curl wget
+        # 确保安装完整的构建工具链
+        sudo apt-get install -y build-essential make gcc g++ python3-dev curl wget
+
+        # 验证关键工具是否安装成功
+        echo "🔍 验证构建工具..."
+        MISSING_TOOLS=""
+
+        if ! command -v make >/dev/null 2>&1; then
+            echo "❌ make 命令未找到，尝试强制安装..."
+            sudo apt-get install -y --reinstall make build-essential
+            MISSING_TOOLS="$MISSING_TOOLS make"
+        fi
+
+        if ! command -v gcc >/dev/null 2>&1; then
+            echo "❌ gcc 编译器未找到，尝试强制安装..."
+            sudo apt-get install -y --reinstall gcc
+            MISSING_TOOLS="$MISSING_TOOLS gcc"
+        fi
+
+        if ! command -v g++ >/dev/null 2>&1; then
+            echo "❌ g++ 编译器未找到，尝试强制安装..."
+            sudo apt-get install -y --reinstall g++
+            MISSING_TOOLS="$MISSING_TOOLS g++"
+        fi
+
+        # 最终验证
+        echo "✅ 构建工具验证:"
+        echo "   make: $(which make 2>/dev/null || echo '❌ 未找到')"
+        echo "   gcc: $(which gcc 2>/dev/null || echo '❌ 未找到')"
+        echo "   g++: $(which g++ 2>/dev/null || echo '❌ 未找到')"
+        echo "   python3: $(which python3 2>/dev/null || echo '❌ 未找到')"
+
+        # 如果仍然缺少工具，强制退出并提供解决方案
+        if [ -n "$MISSING_TOOLS" ]; then
+            echo "❌ 关键构建工具仍然缺失: $MISSING_TOOLS"
+            echo "💡 请手动运行以下命令修复:"
+            echo "   sudo apt-get update"
+            echo "   sudo apt-get install -y build-essential make gcc g++ python3-dev"
+            echo "   sudo apt-get install -f"
+            exit 1
+        fi
 
         # 检查Git
         if ! command -v git >/dev/null 2>&1; then

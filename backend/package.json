@@ -29,7 +29,7 @@
     "@influxdata/influxdb-client": "^1.33.2",
     "axios": "^1.6.0",
     "bcryptjs": "^2.4.3",
-    "better-sqlite3": "^9.4.0",
+
     "body-parser": "^1.20.2",
     "chalk": "^4.1.2",
     "cors": "^2.8.5",
@@ -43,7 +43,7 @@
     "multer": "^1.4.5-lts.1",
     "node-cron": "^3.0.3",
     "sequelize": "^6.35.1",
-    "sqlite3": "^5.1.6",
+    "better-sqlite3": "^9.4.0",
     "winston": "^3.11.0",
     "winston-daily-rotate-file": "^4.7.1",
     "ws": "^8.16.0"

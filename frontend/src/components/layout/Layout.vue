@@ -109,6 +109,7 @@ const canUseTrafficTest = computed(() => {
   margin-left: 200px;
   background: #f5f7fa;
   min-height: calc(100vh - 60px);
+  overflow-y: auto; /* 确保内容可以滚动 */
 }
 
 /* 过渡动画 */

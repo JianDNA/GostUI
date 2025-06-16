@@ -14,12 +14,28 @@
     
     <!-- 防止 FOUC (Flash of Unstyled Content) -->
     <style>
+      /* CSS重置，消除默认边距和滚动条 */
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html, body {
+        height: 100%;
+        /* 移除 overflow: hidden 以允许页面滚动 */
+      }
+
       #app {
         height: 100vh;
+        width: 100vw;
         display: flex;
         align-items: center;
         justify-content: center;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        position: fixed;
+        top: 0;
+        left: 0;
       }
       
       .loading {
@@ -42,11 +58,8 @@
         100% { transform: rotate(360deg); }
       }
     </style>
-    <script type="module" crossorigin src="/assets/index-75dfb4d4.js"></script>
-    <link rel="modulepreload" crossorigin href="/assets/vue-55dd3248.js">
-    <link rel="modulepreload" crossorigin href="/assets/utils-d4f80f06.js">
-    <link rel="modulepreload" crossorigin href="/assets/element-plus-0a16f2db.js">
-    <link rel="stylesheet" href="/assets/index-84de1c65.css">
+    <script type="module" crossorigin src="/assets/index-6147da2c.js"></script>
+    <link rel="stylesheet" href="/assets/index-2463bbeb.css">
   </head>
   <body>
     <div id="app">

@@ -791,6 +791,8 @@ export default {
   padding: 20px;
   max-width: 1200px;
   margin: 0 auto;
+  min-height: 100vh;
+  overflow-y: auto; /* 确保页面内容可以滚动 */
 }
 
 .page-header {
@@ -1000,6 +1002,14 @@ export default {
   .preset-item {
     background: #2d2d2d;
     border-left-color: #409eff;
+  }
+
+  .preset-item h4 {
+    color: #ffffff;
+  }
+
+  .preset-item p {
+    color: #cccccc;
   }
 
   .status-item {

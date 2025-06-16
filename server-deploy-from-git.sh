@@ -15,18 +15,33 @@ echo "部署目录: $DEPLOY_DIR"
 # 检查环境
 check_environment() {
     echo "🔍 检查环境..."
-    
-    # 检查Git
-    if ! command -v git >/dev/null 2>&1; then
-        echo "📦 安装Git..."
-        if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update && sudo apt-get install -y git
-        elif command -v yum >/dev/null 2>&1; then
-            sudo yum install -y git
-        else
-            echo "❌ 无法自动安装Git，请手动安装"
-            exit 1
+
+    # 检查并安装基础工具
+    if command -v apt-get >/dev/null 2>&1; then
+        echo "📦 更新软件包列表..."
+        sudo apt-get update
+
+        echo "📦 安装基础构建工具..."
+        sudo apt-get install -y build-essential python3-dev node-gyp curl wget
+
+        # 检查Git
+        if ! command -v git >/dev/null 2>&1; then
+            echo "📦 安装Git..."
+            sudo apt-get install -y git
         fi
+    elif command -v yum >/dev/null 2>&1; then
+        echo "📦 安装基础构建工具..."
+        sudo yum groupinstall -y "Development Tools"
+        sudo yum install -y python3-devel curl wget
+
+        # 检查Git
+        if ! command -v git >/dev/null 2>&1; then
+            echo "📦 安装Git..."
+            sudo yum install -y git
+        fi
+    else
+        echo "❌ 不支持的包管理器，请手动安装构建工具"
+        exit 1
     fi
     
     # 检查Node.js
@@ -92,13 +107,33 @@ install_dependencies() {
     if [ -d "backend" ]; then
         echo "📦 安装后端依赖..."
         cd backend
+
+        # 清理可能存在的问题文件
+        rm -rf node_modules package-lock.json
+
+        # 尝试多种安装方式
+        echo "🔄 尝试标准安装..."
         npm install --only=production --no-bin-links || {
-            echo "⚠️ npm install失败，尝试使用备用方法..."
-            npm install --no-bin-links --legacy-peer-deps || {
-                echo "❌ 后端依赖安装失败，请检查网络连接"
-                exit 1
+            echo "⚠️ 标准安装失败，尝试使用legacy-peer-deps..."
+            npm install --only=production --no-bin-links --legacy-peer-deps || {
+                echo "⚠️ legacy-peer-deps安装失败，尝试跳过可选依赖..."
+                npm install --only=production --no-bin-links --no-optional || {
+                    echo "⚠️ 跳过可选依赖安装失败，尝试忽略脚本..."
+                    npm install --only=production --no-bin-links --ignore-scripts || {
+                        echo "❌ 所有安装方式都失败了"
+                        echo "💡 可能的解决方案:"
+                        echo "   1. 检查网络连接"
+                        echo "   2. 手动运行: sudo apt install build-essential python3-dev"
+                        echo "   3. 清理npm缓存: npm cache clean --force"
+                        exit 1
+                    }
+
+                    echo "⚠️ 使用忽略脚本方式安装，可能需要手动处理native依赖"
+                }
             }
         }
+
+        echo "✅ 后端依赖安装完成"
         cd ..
     fi
     

@@ -80,15 +80,18 @@ const canUseTrafficTest = computed(() => {
 <style scoped>
 .app-wrapper {
   min-height: 100vh;
+  display: flex;
+  flex-direction: row;
 }
 
 .sidebar-container {
   background-color: #304156;
-  height: 100%;
+  height: 100vh;
   position: fixed;
   left: 0;
   top: 0;
-  bottom: 0;
+  z-index: 1000;
+  overflow-y: auto; /* 侧边栏内容可滚动 */
 }
 
 .el-menu {
@@ -102,14 +105,21 @@ const canUseTrafficTest = computed(() => {
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   padding: 0;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  position: fixed;
+  top: 0;
+  left: 200px;
+  right: 0;
+  z-index: 999;
 }
 
 .el-main {
-  padding: 0;
+  padding: 20px;
   margin-left: 200px;
+  margin-top: 60px; /* 为固定头部留出空间 */
   background: #f5f7fa;
   min-height: calc(100vh - 60px);
-  overflow-y: auto; /* 确保内容可以滚动 */
+  overflow-y: visible; /* 允许内容自然滚动 */
+  width: calc(100vw - 200px); /* 确保宽度正确 */
 }
 
 /* 过渡动画 */

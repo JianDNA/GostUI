@@ -137,16 +137,31 @@ if [ -d "frontend/dist" ] && [ -f "frontend/dist/index.html" ]; then
     HTML_COUNT=$(find frontend/dist -name "*.html" | wc -l)
     JS_COUNT=$(find frontend/dist/assets -name "*.js" 2>/dev/null | wc -l)
     CSS_COUNT=$(find frontend/dist/assets -name "*.css" 2>/dev/null | wc -l)
-    
+
     if [ "$HTML_COUNT" -ge 1 ] && [ "$JS_COUNT" -ge 5 ] && [ "$CSS_COUNT" -ge 3 ]; then
         echo "✅ 检测到完整的预构建文件"
         echo "📊 文件统计: HTML($HTML_COUNT) JS($JS_COUNT) CSS($CSS_COUNT)"
-        
-        # 使用预构建文件
-        rm -rf backend/public
-        mkdir -p backend/public
-        cp -r frontend/dist/* backend/public/
-        echo "✅ 前端文件部署完成（使用预构建）"
+
+        # 询问用户选择
+        echo ""
+        echo "🤔 选择前端更新模式:"
+        echo "   1) 使用预构建文件 (推荐，速度快)"
+        echo "   2) 服务器端重新构建 (需要更多时间和资源)"
+        echo ""
+        read -p "请选择模式 (1/2) [默认: 1]: " -n 1 -r
+        echo
+
+        if [[ $REPLY =~ ^[2]$ ]]; then
+            echo "🔨 选择服务器端构建模式"
+            BUILD_NEEDED=true
+        else
+            echo "📦 选择预构建文件模式"
+            # 使用预构建文件
+            rm -rf backend/public
+            mkdir -p backend/public
+            cp -r frontend/dist/* backend/public/
+            echo "✅ 前端文件部署完成（使用预构建）"
+        fi
     else
         echo "⚠️ 预构建文件不完整，需要重新构建"
         BUILD_NEEDED=true
@@ -228,30 +243,40 @@ echo "⚙️ 步骤7: 检查并修复系统配置..."
 node -e "
 const Database = require('better-sqlite3');
 const path = require('path');
+const fs = require('fs');
 
 const dbPath = path.join(__dirname, 'database', 'database.sqlite');
 
-if (!require('fs').existsSync(dbPath)) {
+if (!fs.existsSync(dbPath)) {
     console.log('⚠️ 数据库文件不存在，跳过配置检查');
     process.exit(0);
 }
 
-const db = new Database(dbPath);
-
+let db;
 try {
+    db = new Database(dbPath);
+
     // 检查是否存在SystemConfigs表
-    const tables = db.prepare('SELECT name FROM sqlite_master WHERE type=\"table\" AND name=\"SystemConfigs\"').all();
-    
+    const tables = db.prepare('SELECT name FROM sqlite_master WHERE type=? AND name=?').all('table', 'SystemConfigs');
+
     if (tables.length === 0) {
         console.log('⚠️ SystemConfigs表不存在，跳过配置检查');
-        db.close();
         process.exit(0);
     }
-    
+
+    // 检查表结构
+    const columns = db.prepare('PRAGMA table_info(SystemConfigs)').all();
+    const columnNames = columns.map(col => col.name);
+
+    if (!columnNames.includes('key') || !columnNames.includes('value')) {
+        console.log('⚠️ SystemConfigs表结构不完整，跳过配置检查');
+        process.exit(0);
+    }
+
     // 检查必需的配置
     const checkConfig = db.prepare('SELECT key FROM SystemConfigs WHERE key = ?');
     const requiredConfigs = ['disabledProtocols', 'allowedProtocols', 'performanceMode', 'autoSyncEnabled'];
-    
+
     let missingConfigs = [];
     for (const config of requiredConfigs) {
         const result = checkConfig.get(config);

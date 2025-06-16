@@ -25,14 +25,17 @@
   body {
     margin: 0;
     padding: 0;
-    height: 100%;
+    min-height: 100%;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden; /* 防止水平滚动 */
+    overflow-y: auto;   /* 允许垂直滚动 */
   }
 
   #app {
-    height: 100%;
+    min-height: 100vh;
+    overflow-y: auto; /* 确保应用容器可以滚动 */
   }
 
   * {

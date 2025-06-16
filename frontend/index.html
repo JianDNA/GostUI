@@ -23,19 +23,17 @@
 
       html, body {
         height: 100%;
-        /* 移除 overflow: hidden 以允许页面滚动 */
+        overflow: auto; /* 允许页面滚动 */
       }
 
       #app {
-        height: 100vh;
+        min-height: 100vh;
         width: 100vw;
         display: flex;
         align-items: center;
         justify-content: center;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        position: fixed;
-        top: 0;
-        left: 0;
+        /* 移除 position: fixed 以允许正常滚动 */
       }
       
       .loading {

@@ -92,6 +92,22 @@ chmod +x commit-with-build.sh
 ```
 
 ### 服务器更新
+
+#### 智能更新 (推荐)
+```bash
+# 一键智能更新 - 完全傻瓜式操作
+cd ~/GostUI
+chmod +x smart-update.sh
+./smart-update.sh
+```
+
+智能更新特点：
+- ✅ **无Git冲突** - 自动处理所有代码冲突
+- ✅ **数据保护** - 自动备份和恢复用户数据
+- ✅ **配置修复** - 自动修复系统配置缺失
+- ✅ **服务管理** - 自动重启服务并验证
+
+#### 传统更新
 ```bash
 # 更新现有部署 (保留用户数据)
 cd ~/gost-management
@@ -115,7 +131,9 @@ pm2 logs gost-management     # 查看日志
 pm2 status                   # 查看状态
 
 # 系统管理
-./update.sh                  # 更新系统
+./smart-update.sh            # 智能更新 (推荐)
+./update.sh                  # 传统更新
+./fix-system-configs.sh      # 修复系统配置
 ./test-deployment.sh         # 测试部署
 ```
 
@@ -124,7 +142,9 @@ pm2 status                   # 查看状态
 ```
 GostUI/
 ├── deploy.sh                # 主部署脚本
-├── update.sh               # 更新脚本
+├── smart-update.sh         # 智能更新脚本 (推荐)
+├── update.sh               # 传统更新脚本
+├── fix-system-configs.sh   # 系统配置修复脚本
 ├── commit-with-build.sh    # 构建提交脚本
 ├── test-deployment.sh      # 部署测试脚本
 ├── backend/                # 后端代码

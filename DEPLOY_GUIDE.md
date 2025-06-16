@@ -4,7 +4,9 @@
 
 ### 核心脚本
 - **`deploy.sh`** - 主部署脚本，支持初始化和更新部署
-- **`update.sh`** - 专用更新脚本，保留用户数据
+- **`smart-update.sh`** - 智能更新脚本，完全傻瓜式操作 (推荐)
+- **`update.sh`** - 传统更新脚本，保留用户数据
+- **`fix-system-configs.sh`** - 系统配置修复脚本
 - **`commit-with-build.sh`** - 本地构建和提交脚本
 - **`test-deployment.sh`** - 部署验证脚本
 
@@ -28,10 +30,30 @@ chmod +x deploy.sh
 
 ## 🔄 更新流程
 
-### 日常更新
+### 智能更新 (推荐)
 ```bash
+# 一键智能更新 - 完全傻瓜式操作
+cd ~/GostUI
+chmod +x smart-update.sh
+./smart-update.sh
+```
+
+智能更新优势：
+- ✅ **无Git冲突** - 使用临时目录克隆最新代码
+- ✅ **数据保护** - 自动备份和恢复所有用户数据
+- ✅ **配置修复** - 自动检查并修复系统配置缺失
+- ✅ **服务管理** - 自动停止、更新、重启服务
+- ✅ **完整验证** - 自动验证更新结果
+
+### 传统更新
+```bash
+# 日常更新 (可能遇到Git冲突)
 cd ~/gost-management
 ./update.sh
+
+# 修复系统配置问题
+cd ~/GostUI
+./fix-system-configs.sh
 ```
 
 ### 强制重新部署
@@ -72,7 +94,9 @@ pm2 stop gost-management     # 停止服务
 
 ### 系统管理
 ```bash
-./update.sh                  # 更新系统
+./smart-update.sh            # 智能更新 (推荐)
+./update.sh                  # 传统更新
+./fix-system-configs.sh      # 修复系统配置
 ./test-deployment.sh         # 测试部署
 ```
 

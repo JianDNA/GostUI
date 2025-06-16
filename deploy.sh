@@ -465,14 +465,20 @@ init_database() {
         # 使用Sequelize迁移系统初始化数据库
         echo "📋 运行数据库迁移..."
         if [ "$PKG_MANAGER" = "yarn" ]; then
-            yarn run migrate || {
-                echo "⚠️ yarn迁移失败，尝试npm..."
-                npm run migrate
+            npx sequelize-cli db:migrate || {
+                echo "⚠️ npx迁移失败，尝试yarn..."
+                yarn run migrate || {
+                    echo "⚠️ yarn迁移失败，尝试npm..."
+                    npm run migrate
+                }
             }
         else
-            npm run migrate || {
-                echo "❌ 数据库迁移失败"
-                exit 1
+            npx sequelize-cli db:migrate || {
+                echo "⚠️ npx迁移失败，尝试npm..."
+                npm run migrate || {
+                    echo "❌ 数据库迁移失败"
+                    exit 1
+                }
             }
         fi
 
@@ -496,18 +502,18 @@ init_database() {
         # 运行数据库迁移以更新结构
         echo "📋 运行数据库迁移更新..."
         if [ "$PKG_MANAGER" = "yarn" ]; then
-            yarn run migrate || npm run migrate
+            npx sequelize-cli db:migrate || yarn run migrate || npm run migrate
         else
-            npm run migrate
+            npx sequelize-cli db:migrate || npm run migrate
         fi
 
         if [ ! -f "database/database.sqlite" ]; then
             echo "⚠️ 数据库文件不存在，这可能是迁移问题"
             echo "💡 尝试重新运行迁移..."
             if [ "$PKG_MANAGER" = "yarn" ]; then
-                yarn run migrate || npm run migrate
+                npx sequelize-cli db:migrate || yarn run migrate || npm run migrate
             else
-                npm run migrate
+                npx sequelize-cli db:migrate || npm run migrate
             fi
         fi
 

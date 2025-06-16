@@ -22,13 +22,19 @@ check_environment() {
         sudo apt-get update
 
         echo "📦 安装基础构建工具..."
-        sudo apt-get install -y build-essential python3-dev node-gyp curl wget
+        # 不安装系统的node-gyp，避免版本冲突
+        sudo apt-get install -y build-essential python3-dev curl wget
 
         # 检查Git
         if ! command -v git >/dev/null 2>&1; then
             echo "📦 安装Git..."
             sudo apt-get install -y git
         fi
+
+        # 修复可能的依赖问题
+        echo "🔧 修复依赖问题..."
+        sudo apt-get install -f -y || echo "依赖修复完成"
+
     elif command -v yum >/dev/null 2>&1; then
         echo "📦 安装基础构建工具..."
         sudo yum groupinstall -y "Development Tools"
@@ -92,6 +98,9 @@ check_environment() {
         sudo npm install -g pm2
     fi
 
+    # 修复系统依赖问题
+    fix_system_dependencies
+
     echo "✅ 环境检查完成"
     echo "   Git: $(git --version)"
     echo "   Node.js: $(node -v)"
@@ -101,6 +110,28 @@ check_environment() {
     fi
     echo "   PM2: $(pm2 -v)"
     echo "   包管理器: $PKG_MANAGER"
+}
+
+# 修复系统依赖问题
+fix_system_dependencies() {
+    echo "🔧 修复系统依赖问题..."
+
+    if command -v apt-get >/dev/null 2>&1; then
+        # 修复可能的包依赖问题
+        sudo apt-get install -f -y 2>/dev/null || true
+
+        # 清理不需要的包
+        sudo apt-get autoremove -y 2>/dev/null || true
+
+        # 如果有node-gyp冲突，尝试解决
+        if dpkg -l | grep -q "node-gyp"; then
+            echo "🔧 检测到node-gyp包冲突，尝试修复..."
+            sudo apt-get remove -y node-gyp 2>/dev/null || true
+            sudo apt-get autoremove -y 2>/dev/null || true
+        fi
+
+        echo "✅ 系统依赖修复完成"
+    fi
 }
 
 # 克隆或更新代码

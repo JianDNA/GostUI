@@ -986,24 +986,23 @@ export default {
 .status-item {
   text-align: center;
   padding: 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
   border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   transition: all 0.3s ease;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid #ebeef5;
 }
 
 .status-item:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.25);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
 }
 
 .status-item h4 {
   margin: 0 0 12px 0;
-  color: #ffffff;
+  color: #303133;
   font-size: 16px;
   font-weight: 600;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .status-item .el-tag {
@@ -1016,25 +1015,24 @@ export default {
 }
 
 .status-item span {
-  color: #ffffff;
+  color: #606266;
   font-size: 16px;
   font-weight: 600;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .last-updated {
   margin-top: 20px;
   padding: 20px;
-  background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+  background: linear-gradient(135deg, #f0f9ff 0%, #ffffff 100%);
   border-radius: 12px;
   text-align: center;
-  box-shadow: 0 4px 12px rgba(168, 237, 234, 0.15);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border: 1px solid #ebeef5;
 }
 
 .last-updated p {
   margin: 6px 0;
-  color: #2d3748;
+  color: #606266;
   font-size: 14px;
   font-weight: 500;
 }
@@ -1067,30 +1065,5 @@ export default {
   }
 }
 
-/* 深色模式支持 */
-@media (prefers-color-scheme: dark) {
-  .preset-item {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  }
-
-  .preset-item h4 {
-    color: #ffffff;
-  }
-
-  .preset-item p {
-    color: rgba(255, 255, 255, 0.9);
-  }
-
-  .status-item {
-    background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
-  }
-
-  .last-updated {
-    background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);
-  }
-
-  .simple-mode-info .manual-sync-section {
-    background: linear-gradient(135deg, #744210 0%, #553c0f 100%);
-  }
-}
+/* 移除深色模式支持，统一使用浅色主题 */
 </style>

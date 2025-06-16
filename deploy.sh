@@ -216,9 +216,17 @@ choose_build_mode() {
     echo "   2) 服务器端构建 (需要更多内存和时间)"
     echo ""
 
-    # 检查是否有预构建文件
-    if [ -d "$DEPLOY_DIR/frontend/dist" ] && [ -f "$DEPLOY_DIR/frontend/dist/index.html" ]; then
+    # 先检查当前目录是否有预构建文件（如果是在项目目录中运行）
+    local has_prebuilt=false
+    if [ -d "frontend/dist" ] && [ -f "frontend/dist/index.html" ]; then
+        has_prebuilt=true
         echo "✅ 检测到预构建文件"
+    else
+        echo "⚠️ 未检测到预构建文件"
+    fi
+
+    # 让用户选择
+    if [ "$has_prebuilt" = true ]; then
         read -p "请选择构建模式 (1/2) [默认: 1]: " -n 1 -r
         echo
         if [[ $REPLY =~ ^[2]$ ]]; then
@@ -227,8 +235,15 @@ choose_build_mode() {
             BUILD_MODE="local"
         fi
     else
-        echo "⚠️ 未检测到预构建文件，将使用服务器端构建"
-        BUILD_MODE="server"
+        echo "💡 由于没有预构建文件，推荐使用服务器端构建"
+        read -p "是否使用服务器端构建？(Y/n): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Nn]$ ]]; then
+            echo "❌ 部署已取消"
+            exit 0
+        else
+            BUILD_MODE="server"
+        fi
     fi
 
     echo "📋 选择的构建模式: $BUILD_MODE"
@@ -245,6 +260,13 @@ install_frontend() {
         # 检查预构建文件
         if [ -d "dist" ] && [ -f "dist/index.html" ]; then
             echo "✅ 预构建文件验证成功"
+
+            # 显示构建文件信息
+            echo "📊 预构建文件统计:"
+            echo "   HTML文件: $(find dist -name "*.html" | wc -l)"
+            echo "   JS文件: $(find dist -name "*.js" | wc -l)"
+            echo "   CSS文件: $(find dist -name "*.css" | wc -l)"
+            echo "   总大小: $(du -sh dist | cut -f1)"
 
             # 直接复制预构建文件
             echo "📋 复制预构建文件到后端..."
@@ -263,6 +285,8 @@ install_frontend() {
             fi
         else
             echo "❌ 预构建文件不完整，切换到服务器端构建"
+            echo "🔍 检查dist目录内容:"
+            ls -la dist/ 2>/dev/null || echo "dist目录不存在"
             BUILD_MODE="server"
         fi
     fi
@@ -667,7 +691,7 @@ main() {
     # 检查环境
     check_environment
 
-    # 选择构建模式
+    # 选择构建模式（在代码部署之前）
     choose_build_mode
 
     # 部署前确认

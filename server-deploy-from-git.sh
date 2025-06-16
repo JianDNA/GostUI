@@ -106,51 +106,72 @@ install_dependencies() {
     if [ -d "frontend" ]; then
         echo "🔍 检查前端状态..."
 
-        # 检查是否已有预构建的前端文件
-        if [ -d "backend/public" ] && [ -f "backend/public/index.html" ]; then
-            echo "✅ 发现预构建的前端文件，跳过构建"
-            echo "📁 使用Git仓库中的预构建前端文件"
-        else
-            echo "🔨 构建前端..."
-            cd frontend
-            npm install --no-bin-links || {
-                echo "❌ 前端依赖安装失败，使用备用方案"
-                cd ..
-                # 如果构建失败，尝试使用任何现有的public文件
-                if [ ! -d "backend/public" ]; then
-                    echo "⚠️ 创建基础前端目录"
-                    mkdir -p backend/public
-                    echo '<!DOCTYPE html><html><head><title>GOST管理系统</title></head><body><h1>系统正在初始化...</h1></body></html>' > backend/public/index.html
-                fi
-                return
-            }
+        # 强制重新构建前端（确保使用最新代码）
+        echo "🔨 强制重新构建前端..."
 
-            npm run build || {
-                echo "❌ 前端构建失败，使用备用方案"
-                cd ..
-                # 构建失败时不删除现有文件
-                if [ ! -d "backend/public" ]; then
-                    echo "⚠️ 创建基础前端目录"
-                    mkdir -p backend/public
-                    echo '<!DOCTYPE html><html><head><title>GOST管理系统</title></head><body><h1>系统正在初始化...</h1></body></html>' > backend/public/index.html
-                fi
-                return
-            }
+        # 清空现有前端文件
+        if [ -d "backend/public" ]; then
+            echo "🗑️ 清空现有前端文件..."
+            rm -rf backend/public
+        fi
 
-            # 只有构建成功才复制文件
-            if [ -d "dist" ] && [ -f "dist/index.html" ]; then
-                echo "📋 备份现有前端文件..."
-                if [ -d "../backend/public" ]; then
-                    mv ../backend/public ../backend/public.backup.$(date +%s)
-                fi
+        cd frontend
 
-                mkdir -p ../backend/public
-                cp -r dist/* ../backend/public/
-                echo "✅ 前端构建完成并集成到后端"
-            else
-                echo "❌ 构建产物不完整，保持现有文件"
-            fi
+        # 清理前端构建环境
+        echo "🧹 清理前端构建环境..."
+        rm -rf node_modules dist package-lock.json
+
+        # 安装依赖
+        echo "📦 安装前端依赖..."
+        npm install --no-bin-links || {
+            echo "❌ 前端依赖安装失败"
             cd ..
+            echo "⚠️ 创建基础前端目录"
+            mkdir -p backend/public
+            echo '<!DOCTYPE html><html><head><title>GOST管理系统</title></head><body><h1>系统正在初始化...</h1><p>前端构建失败，请检查日志</p></body></html>' > backend/public/index.html
+            return
+        }
+
+        # 构建前端
+        echo "🔨 构建前端项目..."
+        npm run build || {
+            echo "❌ 前端构建失败"
+            cd ..
+            echo "⚠️ 创建基础前端目录"
+            mkdir -p backend/public
+            echo '<!DOCTYPE html><html><head><title>GOST管理系统</title></head><body><h1>系统正在初始化...</h1><p>前端构建失败，请检查日志</p></body></html>' > backend/public/index.html
+            return
+        }
+
+        # 复制构建产物
+        if [ -d "dist" ] && [ -f "dist/index.html" ]; then
+            echo "📋 复制构建产物到后端..."
+            mkdir -p ../backend/public
+            cp -r dist/* ../backend/public/
+            echo "✅ 前端构建完成并集成到后端"
+
+            # 验证复制结果
+            if [ -f "../backend/public/index.html" ]; then
+                echo "✅ index.html 复制成功"
+            else
+                echo "❌ index.html 复制失败"
+            fi
+
+            if [ -d "../backend/public/assets" ]; then
+                ASSET_COUNT=$(find ../backend/public/assets -name "*.js" | wc -l)
+                echo "✅ assets目录复制成功 (包含 $ASSET_COUNT 个JS文件)"
+            else
+                echo "❌ assets目录复制失败"
+            fi
+        else
+            echo "❌ 构建产物不完整"
+            cd ..
+            echo "⚠️ 创建基础前端目录"
+            mkdir -p backend/public
+            echo '<!DOCTYPE html><html><head><title>GOST管理系统</title></head><body><h1>系统正在初始化...</h1><p>构建产物不完整</p></body></html>' > backend/public/index.html
+            return
+        fi
+        cd ..
         fi
     else
         echo "⚠️ 未找到frontend目录，使用预构建文件"

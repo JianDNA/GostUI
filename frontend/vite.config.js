@@ -62,55 +62,13 @@ export default defineConfig({
     // 避免构建时的内存问题
     assetsInlineLimit: 4096,
     rollupOptions: {
-      // 优化输出配置
+      // 使用最简单的配置避免循环依赖
       output: {
-        // 手动分割chunks，避免循环依赖
-        manualChunks: (id) => {
-          // Vue核心库
-          if (id.includes('vue') && !id.includes('vue-router') && !id.includes('vuex')) {
-            return 'vue-core';
-          }
-          // Vue路由和状态管理
-          if (id.includes('vue-router') || id.includes('vuex')) {
-            return 'vue-ecosystem';
-          }
-          // Element Plus UI库
-          if (id.includes('element-plus')) {
-            return 'element-plus';
-          }
-          // ECharts图表库
-          if (id.includes('echarts')) {
-            return 'echarts';
-          }
-          // Chart.js相关
-          if (id.includes('chart.js') || id.includes('vue-chartjs')) {
-            return 'chartjs';
-          }
-          // HTTP请求库
-          if (id.includes('axios')) {
-            return 'http-client';
-          }
-          // 工具库
-          if (id.includes('dayjs') || id.includes('lodash')) {
-            return 'utils';
-          }
-          // 其他第三方库
-          if (id.includes('node_modules')) {
-            return 'vendor';
-          }
-        },
-        // 优化文件名
-        chunkFileNames: (chunkInfo) => {
-          const facadeModuleId = chunkInfo.facadeModuleId ? chunkInfo.facadeModuleId.split('/').pop() : 'chunk';
-          return `assets/[name]-[hash].js`;
-        },
+        // 不进行手动分割，让Rollup自动处理
+        chunkFileNames: 'assets/[name]-[hash].js',
         entryFileNames: 'assets/[name]-[hash].js',
         assetFileNames: 'assets/[name]-[hash].[ext]'
-      },
-      // 外部依赖优化
-      external: [],
-      // 减少并发处理，提高稳定性
-      maxParallelFileOps: 1
+      }
     },
     // 构建时的内存和性能优化
     reportCompressedSize: false,
@@ -141,19 +99,14 @@ export default defineConfig({
       'vuex',
       'axios',
       'element-plus',
-      'element-plus/es',
-      'element-plus/es/components',
-      'echarts/core',
-      'echarts/charts',
-      'echarts/components',
-      'echarts/renderers',
-      'chart.js',
-      'vue-chartjs',
+      'echarts',
       'dayjs'
     ],
     // 排除有问题的依赖
     exclude: [
       'element-plus/es/locale'
-    ]
+    ],
+    // 强制预构建
+    force: true
   }
 })

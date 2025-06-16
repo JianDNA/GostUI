@@ -32,6 +32,16 @@ chmod +x deploy.sh
 # 选择 "服务器端构建" 模式
 ```
 
+### 方式三：使用便捷脚本
+```bash
+# 本地构建和提交一体化
+chmod +x commit-with-build.sh
+./commit-with-build.sh
+
+# 然后在服务器部署
+./deploy.sh
+```
+
 ## 📋 部署要求
 
 - **操作系统**: Linux (Ubuntu/CentOS/Debian)

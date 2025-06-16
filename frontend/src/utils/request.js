@@ -2,7 +2,25 @@ import axios from 'axios';
 import { ElMessage } from 'element-plus';
 import store from '@/store';
 import router from '@/router';
-import { API_BASE_URL, API_CONFIG } from '@/config/api';
+
+// 动态获取API配置，避免循环引用
+const getApiConfig = async () => {
+  const { API_BASE_URL, API_CONFIG, API_CONFIGS } = await import('@/config/api');
+  return { API_BASE_URL, API_CONFIG, API_CONFIGS };
+};
+
+// 初始化时获取API配置
+let API_BASE_URL = 'http://localhost:3000/api';
+let API_CONFIG = { timeout: 15000 };
+
+// 异步初始化API配置
+getApiConfig().then(({ API_BASE_URL: baseUrl, API_CONFIG: config }) => {
+  API_BASE_URL = baseUrl;
+  API_CONFIG = config;
+  // 更新axios实例的配置
+  request.defaults.baseURL = baseUrl;
+  request.defaults.timeout = config.timeout || 15000;
+}).catch(console.error);
 
 // 创建 axios 实例
 const request = axios.create({
@@ -118,7 +136,7 @@ async function handleGostProxyFailure(config, error) {
       localStorage.setItem('api_mode', 'direct');
 
       // 更新axios实例的baseURL
-      const { API_CONFIGS } = await import('@/config/api');
+      const { API_CONFIGS } = await getApiConfig();
       request.defaults.baseURL = API_CONFIGS.direct.baseURL;
 
       ElMessage.warning({
@@ -171,7 +189,7 @@ async function handleNetworkError(config, error) {
       localStorage.setItem('api_mode', 'direct');
 
       // 更新axios实例的baseURL
-      const { API_CONFIGS } = await import('@/config/api');
+      const { API_CONFIGS } = await getApiConfig();
       request.defaults.baseURL = API_CONFIGS.direct.baseURL;
 
       ElMessage.warning({

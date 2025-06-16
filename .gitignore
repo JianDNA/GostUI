@@ -7,11 +7,15 @@ package-lock.json
 yarn.lock
 
 # Build outputs
-dist/
+# 注释掉dist/以允许前端构建产物上传到Git
+# dist/
 build/
 .nuxt/
 .next/
 .vuepress/dist/
+
+# 但排除后端public目录中的前端文件（这些是复制过来的）
+backend/public/
 
 # Logs
 logs/

@@ -18,6 +18,8 @@ trap 'echo "❌ 部署过程中发生错误，请检查上面的错误信息"; e
 REPO_URL="https://github.com/JianDNA/GostUI.git"
 DEPLOY_DIR="$HOME/gost-management"
 PKG_MANAGER=""
+DEPLOYMENT_TYPE=""  # "initial" 或 "update"
+BUILD_MODE=""       # "local" 或 "server"
 
 echo "🚀 GOST管理系统一键部署开始..."
 echo "📋 部署目录: $DEPLOY_DIR"
@@ -74,27 +76,93 @@ check_environment() {
     echo "✅ 环境检查完成"
 }
 
+# 检测部署类型
+detect_deployment_type() {
+    if [ -d "$DEPLOY_DIR" ] && [ -f "$DEPLOY_DIR/backend/app.js" ]; then
+        DEPLOYMENT_TYPE="update"
+        echo "🔄 检测到现有部署，将进行更新部署"
+    else
+        DEPLOYMENT_TYPE="initial"
+        echo "🆕 未检测到现有部署，将进行初始化部署"
+    fi
+}
+
+# 备份用户数据
+backup_user_data() {
+    if [ "$DEPLOYMENT_TYPE" = "update" ]; then
+        echo "💾 备份用户数据..."
+
+        local backup_dir="/tmp/gost-backup-$(date +%Y%m%d_%H%M%S)"
+        mkdir -p "$backup_dir"
+
+        # 备份数据库
+        if [ -f "$DEPLOY_DIR/backend/database/database.sqlite" ]; then
+            cp "$DEPLOY_DIR/backend/database/database.sqlite" "$backup_dir/"
+            echo "✅ 数据库已备份到: $backup_dir/database.sqlite"
+        fi
+
+        # 备份配置文件
+        if [ -f "$DEPLOY_DIR/backend/config/config.js" ]; then
+            cp "$DEPLOY_DIR/backend/config/config.js" "$backup_dir/"
+            echo "✅ 配置文件已备份"
+        fi
+
+        # 备份GOST配置
+        if [ -f "$DEPLOY_DIR/backend/config/gost-config.json" ]; then
+            cp "$DEPLOY_DIR/backend/config/gost-config.json" "$backup_dir/"
+            echo "✅ GOST配置已备份"
+        fi
+
+        # 备份日志（最近的）
+        if [ -d "$DEPLOY_DIR/backend/logs" ]; then
+            mkdir -p "$backup_dir/logs"
+            find "$DEPLOY_DIR/backend/logs" -name "*.log" -mtime -7 -exec cp {} "$backup_dir/logs/" \;
+            echo "✅ 近期日志已备份"
+        fi
+
+        echo "📁 备份目录: $backup_dir"
+        export BACKUP_DIR="$backup_dir"
+    fi
+}
+
 # 部署代码
 deploy_code() {
     echo "📥 部署代码..."
-    
+
     # 停止现有服务
     pm2 stop gost-management 2>/dev/null || true
     pm2 delete gost-management 2>/dev/null || true
-    
-    # 清理旧部署
-    if [ -d "$DEPLOY_DIR" ]; then
-        echo "🗑️ 清理旧部署..."
-        rm -rf $DEPLOY_DIR
+
+    if [ "$DEPLOYMENT_TYPE" = "initial" ]; then
+        # 初始化部署：完全清理
+        if [ -d "$DEPLOY_DIR" ]; then
+            echo "🗑️ 清理旧部署目录..."
+            rm -rf $DEPLOY_DIR
+        fi
+
+        # 创建部署目录
+        mkdir -p $DEPLOY_DIR
+
+        # 克隆代码
+        echo "📥 克隆代码..."
+        git clone $REPO_URL $DEPLOY_DIR
+
+    else
+        # 更新部署：保留用户数据
+        echo "🔄 更新代码..."
+        cd $DEPLOY_DIR
+
+        # 拉取最新代码
+        git fetch origin
+        git reset --hard origin/main
+
+        # 清理node_modules以确保依赖更新
+        echo "🧹 清理依赖缓存..."
+        rm -rf backend/node_modules frontend/node_modules
+        rm -f backend/package-lock.json frontend/package-lock.json
+        rm -f backend/yarn.lock frontend/yarn.lock
     fi
-    
-    # 创建部署目录
-    mkdir -p $DEPLOY_DIR
-    
-    # 克隆代码
-    echo "📥 克隆代码..."
-    git clone $REPO_URL $DEPLOY_DIR
-    
+
     echo "✅ 代码部署完成"
 }
 
@@ -141,88 +209,145 @@ install_backend() {
     echo "✅ 后端依赖安装完成"
 }
 
+# 选择构建模式
+choose_build_mode() {
+    echo "🤔 选择前端构建模式:"
+    echo "   1) 使用预构建文件 (推荐，速度快)"
+    echo "   2) 服务器端构建 (需要更多内存和时间)"
+    echo ""
+
+    # 检查是否有预构建文件
+    if [ -d "$DEPLOY_DIR/frontend/dist" ] && [ -f "$DEPLOY_DIR/frontend/dist/index.html" ]; then
+        echo "✅ 检测到预构建文件"
+        read -p "请选择构建模式 (1/2) [默认: 1]: " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[2]$ ]]; then
+            BUILD_MODE="server"
+        else
+            BUILD_MODE="local"
+        fi
+    else
+        echo "⚠️ 未检测到预构建文件，将使用服务器端构建"
+        BUILD_MODE="server"
+    fi
+
+    echo "📋 选择的构建模式: $BUILD_MODE"
+}
+
 # 安装和构建前端
 install_frontend() {
-    echo "📦 安装前端依赖..."
+    echo "📦 处理前端..."
     cd $DEPLOY_DIR/frontend
 
-    # 清理可能存在的问题文件
-    echo "🧹 清理旧的前端文件..."
-    rm -rf node_modules package-lock.json yarn.lock dist
+    if [ "$BUILD_MODE" = "local" ]; then
+        echo "📋 使用预构建文件..."
 
-    # 安装依赖
-    echo "📥 安装前端依赖包..."
-    if [ "$PKG_MANAGER" = "yarn" ]; then
-        yarn install || {
-            echo "❌ yarn安装失败，尝试npm..."
-            PKG_MANAGER="npm"
-            npm install
-        }
-    else
-        npm install || {
-            echo "❌ npm安装失败"
-            exit 1
-        }
-    fi
+        # 检查预构建文件
+        if [ -d "dist" ] && [ -f "dist/index.html" ]; then
+            echo "✅ 预构建文件验证成功"
 
-    # 安装terser（Vite构建需要）
-    echo "📦 安装terser构建工具..."
-    if [ "$PKG_MANAGER" = "yarn" ]; then
-        yarn add terser --dev || npm install terser --save-dev
-    else
-        npm install terser --save-dev
-    fi
+            # 直接复制预构建文件
+            echo "📋 复制预构建文件到后端..."
+            mkdir -p ../backend/public
+            rm -rf ../backend/public/*
+            cp -r dist/* ../backend/public/
 
-    echo "🔨 构建前端项目..."
-    BUILD_SUCCESS=false
-
-    # 设置构建环境变量
-    export NODE_OPTIONS="--max-old-space-size=4096"
-
-    if [ "$PKG_MANAGER" = "yarn" ]; then
-        if yarn build 2>&1; then
-            BUILD_SUCCESS=true
-        fi
-    else
-        if npm run build 2>&1; then
-            BUILD_SUCCESS=true
-        fi
-    fi
-
-    # 检查构建结果
-    echo "🔍 检查构建结果..."
-    if [ -d "dist" ] && [ -f "dist/index.html" ]; then
-        echo "✅ 前端构建成功"
-        echo "📋 复制前端文件到后端..."
-
-        # 确保后端public目录存在
-        mkdir -p ../backend/public
-
-        # 清空旧的前端文件
-        rm -rf ../backend/public/*
-
-        # 复制新的构建文件
-        cp -r dist/* ../backend/public/
-        echo "✅ 前端文件复制完成"
-
-        # 验证复制结果
-        if [ -f "../backend/public/index.html" ]; then
-            echo "✅ 前端部署验证成功"
-
-            # 检查资源文件
-            ASSET_COUNT=$(find ../backend/public/assets -name "*.js" 2>/dev/null | wc -l)
-            echo "📊 前端资源文件: $ASSET_COUNT 个JS文件"
+            # 验证复制结果
+            if [ -f "../backend/public/index.html" ]; then
+                echo "✅ 前端文件部署成功"
+                ASSET_COUNT=$(find ../backend/public/assets -name "*.js" 2>/dev/null | wc -l)
+                echo "📊 前端资源文件: $ASSET_COUNT 个JS文件"
+            else
+                echo "❌ 前端文件复制失败"
+                exit 1
+            fi
         else
-            echo "❌ 前端文件复制失败"
+            echo "❌ 预构建文件不完整，切换到服务器端构建"
+            BUILD_MODE="server"
+        fi
+    fi
+
+    if [ "$BUILD_MODE" = "server" ]; then
+        echo "🔨 服务器端构建前端..."
+
+        # 清理可能存在的问题文件
+        echo "🧹 清理旧的前端文件..."
+        rm -rf node_modules package-lock.json yarn.lock dist
+
+        # 安装依赖
+        echo "📥 安装前端依赖包..."
+        if [ "$PKG_MANAGER" = "yarn" ]; then
+            yarn install || {
+                echo "❌ yarn安装失败，尝试npm..."
+                PKG_MANAGER="npm"
+                npm install
+            }
+        else
+            npm install || {
+                echo "❌ npm安装失败"
+                exit 1
+            }
+        fi
+
+        # 安装terser（Vite构建需要）
+        echo "📦 安装terser构建工具..."
+        if [ "$PKG_MANAGER" = "yarn" ]; then
+            yarn add terser --dev || npm install terser --save-dev
+        else
+            npm install terser --save-dev
+        fi
+
+        echo "🔨 构建前端项目..."
+        BUILD_SUCCESS=false
+
+        # 设置构建环境变量
+        export NODE_OPTIONS="--max-old-space-size=4096"
+
+        if [ "$PKG_MANAGER" = "yarn" ]; then
+            if yarn build 2>&1; then
+                BUILD_SUCCESS=true
+            fi
+        else
+            if npm run build 2>&1; then
+                BUILD_SUCCESS=true
+            fi
+        fi
+
+        # 检查构建结果
+        echo "🔍 检查构建结果..."
+        if [ -d "dist" ] && [ -f "dist/index.html" ]; then
+            echo "✅ 前端构建成功"
+            echo "📋 复制前端文件到后端..."
+
+            # 确保后端public目录存在
+            mkdir -p ../backend/public
+
+            # 清空旧的前端文件
+            rm -rf ../backend/public/*
+
+            # 复制新的构建文件
+            cp -r dist/* ../backend/public/
+            echo "✅ 前端文件复制完成"
+
+            # 验证复制结果
+            if [ -f "../backend/public/index.html" ]; then
+                echo "✅ 前端部署验证成功"
+
+                # 检查资源文件
+                ASSET_COUNT=$(find ../backend/public/assets -name "*.js" 2>/dev/null | wc -l)
+                echo "📊 前端资源文件: $ASSET_COUNT 个JS文件"
+            else
+                echo "❌ 前端文件复制失败"
+                exit 1
+            fi
+        else
+            echo "❌ 前端构建失败"
+            echo "🔍 检查构建目录："
+            ls -la . 2>/dev/null || true
+            echo "🔍 检查dist目录："
+            ls -la dist/ 2>/dev/null || echo "dist目录不存在"
             exit 1
         fi
-    else
-        echo "❌ 前端构建失败"
-        echo "🔍 检查构建目录："
-        ls -la . 2>/dev/null || true
-        echo "🔍 检查dist目录："
-        ls -la dist/ 2>/dev/null || echo "dist目录不存在"
-        exit 1
     fi
 }
 
@@ -252,26 +377,74 @@ setup_gost() {
     echo "✅ GOST配置完成"
 }
 
+# 恢复用户数据
+restore_user_data() {
+    if [ "$DEPLOYMENT_TYPE" = "update" ] && [ -n "$BACKUP_DIR" ]; then
+        echo "🔄 恢复用户数据..."
+        cd $DEPLOY_DIR/backend
+
+        # 恢复数据库
+        if [ -f "$BACKUP_DIR/database.sqlite" ]; then
+            mkdir -p database
+            cp "$BACKUP_DIR/database.sqlite" database/
+            echo "✅ 数据库已恢复"
+        fi
+
+        # 恢复配置文件
+        if [ -f "$BACKUP_DIR/config.js" ]; then
+            mkdir -p config
+            cp "$BACKUP_DIR/config.js" config/
+            echo "✅ 配置文件已恢复"
+        fi
+
+        # 恢复GOST配置
+        if [ -f "$BACKUP_DIR/gost-config.json" ]; then
+            mkdir -p config
+            cp "$BACKUP_DIR/gost-config.json" config/
+            echo "✅ GOST配置已恢复"
+        fi
+
+        echo "✅ 用户数据恢复完成"
+    fi
+}
+
 # 初始化数据库
 init_database() {
-    echo "🗄️ 初始化数据库..."
+    echo "🗄️ 处理数据库..."
     cd $DEPLOY_DIR/backend
-    
+
     mkdir -p database logs backups cache
-    
-    # 如果有数据库初始化脚本，执行它
-    if [ -f "complete_schema.sql" ]; then
-        echo "📋 使用complete_schema.sql初始化数据库..."
-        sqlite3 database/database.sqlite < complete_schema.sql
-        
-        # 创建默认管理员
-        sqlite3 database/database.sqlite "
-        INSERT OR IGNORE INTO Users (username, password, email, role, isActive, createdAt, updatedAt, usedTraffic, userStatus)
-        VALUES ('admin', '\$2a\$10\$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', null, 'admin', 1, datetime('now'), datetime('now'), 0, 'active');
-        "
-        echo "✅ 数据库初始化完成"
+
+    if [ "$DEPLOYMENT_TYPE" = "initial" ]; then
+        echo "🆕 初始化新数据库..."
+
+        # 如果有数据库初始化脚本，执行它
+        if [ -f "complete_schema.sql" ]; then
+            echo "📋 使用complete_schema.sql初始化数据库..."
+            sqlite3 database/database.sqlite < complete_schema.sql
+
+            # 创建默认管理员
+            sqlite3 database/database.sqlite "
+            INSERT OR IGNORE INTO Users (username, password, email, role, isActive, createdAt, updatedAt, usedTraffic, userStatus)
+            VALUES ('admin', '\$2a\$10\$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', null, 'admin', 1, datetime('now'), datetime('now'), 0, 'active');
+            "
+            echo "✅ 数据库初始化完成"
+        else
+            echo "⚠️ 未找到数据库初始化脚本，应用启动时会自动创建"
+        fi
     else
-        echo "⚠️ 未找到数据库初始化脚本，应用启动时会自动创建"
+        echo "🔄 更新部署，保留现有数据库"
+        if [ ! -f "database/database.sqlite" ]; then
+            echo "⚠️ 未找到现有数据库，将创建新数据库"
+            if [ -f "complete_schema.sql" ]; then
+                sqlite3 database/database.sqlite < complete_schema.sql
+                sqlite3 database/database.sqlite "
+                INSERT OR IGNORE INTO Users (username, password, email, role, isActive, createdAt, updatedAt, usedTraffic, userStatus)
+                VALUES ('admin', '\$2a\$10\$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', null, 'admin', 1, datetime('now'), datetime('now'), 0, 'active');
+                "
+            fi
+        fi
+        echo "✅ 数据库处理完成"
     fi
 }
 
@@ -427,12 +600,17 @@ confirm_deployment() {
     echo "   📁 部署目录: $DEPLOY_DIR"
     echo "   🌐 Git仓库: $REPO_URL"
     echo "   📦 包管理器: $PKG_MANAGER"
+    echo "   🔧 部署类型: $DEPLOYMENT_TYPE"
+    echo "   🔨 构建模式: $BUILD_MODE"
     echo ""
 
-    if [ -d "$DEPLOY_DIR" ]; then
-        echo "⚠️ 部署目录已存在，将会被清理重建"
-        echo ""
+    if [ "$DEPLOYMENT_TYPE" = "update" ]; then
+        echo "⚠️ 更新部署将保留用户数据和配置"
+        echo "💾 用户数据将自动备份"
+    else
+        echo "🆕 初始化部署将创建全新的系统"
     fi
+    echo ""
 
     read -p "🤔 确认开始部署？(y/N): " -n 1 -r
     echo
@@ -483,16 +661,32 @@ final_verification() {
 main() {
     echo "📋 开始部署流程..."
 
+    # 检测部署类型
+    detect_deployment_type
+
+    # 检查环境
+    check_environment
+
+    # 选择构建模式
+    choose_build_mode
+
     # 部署前确认
     confirm_deployment
 
+    # 备份用户数据（如果是更新部署）
+    backup_user_data
+
     # 执行部署步骤
-    check_environment
     deploy_code
     setup_node_memory
     install_backend
     install_frontend
     setup_gost
+
+    # 恢复用户数据（如果是更新部署）
+    restore_user_data
+
+    # 初始化或更新数据库
     init_database
     create_pm2_config
     start_service

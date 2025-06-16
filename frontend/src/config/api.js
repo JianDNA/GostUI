@@ -68,15 +68,7 @@ export const switchApiMode = (mode, autoUpdate = false) => {
 
   // 如果是自动更新，立即更新axios实例
   if (autoUpdate) {
-    try {
-      // 动态导入request实例并更新baseURL
-      import('@/utils/request').then(({ default: request }) => {
-        request.defaults.baseURL = API_CONFIGS[mode].baseURL;
-        console.log(`🔄 已动态更新API基础地址: ${API_CONFIGS[mode].baseURL}`);
-      });
-    } catch (error) {
-      console.error('❌ 动态更新API配置失败:', error);
-    }
+    console.log(`🔄 API模式已切换，请刷新页面以应用新配置`);
   } else {
     console.log(`🔄 请刷新页面以应用新配置`);
   }

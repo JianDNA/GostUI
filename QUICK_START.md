@@ -2,6 +2,25 @@
 
 ## 🚀 一键部署 (推荐)
 
+### 方式一：使用预构建文件 (推荐)
+```bash
+# 1. 本地构建并提交 (在开发机器上)
+cd frontend
+npm run build  # 或 yarn build
+cd ..
+git add .
+git commit -m "build: 更新前端构建产物"
+git push
+
+# 2. 服务器部署
+git clone https://github.com/JianDNA/GostUI.git
+cd GostUI
+chmod +x deploy.sh
+./deploy.sh
+# 选择 "使用预构建文件" 模式
+```
+
+### 方式二：服务器端构建
 ```bash
 # 克隆项目
 git clone https://github.com/JianDNA/GostUI.git
@@ -10,6 +29,7 @@ cd GostUI
 # 一键部署
 chmod +x deploy.sh
 ./deploy.sh
+# 选择 "服务器端构建" 模式
 ```
 
 ## 📋 部署要求
@@ -46,11 +66,30 @@ pm2 restart gost-management
 # 查看日志
 pm2 logs gost-management
 
-# 更新系统
+# 更新系统 (保留用户数据)
 ./update.sh
 
 # 测试部署
 ./test-deployment.sh
+
+# 本地构建并提交 (在开发机器上)
+chmod +x commit-with-build.sh
+./commit-with-build.sh
+```
+
+## 🔄 更新部署
+
+### 更新现有系统
+```bash
+cd ~/gost-management
+./update.sh
+```
+
+### 重新初始化部署
+```bash
+# 完全重新部署 (会清除所有数据)
+rm -rf ~/gost-management
+./deploy.sh
 ```
 
 ## 🛠️ 故障排除

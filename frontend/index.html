@@ -14,12 +14,28 @@
     
     <!-- 防止 FOUC (Flash of Unstyled Content) -->
     <style>
+      /* CSS重置，消除默认边距和滚动条 */
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html, body {
+        height: 100%;
+        overflow: hidden; /* 防止加载时出现滚动条 */
+      }
+
       #app {
         height: 100vh;
+        width: 100vw;
         display: flex;
         align-items: center;
         justify-content: center;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        position: fixed;
+        top: 0;
+        left: 0;
       }
       
       .loading {

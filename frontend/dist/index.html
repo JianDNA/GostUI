@@ -14,12 +14,28 @@
     
     <!-- 防止 FOUC (Flash of Unstyled Content) -->
     <style>
+      /* CSS重置，消除默认边距和滚动条 */
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html, body {
+        height: 100%;
+        overflow: hidden; /* 防止加载时出现滚动条 */
+      }
+
       #app {
         height: 100vh;
+        width: 100vw;
         display: flex;
         align-items: center;
         justify-content: center;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        position: fixed;
+        top: 0;
+        left: 0;
       }
       
       .loading {
@@ -42,11 +58,16 @@
         100% { transform: rotate(360deg); }
       }
     </style>
-    <script type="module" crossorigin src="/assets/index-1003864c.js"></script>
-    <link rel="modulepreload" crossorigin href="/assets/vue-9e38bd25.js">
-    <link rel="modulepreload" crossorigin href="/assets/element-plus-a98c71bf.js">
-    <link rel="modulepreload" crossorigin href="/assets/utils-c29d00eb.js">
-    <link rel="stylesheet" href="/assets/index-84de1c65.css">
+    <script type="module" crossorigin src="/assets/index-49dadce1.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/utils-e33f2175.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-ea1ba5e7.js">
+    <link rel="modulepreload" crossorigin href="/assets/element-plus-03b4afde.js">
+    <link rel="modulepreload" crossorigin href="/assets/vue-ecosystem-a18c730f.js">
+    <link rel="modulepreload" crossorigin href="/assets/echarts-d72601eb.js">
+    <link rel="modulepreload" crossorigin href="/assets/http-client-93d3f648.js">
+    <link rel="modulepreload" crossorigin href="/assets/vue-core-cdf367b4.js">
+    <link rel="stylesheet" href="/assets/vue-core-77ddf63f.css">
+    <link rel="stylesheet" href="/assets/element-plus-29540580.css">
   </head>
   <body>
     <div id="app">

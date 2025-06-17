@@ -39,13 +39,29 @@
       </el-table-column>
       <el-table-column label="流量限额" width="100">
         <template #default="{ row }">
-          <span v-if="row.trafficQuota">{{ formatQuota(row.trafficQuota) }}</span>
+          <span v-if="row.role === 'admin'" class="text-success">无限制</span>
+          <span v-else-if="row.trafficQuota">{{ formatQuota(row.trafficQuota) }}</span>
           <span v-else class="text-muted">未设置</span>
         </template>
       </el-table-column>
       <el-table-column label="流量使用 (双向)" width="180">
         <template #default="{ row }">
-          <div v-if="row.trafficStats">
+          <div v-if="row.role === 'admin'">
+            <div class="traffic-usage">
+              <span class="used">{{ row.trafficStats ? row.trafficStats.usedTrafficGB : 0 }}GB</span>
+              <span class="separator">/</span>
+              <span class="quota text-success">无限制</span>
+            </div>
+            <div class="remaining text-success">
+              无限制
+            </div>
+            <div class="traffic-type">
+              <el-tooltip content="管理员用户不受流量限制" placement="top">
+                <el-tag size="small" type="success">管理员</el-tag>
+              </el-tooltip>
+            </div>
+          </div>
+          <div v-else-if="row.trafficStats">
             <div class="traffic-usage">
               <span class="used">{{ row.trafficStats.usedTrafficGB }}GB</span>
               <span class="separator">/</span>
@@ -615,6 +631,21 @@ export default {
         // 处理用户数据，添加流量统计信息
         users.value = response.data.map(user => {
           const usedTrafficGB = (user.usedTraffic / (1024 * 1024 * 1024)).toFixed(2)
+
+          // 管理员用户特殊处理
+          if (user.role === 'admin') {
+            return {
+              ...user,
+              trafficStats: {
+                usedTrafficGB: parseFloat(usedTrafficGB),
+                trafficQuotaGB: null,
+                usagePercent: 0,
+                remainingGB: '无限制'
+              }
+            }
+          }
+
+          // 普通用户流量统计
           const trafficQuotaGB = user.trafficQuota || 0
           const usagePercent = trafficQuotaGB > 0 ? Math.min((user.usedTraffic / (trafficQuotaGB * 1024 * 1024 * 1024)) * 100, 100) : 0
           const remainingGB = trafficQuotaGB > 0 ? Math.max(trafficQuotaGB - parseFloat(usedTrafficGB), 0).toFixed(2) + 'GB' : 'Unlimited'

@@ -40,27 +40,17 @@
 
 ### 📋 环境准备
 
-#### 1. 安装Node.js (Ubuntu/Debian)
+#### 1. 安装Node.js
+
+**方式一: 使用NodeSource官方仓库 (推荐)**
 
 ```bash
-# 添加NodeSource官方仓库 (Node.js 20.x LTS)
+# Ubuntu/Debian
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-
-# 安装Node.js和npm
 sudo apt install -y nodejs
 
-# 验证安装
-node -v    # 应显示 v20.x.x
-npm -v     # 应显示 10.x.x
-```
-
-#### 2. 安装Node.js (CentOS/RHEL)
-
-```bash
-# 添加NodeSource官方仓库 (Node.js 20.x LTS)
+# CentOS/RHEL/Rocky Linux
 curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
-
-# 安装Node.js和npm
 sudo yum install -y nodejs
 
 # 验证安装
@@ -68,20 +58,52 @@ node -v    # 应显示 v20.x.x
 npm -v     # 应显示 10.x.x
 ```
 
-#### 3. 安装必要工具
+**方式二: 使用包管理器 (快速)**
+
+```bash
+# Ubuntu/Debian (可能版本较旧)
+sudo apt update && sudo apt install -y nodejs npm
+
+# CentOS/RHEL (可能版本较旧)
+sudo yum install -y nodejs npm
+
+# 检查版本，如果 < 18.0.0 请使用方式一
+node -v
+```
+
+**方式三: 使用NVM (开发环境推荐)**
+
+```bash
+# 安装NVM
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+source ~/.bashrc
+
+# 安装最新LTS版本
+nvm install --lts
+nvm use --lts
+
+# 验证安装
+node -v && npm -v
+```
+
+#### 2. 安装必要工具
 
 ```bash
 # Ubuntu/Debian
 sudo apt update
-sudo apt install -y git curl wget build-essential
+sudo apt install -y git curl wget build-essential python3
 
-# CentOS/RHEL
+# CentOS/RHEL/Rocky Linux
 sudo yum update
 sudo yum groupinstall -y "Development Tools"
-sudo yum install -y git curl wget
+sudo yum install -y git curl wget python3
+
+# 验证安装
+git --version
+curl --version
 ```
 
-#### 4. 安装PM2进程管理器
+#### 3. 安装PM2进程管理器
 
 ```bash
 # 全局安装PM2
@@ -90,9 +112,26 @@ sudo npm install -g pm2
 # 验证安装
 pm2 -v
 
-# 设置PM2开机自启
+# 设置PM2开机自启 (可选，生产环境推荐)
 pm2 startup
-sudo env PATH=$PATH:/usr/bin /usr/lib/node_modules/pm2/bin/pm2 startup systemd -u $USER --hp $HOME
+# 按照提示执行返回的命令
+```
+
+#### 4. 防火墙配置 (可选)
+
+```bash
+# Ubuntu/Debian (UFW)
+sudo ufw allow 3000/tcp
+sudo ufw allow ssh
+sudo ufw --force enable
+
+# CentOS/RHEL (firewalld)
+sudo firewall-cmd --permanent --add-port=3000/tcp
+sudo firewall-cmd --permanent --add-service=ssh
+sudo firewall-cmd --reload
+
+# 验证端口开放
+sudo netstat -tlnp | grep :3000
 ```
 
 #### 5. 配置系统资源 (可选)
@@ -125,13 +164,20 @@ chmod +x deploy.sh
 
 ```bash
 # 手动检查环境 (可选)
-node -v     # 需要 >= 18.0.0
-npm -v      # 需要 >= 9.0.0
-pm2 -v      # 需要已安装
+node -v        # 需要 >= 18.0.0
+npm -v         # 需要 >= 9.0.0
+pm2 -v         # 需要已安装
 git --version  # 需要已安装
+python3 --version  # 需要已安装 (编译native模块)
+
+# 检查系统资源
+free -h        # 检查内存 (需要 >= 2GB)
+df -h          # 检查磁盘空间 (需要 >= 1GB)
 ```
 
 如果环境检查失败，请参考上面的 **📋 环境准备** 部分。
+
+> **💡 提示**: 部署脚本会自动安装缺失的系统工具，但Node.js和PM2需要手动安装。
 
 #### 🚀 自动部署流程
 
@@ -178,6 +224,7 @@ chmod +x smart-update.sh
 - ✅ **无Git冲突** - 自动处理所有代码冲突
 - ✅ **数据保护** - 自动备份和恢复用户数据
 - ✅ **配置修复** - 自动修复系统配置缺失
+- ✅ **Bug修复** - 自动修复管理员流量显示和系统配置问题
 - ✅ **服务管理** - 自动重启服务并验证
 
 ### 重新部署
@@ -275,18 +322,33 @@ GostUI/
    # 检查当前版本
    node -v
 
-   # 如果版本 < 18.0.0，请重新安装
+   # 如果版本 < 18.0.0，卸载旧版本并重新安装
+   sudo apt remove -y nodejs npm  # Ubuntu/Debian
+   sudo yum remove -y nodejs npm  # CentOS/RHEL
+
+   # 使用NodeSource安装最新版本
    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-   sudo apt install -y nodejs
+   sudo apt install -y nodejs  # Ubuntu/Debian
+   # 或
+   curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
+   sudo yum install -y nodejs  # CentOS/RHEL
+
+   # 验证安装
+   node -v && npm -v
    ```
 
 2. **npm权限问题**
    ```bash
-   # 修复npm权限
+   # 方法1: 使用NVM (推荐)
+   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+   source ~/.bashrc
+   nvm install --lts && nvm use --lts
+
+   # 方法2: 修复npm权限
    sudo chown -R $(whoami) ~/.npm
    sudo chown -R $(whoami) /usr/lib/node_modules
 
-   # 或者配置npm使用用户目录
+   # 方法3: 配置npm使用用户目录
    mkdir ~/.npm-global
    npm config set prefix '~/.npm-global'
    echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc
@@ -295,25 +357,35 @@ GostUI/
 
 3. **PM2未安装或无法找到**
    ```bash
-   # 全局安装PM2
-   sudo npm install -g pm2
+   # 检查npm全局路径
+   npm config get prefix
+   npm list -g --depth=0
+
+   # 重新安装PM2
+   npm uninstall -g pm2 2>/dev/null
+   npm install -g pm2
 
    # 如果仍然找不到，检查PATH
    echo $PATH
-   which pm2
+   which pm2 || echo "PM2 not found in PATH"
 
-   # 手动添加到PATH
-   echo 'export PATH=/usr/lib/node_modules/.bin:$PATH' >> ~/.bashrc
+   # 手动添加npm全局bin目录到PATH
+   echo 'export PATH=$(npm config get prefix)/bin:$PATH' >> ~/.bashrc
    source ~/.bashrc
    ```
 
-4. **Git未安装**
+4. **编译错误 (native模块)**
    ```bash
    # Ubuntu/Debian
-   sudo apt update && sudo apt install -y git
+   sudo apt install -y build-essential python3-dev
 
    # CentOS/RHEL
-   sudo yum install -y git
+   sudo yum groupinstall -y "Development Tools"
+   sudo yum install -y python3-devel
+
+   # 清理并重新安装
+   rm -rf node_modules package-lock.json
+   npm install
    ```
 
 #### 🚀 部署相关问题
@@ -395,6 +467,22 @@ cp /tmp/gost-backup-*/database.sqlite ~/gost-management/backend/database/
 pm2 restart gost-management
 ```
 
+### 已知问题修复
+
+系统已自动修复以下问题：
+
+#### ✅ 管理员流量限额显示问题
+- **问题**: 管理员用户界面显示1GB流量限额
+- **修复**: 管理员用户现在正确显示"无限制"
+- **自动修复**: `smart-update.sh` 和 `deploy.sh` 会自动处理
+
+#### ✅ 系统配置API 404错误
+- **问题**: `/api/system-config/allowUserExternalAccess` 返回404
+- **修复**: 自动添加缺失的系统配置
+- **自动修复**: 部署和更新脚本会自动检查并修复配置
+
+> **注意**: 所有修复都已集成到现有的部署和更新脚本中，无需执行额外的修复脚本。
+
 ## 📊 性能优化
 
 ### 服务器配置建议
@@ -466,8 +554,8 @@ netstat -tln | grep -E ":3000|:18080|:18081"
 ## 📞 获取帮助
 
 - 📋 查看日志: `pm2 logs gost-management`
-- 🧪 运行测试: `./test-deployment.sh`
-- 📚 查看文档: `QUICK_START.md`
+- 🔍 安全检查: `./check-port-security.sh`
+- 📚 查看文档: `DEPLOYMENT.md`
 - 🐛 提交问题: [GitHub Issues](https://github.com/JianDNA/GostUI/issues)
 
 ---

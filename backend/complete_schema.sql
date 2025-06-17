@@ -155,7 +155,11 @@ CREATE INDEX `idx_user_forward_rules_user_id` ON `UserForwardRules` (`userId`);
 
 -- 系统配置初始数据
 INSERT INTO `SystemConfigs` (`key`, `value`, `description`, `category`, `updatedBy`, `createdAt`, `updatedAt`) VALUES
-('allowUserExternalAccess', 'true', '允许普通用户的转发规则被外部访问。true=监听所有接口(0.0.0.0)，false=仅本地访问(127.0.0.1)。管理员用户不受限制。', 'security', 'system', datetime('now'), datetime('now'));
+('allowUserExternalAccess', 'true', '允许普通用户的转发规则被外部访问。true=监听所有接口(0.0.0.0)，false=仅本地访问(127.0.0.1)。管理员用户不受限制。', 'security', 'system', datetime('now'), datetime('now')),
+('disabledProtocols', '[]', '禁用的协议列表', 'security', 'system', datetime('now'), datetime('now')),
+('allowedProtocols', '["tcp", "udp", "http", "https", "socks5"]', '允许的协议列表', 'security', 'system', datetime('now'), datetime('now')),
+('performanceMode', 'balanced', '性能模式设置', 'performance', 'system', datetime('now'), datetime('now')),
+('autoSyncEnabled', 'true', '自动同步开关', 'sync', 'system', datetime('now'), datetime('now'));
 
 -- 迁移记录初始数据 (确保迁移状态一致)
 INSERT INTO `SequelizeMeta` (`name`) VALUES

@@ -78,13 +78,95 @@ async function fixEmailUniqueConstraint() {
   }
 }
 
+async function fixAdminTrafficQuota() {
+  const dbPath = path.join(__dirname, 'database/database.sqlite');
+
+  if (!fs.existsSync(dbPath)) {
+    return { name: 'admin-traffic-quota', success: true, skipped: true, reason: '数据库文件不存在' };
+  }
+
+  try {
+    // 检查是否有管理员用户设置了流量限额
+    const { stdout: adminCheck } = await execAsync(`sqlite3 "${dbPath}" "SELECT COUNT(*) FROM Users WHERE role = 'admin' AND trafficQuota IS NOT NULL;"`);
+
+    const adminWithQuota = parseInt(adminCheck.trim());
+
+    if (adminWithQuota === 0) {
+      return { name: 'admin-traffic-quota', success: true, skipped: true, reason: '管理员用户没有设置流量限额' };
+    }
+
+    console.log('🔧 发现管理员用户设置了流量限额，开始修复...');
+
+    // 清除管理员用户的流量限额
+    const fixSQL = `UPDATE Users SET trafficQuota = NULL WHERE role = 'admin';`;
+
+    await execAsync(`sqlite3 "${dbPath}" "${fixSQL}"`);
+
+    return { name: 'admin-traffic-quota', success: true, fixed: true, reason: '已清除管理员用户的流量限额设置' };
+
+  } catch (error) {
+    return { name: 'admin-traffic-quota', success: false, error: error.message };
+  }
+}
+
+async function fixSystemConfigs() {
+  const dbPath = path.join(__dirname, 'database/database.sqlite');
+
+  if (!fs.existsSync(dbPath)) {
+    return { name: 'system-configs', success: true, skipped: true, reason: '数据库文件不存在' };
+  }
+
+  try {
+    // 检查SystemConfigs表是否存在
+    const { stdout: tableCheck } = await execAsync(`sqlite3 "${dbPath}" "SELECT name FROM sqlite_master WHERE type='table' AND name='SystemConfigs';"`);
+
+    if (!tableCheck.trim()) {
+      return { name: 'system-configs', success: true, skipped: true, reason: 'SystemConfigs表不存在' };
+    }
+
+    // 检查allowUserExternalAccess配置是否存在
+    const { stdout: configCheck } = await execAsync(`sqlite3 "${dbPath}" "SELECT COUNT(*) FROM SystemConfigs WHERE key = 'allowUserExternalAccess';"`);
+
+    const configExists = parseInt(configCheck.trim());
+
+    if (configExists > 0) {
+      return { name: 'system-configs', success: true, skipped: true, reason: 'allowUserExternalAccess配置已存在' };
+    }
+
+    console.log('🔧 缺少allowUserExternalAccess配置，开始添加...');
+
+    // 添加缺失的系统配置
+    const fixSQL = `
+      INSERT OR IGNORE INTO SystemConfigs (key, value, description, category, updatedBy, createdAt, updatedAt)
+      VALUES ('allowUserExternalAccess', 'true', '允许普通用户的转发规则被外部访问。true=监听所有接口(0.0.0.0)，false=仅本地访问(127.0.0.1)。管理员用户不受限制。', 'security', 'system', datetime('now'), datetime('now'));
+    `;
+
+    await execAsync(`sqlite3 "${dbPath}" "${fixSQL}"`);
+
+    // 添加迁移记录
+    const migrationSQL = `
+      INSERT OR IGNORE INTO SequelizeMeta (name)
+      VALUES ('20250617063000-add-user-external-access-config.js');
+    `;
+
+    await execAsync(`sqlite3 "${dbPath}" "${migrationSQL}"`);
+
+    return { name: 'system-configs', success: true, fixed: true, reason: '已添加allowUserExternalAccess配置' };
+
+  } catch (error) {
+    return { name: 'system-configs', success: false, error: error.message };
+  }
+}
+
 async function runDatabaseFixes() {
   console.log('🔧 开始运行数据库修复...');
-  
+
   const fixes = [
-    fixEmailUniqueConstraint
+    fixEmailUniqueConstraint,
+    fixAdminTrafficQuota,
+    fixSystemConfigs
   ];
-  
+
   const results = [];
   
   for (const fix of fixes) {

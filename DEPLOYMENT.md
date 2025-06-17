@@ -4,9 +4,12 @@
 
 ### 环境要求
 - **操作系统**: Linux (Ubuntu/CentOS/Debian)
-- **Node.js**: >= 14.0.0
+- **Node.js**: >= 18.0.0 (推荐 20.x LTS)
 - **内存**: >= 2GB (推荐4GB)
 - **磁盘**: >= 1GB 可用空间
+- **网络**: 需要访问GitHub和npm仓库
+
+> **注意**: 详细的环境准备步骤请参考 [README.md](README.md#-环境准备)
 
 ### 一键部署
 ```bash

@@ -69,40 +69,43 @@
             <small>ID: {{ user.userId }}</small>
           </div>
           <div class="col-quota">
-            {{ formatBytes(user.trafficQuota) }}
+            {{ user.role === 'admin' ? '无限制' : formatBytes(user.trafficQuota) }}
           </div>
           <div class="col-used">
             {{ formatBytes(user.usedTraffic) }}
           </div>
           <div class="col-remaining">
-            {{ formatBytes(user.remainingTraffic) }}
+            {{ user.role === 'admin' ? '无限制' : formatBytes(user.remainingTraffic) }}
           </div>
           <div class="col-percentage">
-            <div class="progress-bar">
-              <div 
-                class="progress-fill" 
+            <div class="progress-bar" v-if="user.role !== 'admin'">
+              <div
+                class="progress-fill"
                 :style="{ width: Math.min(user.usagePercentage, 100) + '%' }"
                 :class="getProgressClass(user.usagePercentage)"
               ></div>
             </div>
-            <span>{{ user.usagePercentage.toFixed(1) }}%</span>
+            <span v-if="user.role === 'admin'" class="admin-badge">管理员</span>
+            <span v-else>{{ user.usagePercentage.toFixed(1) }}%</span>
           </div>
           <div class="col-status">
-            <span :class="['status-badge', user.quotaStatus]">
-              {{ getStatusText(user.quotaStatus) }}
+            <span :class="['status-badge', user.role === 'admin' ? 'unlimited' : user.quotaStatus]">
+              {{ user.role === 'admin' ? '无限制' : getStatusText(user.quotaStatus) }}
             </span>
           </div>
           <div class="col-rules">
             {{ user.activeRulesCount }}/{{ user.totalRulesCount }}
           </div>
           <div class="col-actions">
-            <button 
-              @click="resetUserQuota(user.userId)" 
+            <button
+              v-if="user.role !== 'admin'"
+              @click="resetUserQuota(user.userId)"
               class="btn-reset"
               :disabled="loading"
             >
               重置
             </button>
+            <span v-else class="admin-note">管理员</span>
           </div>
         </div>
       </div>
@@ -550,5 +553,20 @@ export default {
 
 .status.stopped {
   color: #ff4d4f;
+}
+
+.admin-badge {
+  background: #f0f5ff;
+  color: #1890ff;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.admin-note {
+  color: #1890ff;
+  font-size: 12px;
+  font-weight: bold;
 }
 </style>

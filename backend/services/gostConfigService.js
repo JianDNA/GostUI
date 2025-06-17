@@ -42,11 +42,22 @@ class GostConfigService {
    */
   generateGostConfig = safeAsync(async () => {
     defaultLogger.info('开始生成GOST配置...');
-      
+
       // 查询规则
       let allRules = [];
+      let allowUserExternalAccess = true; // 默认允许
       try {
-      const { User, UserForwardRule } = models;
+      const { User, UserForwardRule, SystemConfig } = models;
+
+        // 获取系统配置：是否允许普通用户外部访问
+        try {
+          allowUserExternalAccess = await SystemConfig.getValue('allowUserExternalAccess', true);
+          defaultLogger.info(`🔧 普通用户外部访问配置: ${allowUserExternalAccess ? '允许' : '禁止'}`);
+        } catch (configError) {
+          defaultLogger.warn(`获取外部访问配置失败，使用默认值(允许): ${configError.message}`);
+          allowUserExternalAccess = true;
+        }
+
         allRules = await UserForwardRule.findAll({
           include: [{
             model: User,
@@ -108,7 +119,7 @@ class GostConfigService {
       defaultLogger.info(`🔍 异步检查完成，${activeRules.length} 条规则通过检查`);
 
       formattedRules = activeRules
-        .map(rule => this._formatRule(rule))
+        .map(rule => this._formatRule(rule, allowUserExternalAccess))
         .filter(Boolean); // 过滤掉null值
 
       defaultLogger.info(`格式化了 ${formattedRules.length} 条有效规则`);
@@ -305,7 +316,7 @@ class GostConfigService {
    * 格式化单个规则
    * @private
    */
-  _formatRule(rule) {
+  _formatRule(rule, allowUserExternalAccess = true) {
     try {
       // 确保rule对象存在
       if (!rule) {
@@ -332,17 +343,32 @@ class GostConfigService {
               listenAddress: rule.listenAddress || '0.0.0.0',
               listenAddressType: rule.listenAddressType || 'ipv4',
               user: user, // 🔧 添加用户对象引用，用于管理员判断
+              allowUserExternalAccess: allowUserExternalAccess, // 🔧 添加外部访问配置
               getGostListenAddress: function() {
                 // 🔒 特殊处理：admin用户可以绑定到所有接口
                 if (this.user && this.user.role === 'admin') {
-                  return `0.0.0.0:${this.sourcePort}`;
+                  if (this.listenAddressType === 'ipv6') {
+                    return `[::]:${this.sourcePort}`;  // IPv6所有接口
+                  } else {
+                    return `0.0.0.0:${this.sourcePort}`;  // IPv4所有接口
+                  }
                 }
 
-                // 普通用户使用配置的监听地址
-                if (this.listenAddressType === 'ipv6') {
-                  return `[${this.listenAddress || '::1'}]:${this.sourcePort}`;
+                // 普通用户：根据系统配置决定是否允许外部访问
+                if (this.allowUserExternalAccess) {
+                  // 允许外部访问：监听所有接口
+                  if (this.listenAddressType === 'ipv6') {
+                    return `[::]:${this.sourcePort}`;  // IPv6所有接口
+                  } else {
+                    return `0.0.0.0:${this.sourcePort}`;  // IPv4所有接口
+                  }
                 } else {
-                  return `${this.listenAddress || '127.0.0.1'}:${this.sourcePort}`;
+                  // 仅本地访问：监听回环接口
+                  if (this.listenAddressType === 'ipv6') {
+                    return `[::1]:${this.sourcePort}`;  // IPv6回环
+                  } else {
+                    return `127.0.0.1:${this.sourcePort}`;  // IPv4回环
+                  }
                 }
               }
             };

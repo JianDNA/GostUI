@@ -73,6 +73,20 @@ chmod +x smart-update.sh
 ./smart-update.sh
 ```
 
+### 手动更新 (如果智能关系异常或者失败，请尝试本方法）
+```bash
+# 手动更新
+cd ~
+# 1. 删除原有目录
+rm -rf GostUI
+# 2. 克隆最新代码
+git clone https://github.com/JianDNA/GostUI.git
+# 3. 运行智能更新脚本
+cd ~/GostUI
+chmod +x smart-update.sh
+./smart-update.sh
+```
+
 智能更新特点：
 - ✅ **无Git冲突** - 自动处理所有代码冲突
 - ✅ **数据保护** - 自动备份和恢复用户数据

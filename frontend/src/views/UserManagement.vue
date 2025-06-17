@@ -177,9 +177,9 @@
           <el-input v-model="form.email" placeholder="请输入邮箱" />
         </el-form-item>
 
-        <!-- 密码编辑 - Admin可以编辑任何用户的密码 -->
+        <!-- 密码编辑 - Admin可以编辑任何用户的密码（除了admin用户自己） -->
         <el-form-item
-          v-if="isEdit && isAdmin"
+          v-if="isEdit && isAdmin && form.username !== 'admin'"
           label="重置密码"
           prop="newPassword"
         >
@@ -204,6 +204,7 @@
           />
         </el-form-item>
 
+        <!-- Admin用户修改自己的密码 -->
         <el-form-item v-if="isEdit && form.username === 'admin'" label="新密码" prop="newPassword">
           <el-input
             v-model="form.newPassword"
@@ -211,6 +212,9 @@
             placeholder="留空表示不修改密码"
             show-password
           />
+          <div class="form-tip">
+            修改管理员密码需要二次确认，请谨慎操作
+          </div>
         </el-form-item>
 
         <el-form-item label="角色" prop="role">
@@ -740,7 +744,60 @@ export default {
         dialogVisible.value = false
         await loadUsers()
       } catch (error) {
-        ElMessage.error('操作失败: ' + (error.response?.data?.message || error.message))
+        // 检查是否是管理员密码修改需要二次确认的情况
+        if (error.response?.status === 400 &&
+            error.response?.data?.needsConfirmation &&
+            form.username === 'admin' &&
+            form.newPassword) {
+
+          // 显示二次确认对话框
+          try {
+            await ElMessageBox.confirm(
+              error.response.data.warning || '警告：修改管理员密码后，如果忘记密码将无法通过界面找回。找回管理员密码需要通过服务器命令行操作。请确认您已经记住了新密码。',
+              '确认修改管理员密码',
+              {
+                confirmButtonText: '确认修改',
+                cancelButtonText: '取消',
+                type: 'warning',
+                dangerouslyUseHTMLString: false
+              }
+            )
+
+            // 用户确认后，重新构建数据并提交带有确认标志的请求
+            const confirmedData = { ...form }
+
+            // 处理额外端口数据：确保是数字数组
+            if (confirmedData.additionalPorts && Array.isArray(confirmedData.additionalPorts)) {
+              confirmedData.additionalPorts = confirmedData.additionalPorts
+                .map(port => typeof port === 'string' ? parseInt(port) : port)
+                .filter(port => !isNaN(port) && port > 0 && port <= 65535)
+            } else {
+              confirmedData.additionalPorts = []
+            }
+
+            // 处理密码
+            if (isAdmin.value && form.newPassword) {
+              confirmedData.password = form.newPassword
+            } else {
+              delete confirmedData.password
+            }
+            delete confirmedData.newPassword
+
+            // 添加确认标志
+            confirmedData.confirmAdminPasswordChange = true
+
+            await api.users.updateUser(currentUser.value.id, confirmedData)
+            ElMessage.success('管理员密码修改成功')
+            dialogVisible.value = false
+            await loadUsers()
+          } catch (confirmError) {
+            if (confirmError !== 'cancel') {
+              ElMessage.error('修改密码失败: ' + (confirmError.response?.data?.message || confirmError.message))
+            }
+          }
+        } else {
+          ElMessage.error('操作失败: ' + (error.response?.data?.message || error.message))
+        }
       } finally {
         submitting.value = false
       }

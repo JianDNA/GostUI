@@ -286,6 +286,20 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ message: '用户名和密码是必需的' });
     }
 
+    // 检查用户名是否已存在
+    const existingUser = await User.findOne({ where: { username: userData.username } });
+    if (existingUser) {
+      return res.status(400).json({ message: '用户名已存在' });
+    }
+
+    // 检查邮箱是否已存在（仅当提供了邮箱时）
+    if (userData.email) {
+      const existingEmail = await User.findOne({ where: { email: userData.email } });
+      if (existingEmail) {
+        return res.status(400).json({ message: '邮箱已存在' });
+      }
+    }
+
     // 强制设置角色：只有用户名为admin的用户才能是管理员
     if (userData.username === 'admin') {
       // 检查是否已存在admin用户
@@ -437,6 +451,19 @@ router.put('/:id', auth, async (req, res) => {
     // 不允许修改用户名（除了admin的特殊处理）
     if (updateData.username && updateData.username !== user.username) {
       return res.status(400).json({ message: '用户名不能修改' });
+    }
+
+    // 检查邮箱是否已存在（仅当提供了邮箱且与当前邮箱不同时）
+    if (updateData.email && updateData.email !== user.email) {
+      const existingEmail = await User.findOne({
+        where: {
+          email: updateData.email,
+          id: { [Op.ne]: user.id } // 排除当前用户
+        }
+      });
+      if (existingEmail) {
+        return res.status(400).json({ message: '邮箱已存在' });
+      }
     }
 
     // 强制设置：所有用户的角色不能修改，admin用户名的用户必须是admin角色，其他用户必须是user角色

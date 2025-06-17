@@ -366,12 +366,7 @@ module.exports = (sequelize) => {
     email: {
       type: DataTypes.STRING,
       allowNull: true,
-      unique: {
-        args: true,
-        msg: '该邮箱已被使用',
-        // 允许null值不触发唯一性检查
-        ignoreDuplicates: true
-      },
+      unique: false, // 移除唯一性约束，改为在应用层处理
       validate: {
         isEmailOrEmpty(value) {
           if (!value) return; // 允许为空

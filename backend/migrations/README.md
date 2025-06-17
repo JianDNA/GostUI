@@ -1,41 +1,58 @@
-# 数据库迁移文件
+# 数据库迁移
 
-## 📋 简化后的迁移结构
+这个目录包含数据库迁移文件。
 
-此目录包含简化后的迁移文件，废弃的迁移已移动到 `archived/` 目录。
+## 新迁移系统
 
-### ✅ 当前活跃的迁移文件
+从2025年6月开始，我们使用新的迁移系统，不再依赖 sequelize-cli。
 
-1. **20240115000002-create-time-series-tables.js**
-   - 创建流量统计时间序列表
-   - 包含 traffic_hourly 和 speed_minutely 表
-   - 包含相关索引和约束
+## 迁移文件结构
 
-2. **20250613101856-add-system-configs-table.js**
-   - 创建系统配置表
-   - 用于存储系统级配置参数
+每个迁移文件应该导出一个异步函数，返回迁移结果：
 
-3. **20250615083000-final-database-consolidation.js**
-   - 最终数据库结构统一迁移
-   - 包含所有核心表结构 (Users, UserForwardRules 等)
-   - 包含所有外键约束和索引
-   - 验证数据完整性
+```javascript
+/**
+ * 迁移描述
+ */
 
-### 🗑️ 已归档的迁移文件
+async function migrateSomething() {
+  try {
+    // 检查是否需要迁移
+    // 执行迁移逻辑
 
-废弃的迁移文件已移动到 `archived/` 目录，这些文件的功能已经包含在最终统一迁移中。
+    return { success: true, migrated: true };
+    // 或者 return { success: true, skipped: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
 
-### 🚀 新项目初始化
+module.exports = migrateSomething;
+```
 
-对于新项目，只需要运行这3个迁移文件即可获得完整的数据库结构。
+## 运行迁移
 
-### 📊 迁移历史
+使用以下命令运行迁移：
 
-- 总迁移文件: 18个 → 3个
-- 归档文件: 15个
-- 简化率: 83%
+```bash
+# 运行所有迁移
+node run-migrations.js
 
----
+# 运行特定迁移
+node migrations/fix-email-unique-constraint.js
+```
 
-**生成时间**: 2025-06-15T09:08:44.205Z
-**清理工具**: cleanup-deprecated-migrations.js
+## 迁移集成
+
+迁移会在 `smart-update.sh` 更新脚本中自动运行，确保数据库结构与代码同步。
+
+## 当前迁移
+
+- `fix-email-unique-constraint.js`: 修复邮箱唯一性约束问题，允许多个用户邮箱为空
+
+## 注意事项
+
+1. 迁移文件应该是幂等的（可以安全地多次运行）
+2. 迁移前会自动检查是否需要执行
+3. 在生产环境运行迁移前，请先在测试环境验证
+4. 迁移前请备份数据库

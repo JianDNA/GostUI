@@ -906,12 +906,14 @@ confirm_deployment() {
 
 # 安全验证
 security_verification() {
-    echo "🔒 进行安全验证..."
+    echo "🔒 进行全面安全验证..."
     cd $DEPLOY_DIR/backend
 
     local security_issues=0
+    local warnings=0
 
     # 检查GOST WebAPI配置
+    echo "🔍 检查GOST WebAPI安全配置..."
     CONFIG_FILE="config/gost-config.json"
     if [ -f "$CONFIG_FILE" ]; then
         CURRENT_ADDR=$(grep -o '"addr":\s*"[^"]*"' "$CONFIG_FILE" | grep -o '"[^"]*"$' | tr -d '"' || echo "")
@@ -923,13 +925,42 @@ security_verification() {
             echo "✅ GOST WebAPI安全配置正确"
         else
             echo "⚠️ GOST WebAPI配置: $CURRENT_ADDR"
+            warnings=$((warnings + 1))
         fi
     else
         echo "ℹ️ GOST配置文件将在服务启动时创建"
     fi
 
+    # 检查观察器和限制器配置
+    echo "🔍 检查GOST插件配置..."
+    if [ -f "$CONFIG_FILE" ]; then
+        # 检查观察器配置
+        OBSERVER_ADDR=$(grep -A 5 '"observers"' "$CONFIG_FILE" | grep '"addr"' | grep -o '"[^"]*"$' | tr -d '"' || echo "")
+        if [ -n "$OBSERVER_ADDR" ]; then
+            if echo "$OBSERVER_ADDR" | grep -q "localhost:3000"; then
+                echo "✅ 观察器配置安全（通过主服务）"
+            else
+                echo "⚠️ 观察器配置: $OBSERVER_ADDR"
+                warnings=$((warnings + 1))
+            fi
+        fi
+
+        # 检查限制器配置
+        LIMITER_ADDR=$(grep -A 5 '"limiters"' "$CONFIG_FILE" | grep '"addr"' | grep -o '"[^"]*"$' | tr -d '"' || echo "")
+        if [ -n "$LIMITER_ADDR" ]; then
+            if echo "$LIMITER_ADDR" | grep -q "localhost:3000"; then
+                echo "✅ 限制器配置安全（通过主服务）"
+            else
+                echo "⚠️ 限制器配置: $LIMITER_ADDR"
+                warnings=$((warnings + 1))
+            fi
+        fi
+    fi
+
     # 检查端口监听状态（如果服务已启动）
+    echo "🔍 检查端口监听状态..."
     if command -v netstat >/dev/null 2>&1; then
+        # 检查18080端口
         LISTEN_18080=$(netstat -tln 2>/dev/null | grep :18080 | head -1 || echo "")
         if [ -n "$LISTEN_18080" ]; then
             if echo "$LISTEN_18080" | grep -q "127.0.0.1:18080"; then
@@ -939,10 +970,37 @@ security_verification() {
                 security_issues=$((security_issues + 1))
             fi
         fi
+
+        # 检查18081端口（观察器）
+        LISTEN_18081=$(netstat -tln 2>/dev/null | grep :18081 | head -1 || echo "")
+        if [ -n "$LISTEN_18081" ]; then
+            if echo "$LISTEN_18081" | grep -q "127.0.0.1:18081"; then
+                echo "✅ 端口18081仅监听本地接口"
+            elif echo "$LISTEN_18081" | grep -q "0.0.0.0:18081"; then
+                echo "❌ 安全风险：端口18081监听所有接口"
+                security_issues=$((security_issues + 1))
+            fi
+        fi
+
+        # 检查3000端口（主服务）
+        LISTEN_3000=$(netstat -tln 2>/dev/null | grep :3000 | head -1 || echo "")
+        if [ -n "$LISTEN_3000" ]; then
+            echo "✅ 端口3000正常监听（主Web服务）"
+        fi
     fi
 
+    # 安全总结
+    echo ""
+    echo "🔒 安全验证总结:"
+    echo "   安全问题: $security_issues"
+    echo "   警告信息: $warnings"
+
     if [ $security_issues -eq 0 ]; then
-        echo "✅ 安全验证通过"
+        if [ $warnings -eq 0 ]; then
+            echo "✅ 安全验证完全通过"
+        else
+            echo "⚠️ 安全验证通过，但有 $warnings 个警告"
+        fi
         return 0
     else
         echo "❌ 发现 $security_issues 个安全问题"

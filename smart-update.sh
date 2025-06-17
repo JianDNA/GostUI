@@ -534,11 +534,16 @@ else
     exit 1
 fi
 
-# 安全验证
+# 全面安全验证
 echo ""
-echo "🔒 进行安全验证..."
+echo "🔒 进行全面安全验证..."
 
 CONFIG_FILE="config/gost-config.json"
+security_issues=0
+warnings=0
+
+# 检查GOST WebAPI配置
+echo "🔍 检查GOST WebAPI安全配置..."
 if [ -f "$CONFIG_FILE" ]; then
     CURRENT_ADDR=$(grep -o '"addr":\s*"[^"]*"' "$CONFIG_FILE" | grep -o '"[^"]*"$' | tr -d '"' || echo "")
 
@@ -546,11 +551,74 @@ if [ -f "$CONFIG_FILE" ]; then
         echo "✅ GOST WebAPI安全配置正确"
     elif [ "$CURRENT_ADDR" = ":18080" ]; then
         echo "⚠️ 检测到GOST WebAPI安全风险，建议重新运行更新"
+        warnings=$((warnings + 1))
     else
         echo "ℹ️ GOST WebAPI配置: $CURRENT_ADDR"
     fi
 else
     echo "ℹ️ GOST配置文件将在服务运行时创建"
+fi
+
+# 检查观察器和限制器配置
+echo "🔍 检查GOST插件配置..."
+if [ -f "$CONFIG_FILE" ]; then
+    # 检查观察器配置
+    OBSERVER_ADDR=$(grep -A 5 '"observers"' "$CONFIG_FILE" | grep '"addr"' | grep -o '"[^"]*"$' | tr -d '"' || echo "")
+    if [ -n "$OBSERVER_ADDR" ]; then
+        if echo "$OBSERVER_ADDR" | grep -q "localhost:3000"; then
+            echo "✅ 观察器配置安全（通过主服务）"
+        else
+            echo "ℹ️ 观察器配置: $OBSERVER_ADDR"
+        fi
+    fi
+
+    # 检查限制器配置
+    LIMITER_ADDR=$(grep -A 5 '"limiters"' "$CONFIG_FILE" | grep '"addr"' | grep -o '"[^"]*"$' | tr -d '"' || echo "")
+    if [ -n "$LIMITER_ADDR" ]; then
+        if echo "$LIMITER_ADDR" | grep -q "localhost:3000"; then
+            echo "✅ 限制器配置安全（通过主服务）"
+        else
+            echo "ℹ️ 限制器配置: $LIMITER_ADDR"
+        fi
+    fi
+fi
+
+# 检查端口监听状态
+echo "🔍 检查端口监听状态..."
+if command -v netstat >/dev/null 2>&1; then
+    # 检查18080端口
+    LISTEN_18080=$(netstat -tln 2>/dev/null | grep :18080 | head -1 || echo "")
+    if [ -n "$LISTEN_18080" ]; then
+        if echo "$LISTEN_18080" | grep -q "127.0.0.1:18080"; then
+            echo "✅ 端口18080仅监听本地接口"
+        elif echo "$LISTEN_18080" | grep -q "0.0.0.0:18080"; then
+            echo "⚠️ 端口18080监听所有接口，存在安全风险"
+            warnings=$((warnings + 1))
+        fi
+    fi
+
+    # 检查18081端口（观察器）
+    LISTEN_18081=$(netstat -tln 2>/dev/null | grep :18081 | head -1 || echo "")
+    if [ -n "$LISTEN_18081" ]; then
+        if echo "$LISTEN_18081" | grep -q "127.0.0.1:18081"; then
+            echo "✅ 端口18081仅监听本地接口"
+        elif echo "$LISTEN_18081" | grep -q "0.0.0.0:18081"; then
+            echo "⚠️ 端口18081监听所有接口，存在安全风险"
+            warnings=$((warnings + 1))
+        fi
+    fi
+fi
+
+# 安全验证总结
+echo ""
+echo "🔒 安全验证总结:"
+echo "   安全问题: $security_issues"
+echo "   警告信息: $warnings"
+
+if [ $warnings -eq 0 ]; then
+    echo "✅ 安全验证完全通过"
+else
+    echo "⚠️ 发现 $warnings 个安全警告，建议关注"
 fi
 
 # 11. 清理临时文件

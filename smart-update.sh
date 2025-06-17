@@ -325,34 +325,46 @@ echo ""
 echo "🔄 步骤8: 检查并运行新迁移..."
 
 # 检查外部访问控制配置迁移
-if [ -f "backend/migrations/20250617063000-add-user-external-access-config.js" ]; then
-    echo "📝 检查外部访问控制配置迁移..."
+echo "📝 检查外部访问控制配置..."
 
-    # 检查迁移是否已执行
-    MIGRATION_EXISTS=$(sqlite3 backend/database/database.sqlite "SELECT COUNT(*) FROM SequelizeMeta WHERE name = '20250617063000-add-user-external-access-config.js';" 2>/dev/null || echo "0")
+# 检查配置是否存在
+CONFIG_EXISTS=$(sqlite3 backend/database/database.sqlite "SELECT COUNT(*) FROM SystemConfigs WHERE key = 'allowUserExternalAccess';" 2>/dev/null || echo "0")
 
-    if [ "$MIGRATION_EXISTS" = "0" ]; then
-        echo "🚀 执行外部访问控制配置迁移..."
+if [ "$CONFIG_EXISTS" = "0" ]; then
+    echo "🚀 添加外部访问控制配置..."
 
-        # 手动执行迁移逻辑
-        sqlite3 backend/database/database.sqlite "
-        INSERT OR IGNORE INTO SystemConfigs (key, value, description, category, updatedBy, createdAt, updatedAt)
-        VALUES ('allowUserExternalAccess', 'true', '允许普通用户的转发规则被外部访问。true=监听所有接口(0.0.0.0)，false=仅本地访问(127.0.0.1)。管理员用户不受限制。', 'security', 'system', datetime('now'), datetime('now'));
+    # 添加配置项
+    sqlite3 backend/database/database.sqlite "
+    INSERT OR IGNORE INTO SystemConfigs (key, value, description, category, updatedBy, createdAt, updatedAt)
+    VALUES ('allowUserExternalAccess', 'true', '允许普通用户的转发规则被外部访问。true=监听所有接口(0.0.0.0)，false=仅本地访问(127.0.0.1)。管理员用户不受限制。', 'security', 'system', datetime('now'), datetime('now'));
+    " 2>/dev/null
 
-        INSERT OR IGNORE INTO SequelizeMeta (name)
-        VALUES ('20250617063000-add-user-external-access-config.js');
-        " 2>/dev/null
-
-        if [ $? -eq 0 ]; then
-            echo "✅ 外部访问控制配置迁移完成"
-        else
-            echo "⚠️ 外部访问控制配置迁移失败，但继续更新流程"
-        fi
+    if [ $? -eq 0 ]; then
+        echo "✅ 外部访问控制配置添加完成"
     else
-        echo "ℹ️ 外部访问控制配置迁移已执行，跳过"
+        echo "⚠️ 外部访问控制配置添加失败，但继续更新流程"
     fi
 else
-    echo "ℹ️ 未找到外部访问控制配置迁移文件"
+    echo "ℹ️ 外部访问控制配置已存在，跳过添加"
+fi
+
+# 检查迁移记录是否存在
+MIGRATION_EXISTS=$(sqlite3 backend/database/database.sqlite "SELECT COUNT(*) FROM SequelizeMeta WHERE name = '20250617063000-add-user-external-access-config.js';" 2>/dev/null || echo "0")
+
+if [ "$MIGRATION_EXISTS" = "0" ]; then
+    echo "📝 添加迁移记录..."
+    sqlite3 backend/database/database.sqlite "
+    INSERT OR IGNORE INTO SequelizeMeta (name)
+    VALUES ('20250617063000-add-user-external-access-config.js');
+    " 2>/dev/null
+
+    if [ $? -eq 0 ]; then
+        echo "✅ 迁移记录添加完成"
+    else
+        echo "⚠️ 迁移记录添加失败，但继续更新流程"
+    fi
+else
+    echo "ℹ️ 迁移记录已存在，跳过添加"
 fi
 
 # 9. 修复系统配置（如果需要）

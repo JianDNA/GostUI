@@ -148,3 +148,15 @@ CREATE UNIQUE INDEX `unique_user_port_minute` ON `speed_minutely` (`userId`, `po
 
 -- 用户转发规则表索引
 CREATE INDEX `idx_user_forward_rules_user_id` ON `UserForwardRules` (`userId`);
+
+-- ========================================
+-- 初始数据插入
+-- ========================================
+
+-- 系统配置初始数据
+INSERT INTO `SystemConfigs` (`key`, `value`, `description`, `category`, `updatedBy`, `createdAt`, `updatedAt`) VALUES
+('allowUserExternalAccess', 'true', '允许普通用户的转发规则被外部访问。true=监听所有接口(0.0.0.0)，false=仅本地访问(127.0.0.1)。管理员用户不受限制。', 'security', 'system', datetime('now'), datetime('now'));
+
+-- 迁移记录初始数据 (确保迁移状态一致)
+INSERT INTO `SequelizeMeta` (`name`) VALUES
+('20250617063000-add-user-external-access-config.js');

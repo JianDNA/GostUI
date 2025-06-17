@@ -331,11 +331,18 @@ class GostConfigService {
               targetAddress: rule.targetAddress,
               listenAddress: rule.listenAddress || '0.0.0.0',
               listenAddressType: rule.listenAddressType || 'ipv4',
+              user: user, // 🔧 添加用户对象引用，用于管理员判断
               getGostListenAddress: function() {
+                // 🔒 特殊处理：admin用户可以绑定到所有接口
+                if (this.user && this.user.role === 'admin') {
+                  return `0.0.0.0:${this.sourcePort}`;
+                }
+
+                // 普通用户使用配置的监听地址
                 if (this.listenAddressType === 'ipv6') {
-                  return `[${this.listenAddress || '::'}]:${this.sourcePort}`;
+                  return `[${this.listenAddress || '::1'}]:${this.sourcePort}`;
                 } else {
-                  return `${this.listenAddress || '0.0.0.0'}:${this.sourcePort}`;
+                  return `${this.listenAddress || '127.0.0.1'}:${this.sourcePort}`;
                 }
               }
             };

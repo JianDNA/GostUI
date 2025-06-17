@@ -49,6 +49,19 @@ node migrations/fix-email-unique-constraint.js
 ## 当前迁移
 
 - `fix-email-unique-constraint.js`: 修复邮箱唯一性约束问题，允许多个用户邮箱为空
+- `20250617063000-add-user-external-access-config.js`: 添加普通用户外部访问控制配置
+
+## 迁移执行方式
+
+### 自动执行（推荐）
+- **新部署**: 通过 `complete_schema.sql` 自动包含配置
+- **系统更新**: 通过 `smart-update.sh` 自动检查和添加配置
+
+### 手动执行（备用）
+```bash
+# 运行特定迁移
+node backend/run-single-migration.js 20250617063000-add-user-external-access-config.js
+```
 
 ## 注意事项
 

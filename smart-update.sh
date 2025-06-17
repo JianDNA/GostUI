@@ -304,20 +304,20 @@ if [ -d "$BACKUP_DIR/logs" ]; then
     echo "✅ 日志文件已恢复"
 fi
 
-# 7. 运行数据库迁移
+# 7. 运行数据库修复（如果需要）
 echo ""
-echo "🔄 步骤7: 运行数据库迁移..."
+echo "🔧 步骤7: 检查数据库修复..."
 
-# 检查是否有迁移文件
-if [ -f "run-migrations.js" ]; then
-    echo "📋 发现迁移文件，开始执行..."
-    if node run-migrations.js; then
-        echo "✅ 数据库迁移完成"
+# 检查是否有数据库修复脚本
+if [ -f "database-fixes.js" ]; then
+    echo "📋 发现数据库修复脚本，开始执行..."
+    if node database-fixes.js; then
+        echo "✅ 数据库修复完成"
     else
-        echo "❌ 数据库迁移失败，但继续更新流程"
+        echo "❌ 数据库修复失败，但继续更新流程"
     fi
 else
-    echo "ℹ️ 未找到迁移文件，跳过迁移步骤"
+    echo "ℹ️ 未找到数据库修复脚本，跳过修复步骤"
 fi
 
 # 8. 修复系统配置（如果需要）

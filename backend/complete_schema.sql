@@ -83,7 +83,7 @@ CREATE TABLE `Users` (
     `id` INTEGER PRIMARY KEY,
     `username` VARCHAR(255) NOT NULL UNIQUE,
     `password` VARCHAR(255) NOT NULL,
-    `email` VARCHAR(255) UNIQUE,
+    `email` VARCHAR(255),
     `role` TEXT NOT NULL DEFAULT 'user',
     `portRange` VARCHAR(255),
     `token` VARCHAR(255),

@@ -1,5 +1,13 @@
 #!/bin/bash
 
+# 🔧 自动修复脚本格式问题
+if [ -f "$0" ]; then
+    # 修复换行符问题
+    sed -i 's/\r$//' "$0" 2>/dev/null || true
+    # 确保执行权限
+    chmod +x "$0" 2>/dev/null || true
+fi
+
 echo "🚀 GOST管理系统智能更新脚本"
 echo "================================"
 echo "💡 此脚本会自动处理Git冲突，无需手动操作"
@@ -104,8 +112,12 @@ if [ "$CHECK_SCRIPT_UPDATE" = true ]; then
                             # 🔧 创建标记文件防止死循环
                             touch "$SCRIPT_UPDATED_FLAG"
 
+                            # 修复文件权限和格式
+                            chmod +x "./smart-update.sh"
+                            sed -i 's/\r$//' "./smart-update.sh" 2>/dev/null || true
+
                             # 重新执行更新的脚本，传递标记参数
-                            exec "./smart-update.sh" --script-updated
+                            exec bash "./smart-update.sh" --script-updated
                         else
                             echo "❌ 新脚本文件无效，继续使用当前版本"
                             rm -f "smart-update.sh.new"
@@ -216,6 +228,11 @@ find . -maxdepth 1 -type d ! -name "." ! -name "backend" -exec rm -rf {} + 2>/de
 
 # 复制新代码
 cp -r "$TEMP_DIR/GostUI/"* .
+
+# 🔧 修复所有脚本文件的格式问题
+echo "🔧 修复脚本文件格式..."
+find . -name "*.sh" -type f -exec sed -i 's/\r$//' {} \; 2>/dev/null || true
+find . -name "*.sh" -type f -exec chmod +x {} \; 2>/dev/null || true
 
 # 保护用户数据目录
 mkdir -p backend/database backend/logs backend/backups backend/cache

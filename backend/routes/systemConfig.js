@@ -109,18 +109,19 @@ router.put('/:key', auth, async (req, res) => {
       updatedBy: req.user.username
     });
 
-    // 如果更新的是禁用协议，触发GOST配置同步
-    if (key === 'disabledProtocols') {
+    // 如果更新的是禁用协议或外部访问配置，触发GOST配置同步
+    if (key === 'disabledProtocols' || key === 'allowUserExternalAccess') {
       try {
         const gostSyncCoordinator = require('../services/gostSyncCoordinator');
-        console.log(`🔄 更新禁用协议设置，触发强制同步`);
-        
-        const syncResult = await gostSyncCoordinator.requestSync('protocol_config_update', true, 10);
-        
+        const configType = key === 'disabledProtocols' ? '禁用协议' : '外部访问控制';
+        console.log(`🔄 更新${configType}设置，触发强制同步`);
+
+        const syncResult = await gostSyncCoordinator.requestSync(`${key}_config_update`, true, 10);
+
         if (syncResult.success) {
-          console.log(`✅ 禁用协议配置更新后GOST同步成功`);
+          console.log(`✅ ${configType}配置更新后GOST同步成功`);
         } else {
-          console.error(`❌ 禁用协议配置更新后GOST同步失败:`, syncResult.error);
+          console.error(`❌ ${configType}配置更新后GOST同步失败:`, syncResult.error);
         }
       } catch (syncError) {
         console.error('同步GOST配置失败:', syncError);

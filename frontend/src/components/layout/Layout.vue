@@ -42,6 +42,10 @@
           <el-icon><Tools /></el-icon>
           <span>性能配置</span>
         </el-menu-item>
+        <el-menu-item v-if="isAdmin" index="/system-settings">
+          <el-icon><Setting /></el-icon>
+          <span>系统设置</span>
+        </el-menu-item>
 
       </el-menu>
     </el-aside>

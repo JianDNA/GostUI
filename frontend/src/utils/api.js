@@ -148,6 +148,18 @@ export const system = {
   getObserverStatus: () => request.get('/system/observer-status')
 }
 
+// 系统配置相关API
+export const systemConfig = {
+  // 获取所有系统配置
+  getAllConfigs: () => request.get('/system-config'),
+
+  // 获取特定配置
+  getConfig: (key) => request.get(`/system-config/${key}`),
+
+  // 更新配置
+  updateConfig: (key, data) => request.put(`/system-config/${key}`, data)
+}
+
 // 默认导出一个包含所有API的对象
 const api = {
   // 直接使用request实例的方法
@@ -166,7 +178,8 @@ const api = {
   userForwardRules,
   gost,
   traffic,
-  system
+  system,
+  systemConfig
 }
 
 export default api

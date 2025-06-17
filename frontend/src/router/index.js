@@ -15,6 +15,7 @@ const GostConfig = () => import('@/views/GostConfig.vue');
 const AdvancedTrafficTest = () => import('@/views/AdvancedTrafficTest.vue');
 const SystemStatus = () => import('@/views/SystemStatus.vue');
 const PerformanceConfig = () => import('@/views/admin/PerformanceConfig.vue');
+const SystemSettings = () => import('@/views/admin/SystemSettings.vue');
 const Profile = () => import('@/views/Profile.vue');
 
 const routes = [
@@ -105,6 +106,16 @@ const routes = [
           requiresAuth: true,
           requiresAdmin: true,
           title: '性能配置'
+        }
+      },
+      {
+        path: '/system-settings',
+        name: 'SystemSettings',
+        component: SystemSettings,
+        meta: {
+          requiresAuth: true,
+          requiresAdmin: true,
+          title: '系统设置'
         }
       },
       {

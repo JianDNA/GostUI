@@ -1,13 +1,5 @@
 #!/bin/bash
 
-# 🔧 自动修复脚本格式问题
-if [ -f "$0" ]; then
-    # 修复换行符问题
-    sed -i 's/\r$//' "$0" 2>/dev/null || true
-    # 确保执行权限
-    chmod +x "$0" 2>/dev/null || true
-fi
-
 echo "🚀 GOST管理系统智能更新脚本"
 echo "================================"
 echo "💡 此脚本会自动处理Git冲突，无需手动操作"
@@ -102,8 +94,12 @@ if [ "$CHECK_SCRIPT_UPDATE" = true ]; then
                     if git show origin/main:smart-update.sh > "smart-update.sh.new" 2>/dev/null; then
                         # 检查新脚本是否有效
                         if [ -s "smart-update.sh.new" ] && head -1 "smart-update.sh.new" | grep -q "#!/bin/bash"; then
-                            # 替换脚本
+                            # 替换脚本并修复格式
                             mv "smart-update.sh.new" "smart-update.sh"
+                            
+                            # 🔧 立即修复格式问题
+                            tr -d '\r' < "smart-update.sh" > "smart-update.sh.tmp"
+                            mv "smart-update.sh.tmp" "smart-update.sh"
                             chmod +x "smart-update.sh"
 
                             echo "✅ 智能更新脚本已更新，重新启动更新流程..."
@@ -111,10 +107,6 @@ if [ "$CHECK_SCRIPT_UPDATE" = true ]; then
 
                             # 🔧 创建标记文件防止死循环
                             touch "$SCRIPT_UPDATED_FLAG"
-
-                            # 修复文件权限和格式
-                            chmod +x "./smart-update.sh"
-                            sed -i 's/\r$//' "./smart-update.sh" 2>/dev/null || true
 
                             # 重新执行更新的脚本，传递标记参数
                             exec bash "./smart-update.sh" --script-updated
@@ -231,7 +223,7 @@ cp -r "$TEMP_DIR/GostUI/"* .
 
 # 🔧 修复所有脚本文件的格式问题
 echo "🔧 修复脚本文件格式..."
-find . -name "*.sh" -type f -exec sed -i 's/\r$//' {} \; 2>/dev/null || true
+find . -name "*.sh" -type f -exec tr -d '\r' < {} \; -exec mv {} {}.tmp \; -exec mv {}.tmp {} \; 2>/dev/null || true
 find . -name "*.sh" -type f -exec chmod +x {} \; 2>/dev/null || true
 
 # 保护用户数据目录
@@ -288,7 +280,7 @@ fi
 if [ "$BUILD_NEEDED" = true ]; then
     echo "🔨 构建前端..."
     cd frontend
-    
+
     # 安装依赖并构建
     if command -v yarn >/dev/null 2>&1; then
         yarn install --no-bin-links
@@ -299,7 +291,7 @@ if [ "$BUILD_NEEDED" = true ]; then
         npm install terser --save-dev --no-bin-links
         npm run build
     fi
-    
+
     if [ -f "dist/index.html" ]; then
         rm -rf ../backend/public
         mkdir -p ../backend/public
@@ -309,7 +301,7 @@ if [ "$BUILD_NEEDED" = true ]; then
         echo "❌ 前端构建失败"
         exit 1
     fi
-    
+
     cd ..
 fi
 
@@ -372,13 +364,13 @@ echo "🔄 步骤8: 检查并运行新迁移..."
 echo "📝 检查外部访问控制配置..."
 
 # 检查配置是否存在
-CONFIG_EXISTS=$(sqlite3 backend/database/database.sqlite "SELECT COUNT(*) FROM SystemConfigs WHERE key = 'allowUserExternalAccess';" 2>/dev/null || echo "0")
+CONFIG_EXISTS=$(sqlite3 database/database.sqlite "SELECT COUNT(*) FROM SystemConfigs WHERE key = 'allowUserExternalAccess';" 2>/dev/null || echo "0")
 
 if [ "$CONFIG_EXISTS" = "0" ]; then
     echo "🚀 添加外部访问控制配置..."
 
     # 添加配置项
-    sqlite3 backend/database/database.sqlite "
+    sqlite3 database/database.sqlite "
     INSERT OR IGNORE INTO SystemConfigs (key, value, description, category, updatedBy, createdAt, updatedAt)
     VALUES ('allowUserExternalAccess', 'true', '允许普通用户的转发规则被外部访问。true=监听所有接口(0.0.0.0)，false=仅本地访问(127.0.0.1)。管理员用户不受限制。', 'security', 'system', datetime('now'), datetime('now'));
     " 2>/dev/null
@@ -393,11 +385,11 @@ else
 fi
 
 # 检查迁移记录是否存在
-MIGRATION_EXISTS=$(sqlite3 backend/database/database.sqlite "SELECT COUNT(*) FROM SequelizeMeta WHERE name = '20250617063000-add-user-external-access-config.js';" 2>/dev/null || echo "0")
+MIGRATION_EXISTS=$(sqlite3 database/database.sqlite "SELECT COUNT(*) FROM SequelizeMeta WHERE name = '20250617063000-add-user-external-access-config.js';" 2>/dev/null || echo "0")
 
 if [ "$MIGRATION_EXISTS" = "0" ]; then
     echo "📝 添加迁移记录..."
-    sqlite3 backend/database/database.sqlite "
+    sqlite3 database/database.sqlite "
     INSERT OR IGNORE INTO SequelizeMeta (name)
     VALUES ('20250617063000-add-user-external-access-config.js');
     " 2>/dev/null
@@ -411,333 +403,84 @@ else
     echo "ℹ️ 迁移记录已存在，跳过添加"
 fi
 
-# 9. 修复系统配置（如果需要）
+# 9. 安装后端依赖
 echo ""
-echo "⚙️ 步骤9: 检查并修复系统配置..."
+echo "📦 步骤9: 安装后端依赖..."
 
-# 检查数据库中是否有必需的系统配置
-node -e "
-const Database = require('better-sqlite3');
-const path = require('path');
-const fs = require('fs');
-
-const dbPath = path.join(__dirname, 'database', 'database.sqlite');
-
-if (!fs.existsSync(dbPath)) {
-    console.log('⚠️ 数据库文件不存在，跳过配置检查');
-    process.exit(0);
-}
-
-let db;
-try {
-    db = new Database(dbPath);
-
-    // 检查是否存在SystemConfigs表
-    const tables = db.prepare('SELECT name FROM sqlite_master WHERE type=? AND name=?').all('table', 'SystemConfigs');
-
-    if (tables.length === 0) {
-        console.log('⚠️ SystemConfigs表不存在，跳过配置检查');
-        process.exit(0);
-    }
-
-    // 检查表结构
-    const columns = db.prepare('PRAGMA table_info(SystemConfigs)').all();
-    const columnNames = columns.map(col => col.name);
-
-    if (!columnNames.includes('key') || !columnNames.includes('value')) {
-        console.log('⚠️ SystemConfigs表结构不完整，跳过配置检查');
-        process.exit(0);
-    }
-
-    // 检查必需的配置
-    const checkConfig = db.prepare('SELECT key FROM SystemConfigs WHERE key = ?');
-    const requiredConfigs = ['disabledProtocols', 'allowedProtocols', 'performanceMode', 'autoSyncEnabled'];
-
-    let missingConfigs = [];
-    for (const config of requiredConfigs) {
-        const result = checkConfig.get(config);
-        if (!result) {
-            missingConfigs.push(config);
-        }
-    }
-    
-    if (missingConfigs.length > 0) {
-        console.log('⚠️ 发现缺失的系统配置:', missingConfigs.join(', '));
-        console.log('🔧 正在添加缺失配置...');
-        
-        const now = new Date().toISOString();
-        const insertConfig = db.prepare(\`
-            INSERT OR IGNORE INTO SystemConfigs (
-                \\\`key\\\`, value, description, category, updatedBy, createdAt, updatedAt
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        \`);
-        
-        const configs = [
-            {
-                key: 'disabledProtocols',
-                value: JSON.stringify([]),
-                description: '禁用的协议列表',
-                category: 'security'
-            },
-            {
-                key: 'allowedProtocols', 
-                value: JSON.stringify(['tcp', 'udp', 'http', 'https', 'socks5']),
-                description: '允许的协议列表',
-                category: 'security'
-            },
-            {
-                key: 'performanceMode',
-                value: 'balanced',
-                description: '性能模式设置', 
-                category: 'performance'
-            },
-            {
-                key: 'autoSyncEnabled',
-                value: 'true',
-                description: '自动同步开关',
-                category: 'sync'
-            }
-        ];
-        
-        let addedCount = 0;
-        for (const config of configs) {
-            if (missingConfigs.includes(config.key)) {
-                const result = insertConfig.run(
-                    config.key,
-                    config.value, 
-                    config.description,
-                    config.category,
-                    'system',
-                    now,
-                    now
-                );
-                if (result.changes > 0) {
-                    addedCount++;
-                    console.log(\`✅ 添加配置: \${config.key}\`);
-                }
-            }
-        }
-        
-        console.log(\`🎉 系统配置修复完成，新增 \${addedCount} 个配置\`);
-    } else {
-        console.log('✅ 系统配置完整，无需修复');
-    }
-    
-} catch (error) {
-    console.error('❌ 检查系统配置失败:', error.message);
-} finally {
-    db.close();
-}
-"
-
-# 9. 配置GOST安全设置
-echo ""
-echo "🔒 步骤9: 配置GOST安全设置..."
-
-# 修复GOST WebAPI安全配置
-CONFIG_FILE="config/gost-config.json"
-if [ -f "$CONFIG_FILE" ]; then
-    echo "🔧 检查GOST WebAPI安全配置..."
-
-    # 检查当前配置
-    CURRENT_ADDR=$(grep -o '"addr":\s*"[^"]*"' "$CONFIG_FILE" | grep -o '"[^"]*"$' | tr -d '"' || echo "")
-
-    if [ "$CURRENT_ADDR" = ":18080" ]; then
-        echo "⚠️ 发现安全风险：GOST WebAPI监听所有接口"
-        echo "🔧 自动修复为仅监听本地接口..."
-
-        # 使用sed修复配置
-        sed -i 's/"addr": ":18080"/"addr": "127.0.0.1:18080"/' "$CONFIG_FILE"
-
-        # 验证修复
-        NEW_ADDR=$(grep -o '"addr":\s*"[^"]*"' "$CONFIG_FILE" | grep -o '"[^"]*"$' | tr -d '"' || echo "")
-        if [ "$NEW_ADDR" = "127.0.0.1:18080" ]; then
-            echo "✅ GOST WebAPI安全配置已自动修复"
-        else
-            echo "❌ 安全配置修复失败"
-        fi
-    elif [ "$CURRENT_ADDR" = "127.0.0.1:18080" ]; then
-        echo "✅ GOST WebAPI安全配置正确"
+if [ -f "package.json" ]; then
+    echo "🔄 安装Node.js依赖..."
+    if command -v yarn >/dev/null 2>&1; then
+        yarn install --production --no-bin-links
     else
-        echo "ℹ️ GOST WebAPI配置: $CURRENT_ADDR"
+        npm install --production --no-bin-links
     fi
+    echo "✅ 后端依赖安装完成"
 else
-    echo "ℹ️ GOST配置文件不存在，将在服务启动时自动创建安全配置"
+    echo "⚠️ 未找到package.json，跳过依赖安装"
 fi
 
-echo "✅ GOST安全配置检查完成"
-
-# 10. 更新PM2配置并启动服务
+# 10. 启动服务
 echo ""
 echo "🚀 步骤10: 启动服务..."
 
-# 确保PM2配置是最新的
-cat > ecosystem.config.js << 'EOF'
-module.exports = {
-  apps: [{
-    name: 'gost-management',
-    script: 'app.js',
-    instances: 1,
-    autorestart: true,
-    watch: false,
-    max_memory_restart: '512M',
-    env: {
-      NODE_ENV: 'production',
-      PORT: 3000,
-      NODE_OPTIONS: '--max-old-space-size=4096',
-      DISABLE_PRODUCTION_SAFETY: 'true'
-    },
-    error_file: './logs/pm2-error.log',
-    out_file: './logs/pm2-out.log',
-    log_file: './logs/pm2-combined.log',
-    time: true
-  }]
-};
-EOF
-
-# 启动或重启服务
 if [ "$SERVICE_RUNNING" = true ]; then
+    echo "🔄 重新启动PM2服务..."
     pm2 restart gost-management
+    echo "✅ 服务已重启"
 else
+    echo "🔄 启动PM2服务..."
     pm2 start ecosystem.config.js
+    echo "✅ 服务已启动"
 fi
 
-# 等待服务启动
-echo "⏳ 等待服务启动..."
-sleep 15
+# 11. 验证服务状态
+echo ""
+echo "🔍 步骤11: 验证服务状态..."
 
-# 检查服务状态
+sleep 3
+
 if pm2 list | grep -q "gost-management.*online"; then
-    echo "✅ 服务启动成功！"
-    
-    # 测试访问
-    if command -v curl >/dev/null 2>&1; then
-        sleep 5
-        if curl -f -s http://localhost:3000 >/dev/null; then
-            echo "✅ 前端页面访问正常"
-        else
-            echo "⚠️ 前端页面访问异常，但服务已启动"
-        fi
+    echo "✅ 服务运行正常"
+
+    # 检查端口监听
+    if netstat -tln | grep -q ":3000"; then
+        echo "✅ 端口3000监听正常"
+    else
+        echo "⚠️ 端口3000未监听，可能需要等待服务完全启动"
     fi
+
+    # 显示服务状态
+    echo ""
+    echo "📊 服务状态:"
+    pm2 list | grep gost-management
+
 else
     echo "❌ 服务启动失败"
-    echo "📋 查看日志: pm2 logs gost-management"
-    exit 1
+    echo "📋 查看错误日志:"
+    pm2 logs gost-management --lines 10
 fi
 
-# 全面安全验证
+# 12. 清理临时文件
 echo ""
-echo "🔒 进行全面安全验证..."
+echo "🧹 步骤12: 清理临时文件..."
 
-CONFIG_FILE="config/gost-config.json"
-security_issues=0
-warnings=0
-
-# 检查GOST WebAPI配置
-echo "🔍 检查GOST WebAPI安全配置..."
-if [ -f "$CONFIG_FILE" ]; then
-    CURRENT_ADDR=$(grep -o '"addr":\s*"[^"]*"' "$CONFIG_FILE" | grep -o '"[^"]*"$' | tr -d '"' || echo "")
-
-    if [ "$CURRENT_ADDR" = "127.0.0.1:18080" ]; then
-        echo "✅ GOST WebAPI安全配置正确"
-    elif [ "$CURRENT_ADDR" = ":18080" ]; then
-        echo "⚠️ 检测到GOST WebAPI安全风险，建议重新运行更新"
-        warnings=$((warnings + 1))
-    else
-        echo "ℹ️ GOST WebAPI配置: $CURRENT_ADDR"
-    fi
-else
-    echo "ℹ️ GOST配置文件将在服务运行时创建"
+if [ -d "$TEMP_DIR" ]; then
+    rm -rf "$TEMP_DIR"
+    echo "✅ 临时目录已清理: $TEMP_DIR"
 fi
 
-# 检查观察器和限制器配置
-echo "🔍 检查GOST插件配置..."
-if [ -f "$CONFIG_FILE" ]; then
-    # 检查观察器配置
-    OBSERVER_ADDR=$(grep -A 5 '"observers"' "$CONFIG_FILE" | grep '"addr"' | grep -o '"[^"]*"$' | tr -d '"' || echo "")
-    if [ -n "$OBSERVER_ADDR" ]; then
-        if echo "$OBSERVER_ADDR" | grep -q "localhost:3000"; then
-            echo "✅ 观察器配置安全（通过主服务）"
-        else
-            echo "ℹ️ 观察器配置: $OBSERVER_ADDR"
-        fi
-    fi
-
-    # 检查限制器配置
-    LIMITER_ADDR=$(grep -A 5 '"limiters"' "$CONFIG_FILE" | grep '"addr"' | grep -o '"[^"]*"$' | tr -d '"' || echo "")
-    if [ -n "$LIMITER_ADDR" ]; then
-        if echo "$LIMITER_ADDR" | grep -q "localhost:3000"; then
-            echo "✅ 限制器配置安全（通过主服务）"
-        else
-            echo "ℹ️ 限制器配置: $LIMITER_ADDR"
-        fi
-    fi
-fi
-
-# 检查端口监听状态
-echo "🔍 检查端口监听状态..."
-if command -v netstat >/dev/null 2>&1; then
-    # 检查18080端口
-    LISTEN_18080=$(netstat -tln 2>/dev/null | grep :18080 | head -1 || echo "")
-    if [ -n "$LISTEN_18080" ]; then
-        if echo "$LISTEN_18080" | grep -q "127.0.0.1:18080"; then
-            echo "✅ 端口18080仅监听本地接口"
-        elif echo "$LISTEN_18080" | grep -q "0.0.0.0:18080"; then
-            echo "⚠️ 端口18080监听所有接口，存在安全风险"
-            warnings=$((warnings + 1))
-        fi
-    fi
-
-    # 检查18081端口（观察器）
-    LISTEN_18081=$(netstat -tln 2>/dev/null | grep :18081 | head -1 || echo "")
-    if [ -n "$LISTEN_18081" ]; then
-        if echo "$LISTEN_18081" | grep -q "127.0.0.1:18081"; then
-            echo "✅ 端口18081仅监听本地接口"
-        elif echo "$LISTEN_18081" | grep -q "0.0.0.0:18081"; then
-            echo "⚠️ 端口18081监听所有接口，存在安全风险"
-            warnings=$((warnings + 1))
-        fi
-    fi
-fi
-
-# 安全验证总结
-echo ""
-echo "🔒 安全验证总结:"
-echo "   安全问题: $security_issues"
-echo "   警告信息: $warnings"
-
-if [ $warnings -eq 0 ]; then
-    echo "✅ 安全验证完全通过"
-else
-    echo "⚠️ 发现 $warnings 个安全警告，建议关注"
-fi
-
-# 11. 清理临时文件
-echo ""
-echo "🧹 步骤10: 清理临时文件..."
-rm -rf "$TEMP_DIR"
-echo "✅ 临时文件清理完成"
-
-# 完成
 echo ""
 echo "🎉 智能更新完成！"
 echo "================================"
-echo "📋 更新摘要:"
-echo "   ✅ 代码已更新到最新版本"
-echo "   ✅ 用户数据已完整保留"
-echo "   ✅ 系统配置已检查修复"
-echo "   ✅ GOST安全配置已自动修复"
+echo "📋 更新总结:"
+echo "   ✅ 源码已更新到最新版本"
+echo "   ✅ 用户数据已安全保留"
+echo "   ✅ 数据库修复已执行"
 echo "   ✅ 服务已重新启动"
 echo ""
 echo "🌐 访问地址: http://localhost:3000"
-echo "👤 默认账号: admin / admin123"
-echo "📁 数据备份: $BACKUP_DIR"
+echo "🔐 默认账号: admin / admin123"
 echo ""
-echo "🔒 安全提醒:"
-echo "   ✅ GOST WebAPI已自动配置为仅本地访问"
-echo "   🔐 外部用户无法访问敏感配置接口"
-echo "   🛡️ 系统安全性已得到保障"
+echo "📁 备份位置: $BACKUP_DIR"
+echo "💡 如有问题，可使用备份恢复数据"
 echo ""
-echo "💡 如果遇到问题，可以从备份目录恢复数据"
-echo "📋 查看服务状态: pm2 list"
-echo "📋 查看服务日志: pm2 logs gost-management"

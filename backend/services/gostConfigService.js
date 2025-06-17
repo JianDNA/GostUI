@@ -495,9 +495,9 @@ class GostConfigService {
           }
         ];
 
-        // 添加API配置以支持热加载
+        // 添加API配置以支持热加载 - 仅监听本地回环地址以提高安全性
         gostConfig.api = {
-          addr: ":18080",
+          addr: "127.0.0.1:18080",  // 🔒 安全修复：仅监听本地回环地址
           pathPrefix: "/api",
           accesslog: false
         };
@@ -517,7 +517,7 @@ class GostConfigService {
           }
         ];
         gostConfig.api = {
-          addr: ":18080",
+          addr: "127.0.0.1:18080",  // 🔒 安全修复：仅监听本地回环地址
           pathPrefix: "/api",
           accesslog: false
         };

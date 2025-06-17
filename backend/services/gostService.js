@@ -744,11 +744,11 @@ class GostService {
         gostConfig = await this.updateConfigPort(forwardPort);
       }
 
-      // 🔧 添加Web API配置以支持热加载
+      // 🔧 添加Web API配置以支持热加载 - 仅监听本地回环地址以提高安全性
       const configWithAPI = {
         ...gostConfig,
         api: {
-          addr: ':18080',
+          addr: '127.0.0.1:18080',  // 🔒 安全修复：仅监听本地回环地址
           pathPrefix: '/api',
           accesslog: false
         }
@@ -1309,11 +1309,11 @@ class GostService {
 
       console.log('📝 配置发生变化，执行热加载...');
 
-      // 🔧 添加Web API配置以支持热加载
+      // 🔧 添加Web API配置以支持热加载 - 仅监听本地回环地址以提高安全性
       const configWithAPI = {
         ...newConfig,
         api: {
-          addr: ':18080',
+          addr: '127.0.0.1:18080',  // 🔒 安全修复：仅监听本地回环地址
           pathPrefix: '/api',
           accesslog: false
         }

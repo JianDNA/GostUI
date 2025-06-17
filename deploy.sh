@@ -397,29 +397,71 @@ install_frontend() {
     fi
 }
 
+# 配置GOST安全设置
+setup_gost_security() {
+    echo "🔒 配置GOST安全设置..."
+    cd $DEPLOY_DIR/backend
+
+    # 修复GOST WebAPI安全配置
+    CONFIG_FILE="config/gost-config.json"
+    if [ -f "$CONFIG_FILE" ]; then
+        echo "🔧 修复GOST WebAPI监听地址..."
+
+        # 检查当前配置
+        CURRENT_ADDR=$(grep -o '"addr":\s*"[^"]*"' "$CONFIG_FILE" | grep -o '"[^"]*"$' | tr -d '"' || echo "")
+
+        if [ "$CURRENT_ADDR" = ":18080" ]; then
+            echo "⚠️ 发现安全风险：GOST WebAPI监听所有接口"
+            echo "🔧 修复为仅监听本地接口..."
+
+            # 使用sed修复配置
+            sed -i 's/"addr": ":18080"/"addr": "127.0.0.1:18080"/' "$CONFIG_FILE"
+
+            # 验证修复
+            NEW_ADDR=$(grep -o '"addr":\s*"[^"]*"' "$CONFIG_FILE" | grep -o '"[^"]*"$' | tr -d '"' || echo "")
+            if [ "$NEW_ADDR" = "127.0.0.1:18080" ]; then
+                echo "✅ GOST WebAPI安全配置已修复"
+            else
+                echo "❌ 安全配置修复失败"
+            fi
+        elif [ "$CURRENT_ADDR" = "127.0.0.1:18080" ]; then
+            echo "✅ GOST WebAPI安全配置正确"
+        else
+            echo "⚠️ GOST WebAPI配置: $CURRENT_ADDR"
+        fi
+    else
+        echo "ℹ️ GOST配置文件不存在，将在服务启动时创建"
+    fi
+
+    echo "✅ GOST安全配置完成"
+}
+
 # 配置GOST
 setup_gost() {
     echo "⚙️ 配置GOST..."
     cd $DEPLOY_DIR
-    
+
     # 确保GOST二进制文件可执行
     if [ -f "backend/bin/gost" ]; then
         chmod +x backend/bin/gost
         echo "✅ backend/bin/gost 已设置为可执行"
     fi
-    
+
     if [ -f "backend/assets/gost/gost" ]; then
         chmod +x backend/assets/gost/gost
         echo "✅ backend/assets/gost/gost 已设置为可执行"
     fi
-    
+
     # 创建必要的目录结构
     mkdir -p backend/assets/gost/linux_amd64
     if [ -f "backend/bin/gost" ]; then
         cp backend/bin/gost backend/assets/gost/linux_amd64/gost
         chmod +x backend/assets/gost/linux_amd64/gost
     fi
-    
+
+    # 配置GOST安全设置
+    setup_gost_security
+
     echo "✅ GOST配置完成"
 }
 
@@ -862,6 +904,52 @@ confirm_deployment() {
     echo ""
 }
 
+# 安全验证
+security_verification() {
+    echo "🔒 进行安全验证..."
+    cd $DEPLOY_DIR/backend
+
+    local security_issues=0
+
+    # 检查GOST WebAPI配置
+    CONFIG_FILE="config/gost-config.json"
+    if [ -f "$CONFIG_FILE" ]; then
+        CURRENT_ADDR=$(grep -o '"addr":\s*"[^"]*"' "$CONFIG_FILE" | grep -o '"[^"]*"$' | tr -d '"' || echo "")
+
+        if [ "$CURRENT_ADDR" = ":18080" ]; then
+            echo "❌ 安全风险：GOST WebAPI监听所有接口"
+            security_issues=$((security_issues + 1))
+        elif [ "$CURRENT_ADDR" = "127.0.0.1:18080" ]; then
+            echo "✅ GOST WebAPI安全配置正确"
+        else
+            echo "⚠️ GOST WebAPI配置: $CURRENT_ADDR"
+        fi
+    else
+        echo "ℹ️ GOST配置文件将在服务启动时创建"
+    fi
+
+    # 检查端口监听状态（如果服务已启动）
+    if command -v netstat >/dev/null 2>&1; then
+        LISTEN_18080=$(netstat -tln 2>/dev/null | grep :18080 | head -1 || echo "")
+        if [ -n "$LISTEN_18080" ]; then
+            if echo "$LISTEN_18080" | grep -q "127.0.0.1:18080"; then
+                echo "✅ 端口18080仅监听本地接口"
+            elif echo "$LISTEN_18080" | grep -q "0.0.0.0:18080"; then
+                echo "❌ 安全风险：端口18080监听所有接口"
+                security_issues=$((security_issues + 1))
+            fi
+        fi
+    fi
+
+    if [ $security_issues -eq 0 ]; then
+        echo "✅ 安全验证通过"
+        return 0
+    else
+        echo "❌ 发现 $security_issues 个安全问题"
+        return 1
+    fi
+}
+
 # 最终验证
 final_verification() {
     echo "🔍 进行最终验证..."
@@ -887,6 +975,11 @@ final_verification() {
     if ! pm2 list | grep -q "gost-management.*online"; then
         echo "❌ PM2服务未运行"
         errors=$((errors + 1))
+    fi
+
+    # 执行安全验证
+    if ! security_verification; then
+        echo "⚠️ 安全验证失败，但部署可以继续"
     fi
 
     if [ $errors -eq 0 ]; then
@@ -952,6 +1045,11 @@ main() {
         echo "   📊 查看日志: pm2 logs gost-management"
         echo "   ⏹️  停止服务: pm2 stop gost-management"
         echo "   🧪 测试部署: ./test-deployment.sh"
+        echo ""
+        echo "🔒 安全提醒:"
+        echo "   ✅ GOST WebAPI已配置为仅本地访问"
+        echo "   🔐 请立即修改默认管理员密码"
+        echo "   🛡️ 建议配置防火墙进一步保护系统"
         echo ""
         echo "✅ 部署成功！请在浏览器中访问系统。"
     else

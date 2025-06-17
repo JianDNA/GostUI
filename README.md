@@ -33,9 +33,79 @@
 
 ### 环境要求
 - **操作系统**: Linux (Ubuntu/CentOS/Debian)
-- **Node.js**: >= 14.0.0
+- **Node.js**: >= 18.0.0 (推荐 20.x LTS)
 - **内存**: >= 2GB (推荐4GB)
 - **磁盘**: >= 1GB 可用空间
+- **网络**: 需要访问GitHub和npm仓库
+
+### 📋 环境准备
+
+#### 1. 安装Node.js (Ubuntu/Debian)
+
+```bash
+# 添加NodeSource官方仓库 (Node.js 20.x LTS)
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+
+# 安装Node.js和npm
+sudo apt install -y nodejs
+
+# 验证安装
+node -v    # 应显示 v20.x.x
+npm -v     # 应显示 10.x.x
+```
+
+#### 2. 安装Node.js (CentOS/RHEL)
+
+```bash
+# 添加NodeSource官方仓库 (Node.js 20.x LTS)
+curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
+
+# 安装Node.js和npm
+sudo yum install -y nodejs
+
+# 验证安装
+node -v    # 应显示 v20.x.x
+npm -v     # 应显示 10.x.x
+```
+
+#### 3. 安装必要工具
+
+```bash
+# Ubuntu/Debian
+sudo apt update
+sudo apt install -y git curl wget build-essential
+
+# CentOS/RHEL
+sudo yum update
+sudo yum groupinstall -y "Development Tools"
+sudo yum install -y git curl wget
+```
+
+#### 4. 安装PM2进程管理器
+
+```bash
+# 全局安装PM2
+sudo npm install -g pm2
+
+# 验证安装
+pm2 -v
+
+# 设置PM2开机自启
+pm2 startup
+sudo env PATH=$PATH:/usr/bin /usr/lib/node_modules/pm2/bin/pm2 startup systemd -u $USER --hp $HOME
+```
+
+#### 5. 配置系统资源 (可选)
+
+```bash
+# 增加文件描述符限制
+echo "* soft nofile 65536" | sudo tee -a /etc/security/limits.conf
+echo "* hard nofile 65536" | sudo tee -a /etc/security/limits.conf
+
+# 优化内存使用 (低内存服务器)
+echo 'export NODE_OPTIONS="--max-old-space-size=2048"' >> ~/.bashrc
+source ~/.bashrc
+```
 
 ### 一键部署 (推荐)
 
@@ -49,14 +119,31 @@ chmod +x deploy.sh
 ./deploy.sh
 ```
 
+#### 🔍 部署前环境检查
+
+部署脚本会自动检查以下环境：
+
+```bash
+# 手动检查环境 (可选)
+node -v     # 需要 >= 18.0.0
+npm -v      # 需要 >= 9.0.0
+pm2 -v      # 需要已安装
+git --version  # 需要已安装
+```
+
+如果环境检查失败，请参考上面的 **📋 环境准备** 部分。
+
+#### 🚀 自动部署流程
+
 部署脚本会自动：
-- ✅ 检查环境依赖
-- ✅ 安装必要工具
-- ✅ 选择构建模式
-- ✅ 安装依赖包
-- ✅ 构建前端项目
-- ✅ 配置数据库
-- ✅ 启动服务
+- ✅ **环境检查** - 验证Node.js、npm、git等依赖
+- ✅ **依赖安装** - 自动安装缺失的系统工具
+- ✅ **构建模式选择** - 预构建/服务器端构建
+- ✅ **前端构建** - 安装依赖并构建前端项目
+- ✅ **数据库初始化** - 创建数据库和默认数据
+- ✅ **服务配置** - 配置PM2和系统服务
+- ✅ **安全配置** - 自动配置GOST安全设置
+- ✅ **服务启动** - 启动并验证服务状态
 
 ### 部署完成后
 - 🌐 **访问地址**: http://localhost:3000
@@ -181,7 +268,57 @@ GostUI/
 
 ### 常见问题
 
-1. **前端构建失败**
+#### 🔧 环境相关问题
+
+1. **Node.js版本过低**
+   ```bash
+   # 检查当前版本
+   node -v
+
+   # 如果版本 < 18.0.0，请重新安装
+   curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+   sudo apt install -y nodejs
+   ```
+
+2. **npm权限问题**
+   ```bash
+   # 修复npm权限
+   sudo chown -R $(whoami) ~/.npm
+   sudo chown -R $(whoami) /usr/lib/node_modules
+
+   # 或者配置npm使用用户目录
+   mkdir ~/.npm-global
+   npm config set prefix '~/.npm-global'
+   echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc
+   source ~/.bashrc
+   ```
+
+3. **PM2未安装或无法找到**
+   ```bash
+   # 全局安装PM2
+   sudo npm install -g pm2
+
+   # 如果仍然找不到，检查PATH
+   echo $PATH
+   which pm2
+
+   # 手动添加到PATH
+   echo 'export PATH=/usr/lib/node_modules/.bin:$PATH' >> ~/.bashrc
+   source ~/.bashrc
+   ```
+
+4. **Git未安装**
+   ```bash
+   # Ubuntu/Debian
+   sudo apt update && sudo apt install -y git
+
+   # CentOS/RHEL
+   sudo yum install -y git
+   ```
+
+#### 🚀 部署相关问题
+
+5. **前端构建失败**
    ```bash
    # 使用预构建模式
    cd frontend && npm run build
@@ -190,21 +327,61 @@ GostUI/
    ./deploy.sh  # 选择预构建模式
    ```
 
-2. **内存不足**
+6. **内存不足**
    ```bash
+   # 临时设置
    export NODE_OPTIONS="--max-old-space-size=4096"
+
+   # 永久设置
+   echo 'export NODE_OPTIONS="--max-old-space-size=4096"' >> ~/.bashrc
+   source ~/.bashrc
    ```
 
-3. **端口占用**
+7. **端口占用**
    ```bash
+   # 检查端口占用
+   lsof -ti:3000
+   netstat -tln | grep :3000
+
+   # 强制释放端口
    lsof -ti:3000 | xargs kill -9
    ```
 
-4. **服务异常**
+8. **服务异常**
    ```bash
-   pm2 logs gost-management
+   # 查看详细日志
+   pm2 logs gost-management --lines 50
+
+   # 重启服务
    pm2 restart gost-management
+
+   # 完全重新加载
+   pm2 reload gost-management
    ```
+
+#### 🌐 网络相关问题
+
+9. **无法访问GitHub**
+   ```bash
+   # 测试网络连接
+   curl -I https://github.com
+
+   # 配置Git代理 (如果需要)
+   git config --global http.proxy http://proxy:port
+   git config --global https.proxy https://proxy:port
+   ```
+
+10. **npm下载缓慢**
+    ```bash
+    # 使用国内镜像
+    npm config set registry https://registry.npmmirror.com
+
+    # 验证配置
+    npm config get registry
+
+    # 恢复官方源
+    npm config set registry https://registry.npmjs.org
+    ```
 
 ### 数据恢复
 ```bash

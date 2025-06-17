@@ -320,9 +320,44 @@ else
     echo "ℹ️ 未找到数据库修复脚本，跳过修复步骤"
 fi
 
-# 8. 修复系统配置（如果需要）
+# 8. 运行新迁移（如果需要）
 echo ""
-echo "⚙️ 步骤8: 检查并修复系统配置..."
+echo "🔄 步骤8: 检查并运行新迁移..."
+
+# 检查外部访问控制配置迁移
+if [ -f "backend/migrations/20250617063000-add-user-external-access-config.js" ]; then
+    echo "📝 检查外部访问控制配置迁移..."
+
+    # 检查迁移是否已执行
+    MIGRATION_EXISTS=$(sqlite3 backend/database/database.sqlite "SELECT COUNT(*) FROM SequelizeMeta WHERE name = '20250617063000-add-user-external-access-config.js';" 2>/dev/null || echo "0")
+
+    if [ "$MIGRATION_EXISTS" = "0" ]; then
+        echo "🚀 执行外部访问控制配置迁移..."
+
+        # 手动执行迁移逻辑
+        sqlite3 backend/database/database.sqlite "
+        INSERT OR IGNORE INTO SystemConfigs (key, value, description, category, updatedBy, createdAt, updatedAt)
+        VALUES ('allowUserExternalAccess', 'true', '允许普通用户的转发规则被外部访问。true=监听所有接口(0.0.0.0)，false=仅本地访问(127.0.0.1)。管理员用户不受限制。', 'security', 'system', datetime('now'), datetime('now'));
+
+        INSERT OR IGNORE INTO SequelizeMeta (name)
+        VALUES ('20250617063000-add-user-external-access-config.js');
+        " 2>/dev/null
+
+        if [ $? -eq 0 ]; then
+            echo "✅ 外部访问控制配置迁移完成"
+        else
+            echo "⚠️ 外部访问控制配置迁移失败，但继续更新流程"
+        fi
+    else
+        echo "ℹ️ 外部访问控制配置迁移已执行，跳过"
+    fi
+else
+    echo "ℹ️ 未找到外部访问控制配置迁移文件"
+fi
+
+# 9. 修复系统配置（如果需要）
+echo ""
+echo "⚙️ 步骤9: 检查并修复系统配置..."
 
 # 检查数据库中是否有必需的系统配置
 node -e "

@@ -5,6 +5,20 @@ echo "================================"
 echo "💡 此脚本会自动处理Git冲突，无需手动操作"
 echo ""
 
+# 🔧 防止死循环：检查是否是脚本更新后的重新启动
+SCRIPT_UPDATED_FLAG="/tmp/gost-script-updated-$(date +%Y%m%d)"
+if [ "$1" = "--script-updated" ]; then
+    echo "🔄 脚本已更新，继续执行更新流程..."
+    CHECK_SCRIPT_UPDATE=false
+    # 清理标记文件
+    rm -f "$SCRIPT_UPDATED_FLAG"
+elif [ -f "$SCRIPT_UPDATED_FLAG" ]; then
+    echo "🔄 检测到脚本更新标记，跳过脚本自检..."
+    CHECK_SCRIPT_UPDATE=false
+    # 清理标记文件
+    rm -f "$SCRIPT_UPDATED_FLAG"
+fi
+
 # 检查是否在正确的目录
 if [ ! -f "deploy.sh" ]; then
     echo "❌ 请在GostUI项目根目录运行此脚本"
@@ -24,29 +38,31 @@ echo "   📁 源码目录: $(pwd)"
 echo "   📁 部署目录: $DEPLOY_DIR"
 echo ""
 
-# 确认更新和脚本检查选项
-echo "🤔 更新选项:"
-echo "   1) 完整更新 (包含脚本自检，较慢)"
-echo "   2) 快速更新 (跳过脚本自检，推荐)"
-echo "   3) 取消更新"
-echo ""
-read -p "请选择 (1/2/3) [默认: 2]: " -n 1 -r
-echo
+# 如果没有设置CHECK_SCRIPT_UPDATE，询问用户选择
+if [ -z "$CHECK_SCRIPT_UPDATE" ]; then
+    echo "🤔 更新选项:"
+    echo "   1) 完整更新 (包含脚本自检，较慢)"
+    echo "   2) 快速更新 (跳过脚本自检，推荐)"
+    echo "   3) 取消更新"
+    echo ""
+    read -p "请选择 (1/2/3) [默认: 2]: " -n 1 -r
+    echo
 
-case $REPLY in
-    1)
-        echo "✅ 选择完整更新模式"
-        CHECK_SCRIPT_UPDATE=true
-        ;;
-    3)
-        echo "❌ 更新已取消"
-        exit 0
-        ;;
-    *)
-        echo "✅ 选择快速更新模式"
-        CHECK_SCRIPT_UPDATE=false
-        ;;
-esac
+    case $REPLY in
+        1)
+            echo "✅ 选择完整更新模式"
+            CHECK_SCRIPT_UPDATE=true
+            ;;
+        3)
+            echo "❌ 更新已取消"
+            exit 0
+            ;;
+        *)
+            echo "✅ 选择快速更新模式"
+            CHECK_SCRIPT_UPDATE=false
+            ;;
+    esac
+fi
 
 # 0. 检查并更新智能更新脚本本身 (可选)
 if [ "$CHECK_SCRIPT_UPDATE" = true ]; then
@@ -64,28 +80,39 @@ if [ "$CHECK_SCRIPT_UPDATE" = true ]; then
             if git diff HEAD origin/main --name-only 2>/dev/null | grep -q "smart-update.sh"; then
                 echo "🔄 检测到智能更新脚本有更新，正在应用..."
 
-                # 备份当前脚本
-                cp "smart-update.sh" "smart-update.sh.backup.$(date +%Y%m%d_%H%M%S)"
+                # 🔧 检查是否已经更新过（防止多次更新）
+                CURRENT_HASH=$(git rev-parse HEAD:smart-update.sh 2>/dev/null || echo "")
+                REMOTE_HASH=$(git rev-parse origin/main:smart-update.sh 2>/dev/null || echo "")
 
-                # 获取最新的脚本文件
-                if git show origin/main:smart-update.sh > "smart-update.sh.new" 2>/dev/null; then
-                    # 检查新脚本是否有效
-                    if [ -s "smart-update.sh.new" ] && head -1 "smart-update.sh.new" | grep -q "#!/bin/bash"; then
-                        # 替换脚本
-                        mv "smart-update.sh.new" "smart-update.sh"
-                        chmod +x "smart-update.sh"
-
-                        echo "✅ 智能更新脚本已更新，重新启动更新流程..."
-                        echo ""
-
-                        # 重新执行更新的脚本
-                        exec "./smart-update.sh"
-                    else
-                        echo "❌ 新脚本文件无效，继续使用当前版本"
-                        rm -f "smart-update.sh.new"
-                    fi
+                if [ "$CURRENT_HASH" = "$REMOTE_HASH" ]; then
+                    echo "✅ 脚本哈希值相同，无需更新"
                 else
-                    echo "❌ 无法获取新脚本内容，继续使用当前版本"
+                    # 备份当前脚本
+                    cp "smart-update.sh" "smart-update.sh.backup.$(date +%Y%m%d_%H%M%S)"
+
+                    # 获取最新的脚本文件
+                    if git show origin/main:smart-update.sh > "smart-update.sh.new" 2>/dev/null; then
+                        # 检查新脚本是否有效
+                        if [ -s "smart-update.sh.new" ] && head -1 "smart-update.sh.new" | grep -q "#!/bin/bash"; then
+                            # 替换脚本
+                            mv "smart-update.sh.new" "smart-update.sh"
+                            chmod +x "smart-update.sh"
+
+                            echo "✅ 智能更新脚本已更新，重新启动更新流程..."
+                            echo ""
+
+                            # 🔧 创建标记文件防止死循环
+                            touch "$SCRIPT_UPDATED_FLAG"
+
+                            # 重新执行更新的脚本，传递标记参数
+                            exec "./smart-update.sh" --script-updated
+                        else
+                            echo "❌ 新脚本文件无效，继续使用当前版本"
+                            rm -f "smart-update.sh.new"
+                        fi
+                    else
+                        echo "❌ 无法获取新脚本内容，继续使用当前版本"
+                    fi
                 fi
             else
                 echo "✅ 智能更新脚本已是最新版本"

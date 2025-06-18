@@ -161,23 +161,114 @@ manual_update() {
     
     echo "📥 拉取最新代码..."
     cd "$deploy_dir"
-    git fetch origin
-    git reset --hard origin/main
-    
+
+    # 确保获取最新的远程代码
+    echo "🔄 获取远程更新..."
+    if ! git fetch origin main; then
+        echo "❌ 获取远程代码失败"
+        return 1
+    fi
+
+    # 显示将要更新的内容
+    echo "📋 检查更新内容..."
+    local commits_behind=$(git rev-list --count HEAD..origin/main 2>/dev/null || echo "0")
+    if [ "$commits_behind" -gt 0 ]; then
+        echo "📦 发现 $commits_behind 个新提交"
+        echo "🔍 最新提交:"
+        git log --oneline -3 origin/main 2>/dev/null || true
+    else
+        echo "ℹ️ 当前已是最新版本"
+    fi
+
+    echo ""
+    echo "🔄 应用最新代码..."
+    if ! git reset --hard origin/main; then
+        echo "❌ 代码更新失败"
+        return 1
+    fi
+
+    echo "✅ 代码更新完成"
+
     # 修复脚本格式
-    find . -name "*.sh" -type f -exec tr -d '\r' < {} \; -exec mv {} {}.tmp \; -exec mv {}.tmp {} \; 2>/dev/null || true
-    find . -name "*.sh" -type f -exec chmod +x {} \; 2>/dev/null || true
+    echo "🔧 修复脚本文件格式..."
+    find . -name "*.sh" -type f -print0 | while IFS= read -r -d '' file; do
+        tr -d '\r' < "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+        chmod +x "$file"
+    done 2>/dev/null || true
     
     echo "🔧 运行数据库修复..."
     cd backend
     if [ -f "database-fixes.js" ]; then
-        node database-fixes.js
+        echo "📋 发现数据库修复脚本，开始执行..."
+        if node database-fixes.js; then
+            echo "✅ 数据库修复完成"
+        else
+            echo "⚠️ 数据库修复失败，但继续更新流程"
+        fi
+    else
+        echo "ℹ️ 未找到数据库修复脚本，跳过修复步骤"
     fi
-    
+
+    # 检查并运行新迁移
+    echo ""
+    echo "🔄 检查并运行新迁移..."
+
+    # 检查外部访问控制配置迁移
+    echo "📝 检查外部访问控制配置..."
+    CONFIG_EXISTS=$(sqlite3 database/database.sqlite "SELECT COUNT(*) FROM SystemConfigs WHERE key = 'allowUserExternalAccess';" 2>/dev/null || echo "0")
+
+    if [ "$CONFIG_EXISTS" = "0" ]; then
+        echo "🚀 添加外部访问控制配置..."
+        sqlite3 database/database.sqlite "
+        INSERT OR IGNORE INTO SystemConfigs (key, value, description, category, updatedBy, createdAt, updatedAt)
+        VALUES ('allowUserExternalAccess', 'true', '允许普通用户的转发规则被外部访问。true=监听所有接口(0.0.0.0)，false=仅本地访问(127.0.0.1)。管理员用户不受限制。', 'security', 'system', datetime('now'), datetime('now'));
+        " 2>/dev/null && echo "✅ 外部访问控制配置添加完成" || echo "⚠️ 外部访问控制配置添加失败"
+    else
+        echo "ℹ️ 外部访问控制配置已存在，跳过添加"
+    fi
+
+    # 安装后端依赖
+    echo ""
+    echo "📦 安装后端依赖..."
+    if [ -f "package.json" ]; then
+        echo "🔄 安装Node.js依赖..."
+        if command -v yarn >/dev/null 2>&1; then
+            yarn install --production --no-bin-links
+        else
+            npm install --production --no-bin-links
+        fi
+        echo "✅ 后端依赖安装完成"
+    else
+        echo "⚠️ 未找到package.json，跳过依赖安装"
+    fi
+
     echo "🚀 重启服务..."
     pm2 restart gost-management
-    
-    echo "✅ 手动更新完成！"
+
+    # 验证服务状态
+    echo ""
+    echo "🔍 验证服务状态..."
+    sleep 3
+
+    if pm2 list | grep -q "gost-management.*online"; then
+        echo "✅ 服务运行正常"
+
+        # 检查端口监听
+        local current_port=$(get_current_port)
+        if netstat -tln | grep -q ":$current_port"; then
+            echo "✅ 端口$current_port监听正常"
+        else
+            echo "⚠️ 端口$current_port未监听，可能需要等待服务完全启动"
+        fi
+
+        echo ""
+        echo "✅ 手动更新完成！"
+        echo "🌐 访问地址: http://localhost:$current_port"
+    else
+        echo "❌ 服务启动失败"
+        echo "📋 查看错误日志:"
+        pm2 logs gost-management --lines 10
+    fi
 }
 
 # 4. 修改端口

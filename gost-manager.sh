@@ -446,100 +446,52 @@ change_admin_password() {
 
     echo "🔧 更新密码..."
 
-    # 使用直接的数据库更新方法，绕过User模型的自动哈希
+    # 使用稳定可靠的方法：Node.js生成哈希 + sqlite3更新数据库
     local backend_dir="$deploy_dir/backend"
 
-    if [ -d "$backend_dir" ] && [ -f "$backend_dir/package.json" ]; then
-        cd "$backend_dir"
-
-        echo "🔧 使用直接数据库更新方法..."
-
-        # 创建直接更新数据库的脚本，绕过User模型
-        cat > /tmp/direct_password_update.js << 'EOF'
-const Database = require('better-sqlite3');
-const bcrypt = require('bcryptjs');
-const path = require('path');
-
-const password = process.argv[2];
-if (!password) {
-    console.error('Password required');
-    process.exit(1);
-}
-
-try {
-    // 生成密码哈希
-    const salt = bcrypt.genSaltSync(10);
-    const hash = bcrypt.hashSync(password, salt);
-
-    // 直接连接数据库
-    const dbPath = path.join(__dirname, 'database', 'database.sqlite');
-    const db = new Database(dbPath);
-
-    // 直接更新数据库，绕过Sequelize模型
-    const updateStmt = db.prepare('UPDATE Users SET password = ?, updatedAt = ? WHERE username = ?');
-    const result = updateStmt.run(hash, new Date().toISOString(), 'admin');
-
-    db.close();
-
-    if (result.changes > 0) {
-        console.log('SUCCESS');
-    } else {
-        console.log('NO_USER_FOUND');
-    }
-
-} catch (error) {
-    console.error('Database update failed:', error.message);
-    process.exit(1);
-}
-EOF
-
-        # 在后端目录中运行
-        local update_result=$(node /tmp/direct_password_update.js "$new_password" 2>/dev/null)
-        rm -f /tmp/direct_password_update.js
-
-        if [ "$update_result" = "SUCCESS" ]; then
-            echo "✅ 管理员密码修改成功！"
-            echo "🔐 新密码已生效，请使用新密码登录"
-            echo ""
-            echo "📋 登录信息:"
-            echo "   用户名: admin"
-            echo "   新密码: $new_password"
-            echo "   访问地址: http://localhost:$(get_current_port)"
-            echo ""
-            echo "💡 密码已使用与系统相同的bcryptjs加密方式存储"
-
-            # 返回原始目录
-            cd "$original_dir"
-            return 0
-        elif [ "$update_result" = "NO_USER_FOUND" ]; then
-            echo "❌ 未找到admin用户"
-            cd "$original_dir"
-            return 1
-        else
-            echo "❌ 密码更新失败"
-            echo "💡 尝试备用方法..."
-        fi
+    # 检查后端目录和依赖
+    if [ ! -d "$backend_dir" ] || [ ! -f "$backend_dir/package.json" ]; then
+        echo "❌ 未找到后端目录或package.json"
+        echo "💡 请先执行一键部署"
+        cd "$original_dir"
+        return 1
     fi
 
-    # 备用方法：使用sqlite3命令行工具
-    echo "💡 使用备用方法更新密码..."
-
     # 生成密码哈希
-    local password_hash=""
-    if [ -d "$backend_dir" ]; then
-        cd "$backend_dir"
-        password_hash=$(node -e "
+    echo "🔧 生成安全密码哈希..."
+    cd "$backend_dir"
+
+    local password_hash=$(node -e "
+        try {
             const bcrypt = require('bcryptjs');
             const hash = bcrypt.hashSync('$new_password', 10);
             console.log(hash);
-        " 2>/dev/null)
-    fi
+        } catch (error) {
+            console.error('Hash generation failed:', error.message);
+            process.exit(1);
+        }
+    " 2>/dev/null)
 
     if [ -z "$password_hash" ]; then
         echo "❌ 无法生成密码哈希"
-        echo "💡 建议直接在Web界面中修改密码"
-        cd "$original_dir"
-        return 1
+        echo "💡 可能是bcryptjs模块未安装，尝试安装..."
+
+        # 尝试安装bcryptjs
+        if npm install bcryptjs --no-bin-links --silent 2>/dev/null; then
+            echo "✅ bcryptjs模块安装成功，重新生成哈希..."
+            password_hash=$(node -e "
+                const bcrypt = require('bcryptjs');
+                const hash = bcrypt.hashSync('$new_password', 10);
+                console.log(hash);
+            " 2>/dev/null)
+        fi
+
+        if [ -z "$password_hash" ]; then
+            echo "❌ 密码哈希生成失败"
+            echo "💡 建议直接在Web界面中修改密码"
+            cd "$original_dir"
+            return 1
+        fi
     fi
 
     # 直接更新数据库
@@ -555,6 +507,8 @@ EOF
             echo "   用户名: admin"
             echo "   新密码: $new_password"
             echo "   访问地址: http://localhost:$(get_current_port)"
+            echo ""
+            echo "💡 密码已使用与系统相同的bcryptjs加密方式存储"
 
             # 返回原始目录
             cd "$original_dir"

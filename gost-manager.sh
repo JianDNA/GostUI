@@ -65,32 +65,36 @@ confirm_action() {
 deploy_system() {
     echo "🚀 一键部署 GOST管理系统"
     echo "================================"
-    
+
+    # 保存当前目录
+    local original_dir=$(pwd)
+
     if ! confirm_action "一键部署"; then
         return 1
     fi
-    
+
     echo "🧹 清理旧环境..."
     cd ~
-    
+
     # 停止可能运行的服务
     pm2 stop gost-management 2>/dev/null || true
     pm2 delete gost-management 2>/dev/null || true
-    
+
     # 删除原有目录
     rm -rf GostUI
     rm -rf gost-management
-    
+
     echo "✅ 旧环境清理完成"
     echo ""
-    
+
     # 克隆最新代码
     echo "📥 获取最新代码..."
     if ! git clone https://github.com/JianDNA/GostUI.git; then
         echo "❌ 代码获取失败"
+        cd "$original_dir"  # 失败时返回原始目录
         return 1
     fi
-    
+
     cd GostUI
     
     # 修复脚本格式和权限
@@ -113,19 +117,23 @@ deploy_system() {
     echo "🔧 开始部署..."
     if ./deploy.sh; then
         echo "✅ 部署完成！"
-        
+
         # 应用端口配置
         local custom_port=$(get_current_port)
         if [ "$custom_port" != "3000" ]; then
             echo "🔧 应用自定义端口配置: $custom_port"
             apply_port_config "$custom_port"
         fi
-        
+
         echo ""
         echo "🌐 访问地址: http://localhost:$(get_current_port)"
         echo "🔐 默认账号: admin / admin123"
+
+        # 返回原始目录
+        cd "$original_dir"
     else
         echo "❌ 部署失败"
+        cd "$original_dir"  # 失败时也返回原始目录
         return 1
     fi
 }
@@ -148,13 +156,16 @@ smart_update() {
 manual_update() {
     echo "🔧 手动更新 GOST管理系统"
     echo "================================"
-    
+
+    # 保存当前目录
+    local original_dir=$(pwd)
+
     if ! confirm_action "手动更新"; then
         return 1
     fi
-    
+
     local deploy_dir="/root/gost-management"
-    
+
     if [ ! -d "$deploy_dir" ]; then
         echo "❌ 未找到部署目录: $deploy_dir"
         echo "💡 请先执行一键部署"
@@ -290,10 +301,16 @@ manual_update() {
         echo ""
         echo "✅ 手动更新完成！"
         echo "🌐 访问地址: http://localhost:$current_port"
+
+        # 返回原始目录
+        cd "$original_dir"
     else
         echo "❌ 服务启动失败"
         echo "📋 查看错误日志:"
         pm2 logs gost-management --lines 10
+
+        # 失败时也返回原始目录
+        cd "$original_dir"
     fi
 }
 
@@ -338,7 +355,10 @@ change_port() {
 apply_port_config() {
     local port=$1
     local deploy_dir="/root/gost-management"
-    
+
+    # 保存当前目录
+    local original_dir=$(pwd)
+
     if [ ! -d "$deploy_dir" ]; then
         echo "⚠️ 部署目录不存在，端口配置将在下次部署时生效"
         return 0
@@ -379,12 +399,18 @@ apply_port_config() {
     pm2 restart gost-management 2>/dev/null || pm2 start ecosystem.config.js
 
     echo "✅ 端口配置已应用"
+
+    # 返回原始目录
+    cd "$original_dir"
 }
 
 # 5. 修改管理员密码
 change_admin_password() {
     echo "🔐 修改管理员密码"
     echo "================================"
+
+    # 保存当前目录
+    local original_dir=$(pwd)
 
     local deploy_dir="/root/gost-management"
     local db_file="$deploy_dir/backend/database/database.sqlite"
@@ -481,9 +507,13 @@ EOF
             echo "   访问地址: http://localhost:$(get_current_port)"
             echo ""
             echo "💡 密码已使用与系统相同的bcryptjs加密方式存储"
+
+            # 返回原始目录
+            cd "$original_dir"
             return 0
         elif [ "$update_result" = "NO_USER_FOUND" ]; then
             echo "❌ 未找到admin用户"
+            cd "$original_dir"
             return 1
         else
             echo "❌ 密码更新失败"
@@ -508,6 +538,7 @@ EOF
     if [ -z "$password_hash" ]; then
         echo "❌ 无法生成密码哈希"
         echo "💡 建议直接在Web界面中修改密码"
+        cd "$original_dir"
         return 1
     fi
 
@@ -524,13 +555,18 @@ EOF
             echo "   用户名: admin"
             echo "   新密码: $new_password"
             echo "   访问地址: http://localhost:$(get_current_port)"
+
+            # 返回原始目录
+            cd "$original_dir"
         else
             echo "❌ 未找到admin用户"
+            cd "$original_dir"
             return 1
         fi
     else
         echo "❌ 数据库更新失败"
         echo "💡 请检查数据库文件权限和完整性"
+        cd "$original_dir"
         return 1
     fi
 }
@@ -629,6 +665,9 @@ restore_data() {
     echo "🔄 还原数据库和备份文件"
     echo "================================"
 
+    # 保存当前目录
+    local original_dir=$(pwd)
+
     local deploy_dir="/root/gost-management"
 
     # 检查部署目录
@@ -717,6 +756,9 @@ restore_data() {
     echo "✅ 还原完成！"
     echo "🌐 访问地址: http://localhost:$(get_current_port)"
     echo "🔐 请使用备份时的账号密码登录"
+
+    # 返回原始目录
+    cd "$original_dir"
 }
 
 # 主循环

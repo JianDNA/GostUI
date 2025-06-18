@@ -447,25 +447,31 @@ echo "🔧 检查PM2日志轮转配置..."
 pm2 set pm2-logrotate:max_size 20M 2>/dev/null || true
 pm2 set pm2-logrotate:retain 5 2>/dev/null || true
 
-if [ "$SERVICE_RUNNING" = true ]; then
-    echo "🔄 重新启动PM2服务..."
-    pm2 restart gost-management
-    echo "✅ 服务已重启"
-else
-    echo "🔄 启动PM2服务..."
-    # 确保logs目录存在
-    mkdir -p logs
+# 确保logs目录存在
+mkdir -p logs
 
-    # 检查是否有PM2配置文件
-    if [ -f "ecosystem.config.js" ]; then
-        pm2 start ecosystem.config.js
-        echo "✅ 服务已启动（使用配置文件）"
-    else
-        echo "⚠️ 未找到PM2配置文件，使用默认启动方式..."
-        pm2 start app.js --name gost-management --env production
-        echo "✅ 服务已启动（默认方式）"
-    fi
+if [ "$SERVICE_RUNNING" = true ]; then
+    echo "🔄 完全重启PM2服务以确保配置生效..."
+    # 完全停止并删除进程，确保环境变量重新加载
+    pm2 stop gost-management 2>/dev/null || true
+    pm2 delete gost-management 2>/dev/null || true
+    sleep 2
+    echo "✅ 旧服务已完全停止"
 fi
+
+echo "🚀 启动PM2服务..."
+# 检查是否有PM2配置文件
+if [ -f "ecosystem.config.js" ]; then
+    pm2 start ecosystem.config.js
+    echo "✅ 服务已启动（使用配置文件）"
+else
+    echo "⚠️ 未找到PM2配置文件，使用默认启动方式..."
+    pm2 start app.js --name gost-management --env production
+    echo "✅ 服务已启动（默认方式）"
+fi
+
+# 等待服务完全启动
+sleep 3
 
 # 11. 验证服务状态
 echo ""

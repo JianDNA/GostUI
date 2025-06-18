@@ -283,17 +283,23 @@ manual_update() {
     # 确保logs目录存在
     mkdir -p logs
 
-    # 检查服务是否存在，如果不存在则启动
-    if pm2 list | grep -q "gost-management"; then
-        pm2 restart gost-management
+    # 完全重启服务以确保配置生效
+    echo "🛑 停止现有服务..."
+    pm2 stop gost-management 2>/dev/null || true
+    pm2 delete gost-management 2>/dev/null || true
+    sleep 2
+
+    echo "🔄 重新启动服务..."
+    if [ -f "ecosystem.config.js" ]; then
+        pm2 start ecosystem.config.js
+        echo "✅ 使用PM2配置文件启动"
     else
-        echo "⚠️ 服务不存在，重新启动..."
-        if [ -f "ecosystem.config.js" ]; then
-            pm2 start ecosystem.config.js
-        else
-            pm2 start app.js --name gost-management --env production
-        fi
+        pm2 start app.js --name gost-management --env production
+        echo "✅ 使用默认方式启动"
     fi
+
+    # 等待服务启动
+    sleep 3
 
     # 验证服务状态
     echo ""
@@ -434,10 +440,24 @@ EOF
     pm2 set pm2-logrotate:retain 5 2>/dev/null || true
 
     # 完全停止并重新启动服务以确保新端口生效
-    echo "🛑 停止当前服务..."
+    echo "🛑 完全停止当前服务..."
     cd "$deploy_dir/backend"
+
+    # 步骤1: 停止服务
     pm2 stop gost-management 2>/dev/null || true
+    echo "✅ 服务已停止"
+
+    # 步骤2: 删除PM2进程（关键步骤，确保环境变量重新加载）
     pm2 delete gost-management 2>/dev/null || true
+    echo "✅ PM2进程已删除"
+
+    # 步骤3: 确认进程已完全停止
+    sleep 2
+    if pm2 list 2>/dev/null | grep -q "gost-management"; then
+        echo "⚠️ 进程仍存在，强制清理..."
+        pm2 kill 2>/dev/null || true
+        sleep 3
+    fi
 
     echo "🚀 使用新端口启动服务..."
     # 确保logs目录存在
@@ -452,25 +472,60 @@ EOF
         PORT=$port pm2 start app.js --name gost-management --env production
     fi
 
-    # 等待服务启动
-    sleep 3
+    # 等待服务完全启动
+    echo "⏳ 等待服务完全启动..."
+    sleep 5
 
     # 验证服务状态
     if pm2 list 2>/dev/null | grep -q "gost-management.*online"; then
-        echo "✅ 服务已在新端口启动"
+        echo "✅ 服务已启动"
+
+        # 验证环境变量是否正确加载
+        echo "🔍 验证环境变量..."
+        local pm2_port=$(pm2 env 0 2>/dev/null | grep "^PORT:" | cut -d' ' -f2)
+        if [ "$pm2_port" = "$port" ]; then
+            echo "✅ PM2环境变量PORT=$pm2_port 正确"
+        else
+            echo "⚠️ PM2环境变量PORT=$pm2_port 不正确，期望$port"
+        fi
 
         # 验证端口是否真的在监听
-        if command -v netstat >/dev/null 2>&1; then
+        echo "🔍 验证端口监听..."
+        if command -v ss >/dev/null 2>&1; then
+            if ss -tlnp 2>/dev/null | grep -q ":$port "; then
+                echo "✅ 端口 $port 正在监听"
+            else
+                echo "❌ 端口 $port 未监听"
+                echo "📋 检查服务日志:"
+                pm2 logs gost-management --lines 10
+                return 1
+            fi
+        elif command -v lsof >/dev/null 2>&1; then
+            if lsof -i :$port 2>/dev/null | grep -q LISTEN; then
+                echo "✅ 端口 $port 正在监听"
+            else
+                echo "❌ 端口 $port 未监听"
+                echo "📋 检查服务日志:"
+                pm2 logs gost-management --lines 10
+                return 1
+            fi
+        elif command -v netstat >/dev/null 2>&1; then
             if netstat -tlnp 2>/dev/null | grep -q ":$port "; then
                 echo "✅ 端口 $port 正在监听"
             else
-                echo "⚠️ 端口 $port 可能未正确监听，请检查服务日志"
-                pm2 logs gost-management --lines 5
+                echo "❌ 端口 $port 未监听"
+                echo "📋 检查服务日志:"
+                pm2 logs gost-management --lines 10
+                return 1
             fi
+        else
+            echo "⚠️ 无法检查端口状态（缺少ss/lsof/netstat命令）"
+            echo "📋 请手动检查: curl http://localhost:$port"
         fi
     else
         echo "❌ 服务启动失败，请检查日志"
         pm2 logs gost-management --lines 10
+        return 1
     fi
 
     echo "✅ 端口配置已应用"

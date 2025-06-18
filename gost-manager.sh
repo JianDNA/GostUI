@@ -280,7 +280,20 @@ manual_update() {
     pm2 set pm2-logrotate:retain 5 2>/dev/null || true
 
     echo "🚀 重启服务..."
-    pm2 restart gost-management
+    # 确保logs目录存在
+    mkdir -p logs
+
+    # 检查服务是否存在，如果不存在则启动
+    if pm2 list | grep -q "gost-management"; then
+        pm2 restart gost-management
+    else
+        echo "⚠️ 服务不存在，重新启动..."
+        if [ -f "ecosystem.config.js" ]; then
+            pm2 start ecosystem.config.js
+        else
+            pm2 start app.js --name gost-management --env production
+        fi
+    fi
 
     # 验证服务状态
     echo ""
@@ -380,17 +393,40 @@ apply_port_config() {
         echo "PORT=$port" > "$env_file"
     fi
     
-    # 更新PM2配置文件
+    # 创建或更新PM2配置文件
     local pm2_config="$deploy_dir/backend/ecosystem.config.js"
-    if [ -f "$pm2_config" ]; then
-        echo "🔧 更新PM2配置文件..."
-        # 更精确的sed替换，处理各种可能的格式
-        sed -i "s/PORT: ['\"]?[0-9]*['\"]?/PORT: $port/g" "$pm2_config"
-        sed -i "s/port: ['\"]?[0-9]*['\"]?/port: $port/g" "$pm2_config"
-        sed -i "s/'PORT': ['\"]?[0-9]*['\"]?/'PORT': $port/g" "$pm2_config"
-        sed -i "s/\"PORT\": ['\"]?[0-9]*['\"]?/\"PORT\": $port/g" "$pm2_config"
-        echo "✅ PM2配置文件已更新"
-    fi
+    echo "🔧 创建/更新PM2配置文件..."
+
+    # 创建PM2配置文件，确保端口正确
+    cat > "$pm2_config" << EOF
+module.exports = {
+  apps: [{
+    name: 'gost-management',
+    script: 'app.js',
+    instances: 1,
+    autorestart: true,
+    watch: false,
+    max_memory_restart: '512M',
+    env: {
+      NODE_ENV: 'production',
+      PORT: $port,
+      NODE_OPTIONS: '--max-old-space-size=4096',
+      DISABLE_PRODUCTION_SAFETY: 'true'
+    },
+    error_file: './logs/pm2-error.log',
+    out_file: './logs/pm2-out.log',
+    log_file: './logs/pm2-combined.log',
+    time: true,
+    log_type: 'json',
+    merge_logs: true,
+    max_size: '20M',
+    retain: 5,
+    log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+    pmx: false
+  }]
+};
+EOF
+    echo "✅ PM2配置文件已创建/更新"
 
     # 确保PM2日志轮转配置
     echo "🔧 检查PM2日志轮转配置..."
@@ -404,8 +440,17 @@ apply_port_config() {
     pm2 delete gost-management 2>/dev/null || true
 
     echo "🚀 使用新端口启动服务..."
-    # 使用环境变量确保端口正确传递
-    PORT=$port pm2 start ecosystem.config.js 2>/dev/null || PORT=$port pm2 start app.js --name gost-management
+    # 确保logs目录存在
+    mkdir -p logs
+
+    # 启动PM2服务，使用配置文件
+    if pm2 start ecosystem.config.js; then
+        echo "✅ 使用PM2配置文件启动成功"
+    else
+        echo "⚠️ PM2配置文件启动失败，尝试直接启动..."
+        # 备用方案：直接启动并传递环境变量
+        PORT=$port pm2 start app.js --name gost-management --env production
+    fi
 
     # 等待服务启动
     sleep 3

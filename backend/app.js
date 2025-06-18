@@ -17,11 +17,14 @@ const gostPluginService = require('./services/gostPluginService');
 const gostHealthService = require('./services/gostHealthService');
 // const { realtimeMonitoringService } = require('./services/realtimeMonitoringService'); // 暂时禁用
 
-// 解析命令行参数
-const args = process.argv.slice(2);
-let PORT = 3000; // 默认端口
+// 导入配置
+const config = require('./config/config');
 
-// 查找--port参数
+// 端口配置优先级：命令行参数 > 环境变量 > 配置文件默认值
+let PORT = config.server.port; // 从配置文件读取（已包含环境变量处理）
+
+// 解析命令行参数，命令行参数优先级最高
+const args = process.argv.slice(2);
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--port' && i + 1 < args.length) {
     const portArg = parseInt(args[i + 1], 10);
@@ -29,10 +32,17 @@ for (let i = 0; i < args.length; i++) {
       PORT = portArg;
       defaultLogger.info(`使用命令行指定的端口: ${PORT}`);
     } else {
-      defaultLogger.warn(`无效的端口参数: ${args[i + 1]}，使用默认端口 ${PORT}`);
+      defaultLogger.warn(`无效的端口参数: ${args[i + 1]}，使用配置端口 ${PORT}`);
     }
     break;
   }
+}
+
+// 显示最终使用的端口和来源
+if (process.env.PORT && PORT == process.env.PORT) {
+  defaultLogger.info(`使用环境变量指定的端口: ${PORT}`);
+} else if (PORT == config.server.port) {
+  defaultLogger.info(`使用配置文件默认端口: ${PORT}`);
 }
 
 // 创建 Express 应用

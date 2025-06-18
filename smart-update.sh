@@ -493,6 +493,27 @@ if [ -d "$TEMP_DIR" ]; then
     echo "✅ 临时目录已清理: $TEMP_DIR"
 fi
 
+# 13. 确保源码目录脚本权限
+echo ""
+echo "🔧 步骤13: 确保源码目录脚本权限..."
+
+# 返回源码目录
+SOURCE_DIR=$(dirname "$(readlink -f "$0")")
+cd "$SOURCE_DIR"
+
+echo "📁 源码目录: $SOURCE_DIR"
+
+# 确保源码目录中的关键脚本有执行权限
+for script in "gost-manager.sh" "smart-update.sh" "deploy.sh" "cleanup-logs.sh" "fix-script-permissions.sh"; do
+    if [ -f "$script" ]; then
+        # 修复格式
+        tr -d '\r' < "$script" > "$script.tmp" && mv "$script.tmp" "$script"
+        # 设置权限
+        chmod +x "$script"
+        echo "✅ 已设置源码目录 $script 执行权限"
+    fi
+done
+
 echo ""
 echo "🎉 智能更新完成！"
 echo "================================"
@@ -501,10 +522,15 @@ echo "   ✅ 源码已更新到最新版本"
 echo "   ✅ 用户数据已安全保留"
 echo "   ✅ 数据库修复已执行"
 echo "   ✅ 服务已重新启动"
+echo "   ✅ 源码目录脚本权限已修复"
 echo ""
 echo "🌐 访问地址: http://localhost:3000"
 echo "🔐 默认账号: admin / admin123"
 echo ""
 echo "📁 备份位置: $BACKUP_DIR"
 echo "💡 如有问题，可使用备份恢复数据"
+echo ""
+echo "🚀 现在可以在源码目录运行:"
+echo "   cd $(dirname "$(readlink -f "$0")")"
+echo "   ./gost-manager.sh"
 echo ""

@@ -425,6 +425,11 @@ fi
 echo ""
 echo "🚀 步骤10: 启动服务..."
 
+# 确保PM2日志轮转配置
+echo "🔧 检查PM2日志轮转配置..."
+pm2 set pm2-logrotate:max_size 20M 2>/dev/null || true
+pm2 set pm2-logrotate:retain 5 2>/dev/null || true
+
 if [ "$SERVICE_RUNNING" = true ]; then
     echo "🔄 重新启动PM2服务..."
     pm2 restart gost-management

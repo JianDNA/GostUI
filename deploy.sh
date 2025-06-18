@@ -147,6 +147,14 @@ deploy_code() {
         echo "📥 克隆代码..."
         git clone $REPO_URL $DEPLOY_DIR
 
+        # 修复脚本权限
+        echo "🔧 修复脚本文件格式和权限..."
+        cd $DEPLOY_DIR
+        find . -name "*.sh" -type f -print0 | while IFS= read -r -d '' file; do
+            tr -d '\r' < "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+            chmod +x "$file"
+        done 2>/dev/null || true
+
     else
         # 更新部署：保留用户数据
         echo "🔄 更新代码..."
@@ -155,6 +163,13 @@ deploy_code() {
         # 拉取最新代码
         git fetch origin
         git reset --hard origin/main
+
+        # 修复脚本权限
+        echo "🔧 修复脚本文件格式和权限..."
+        find . -name "*.sh" -type f -print0 | while IFS= read -r -d '' file; do
+            tr -d '\r' < "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+            chmod +x "$file"
+        done 2>/dev/null || true
 
         # 清理node_modules以确保依赖更新
         echo "🧹 清理依赖缓存..."
@@ -748,11 +763,43 @@ module.exports = {
     error_file: './logs/pm2-error.log',
     out_file: './logs/pm2-out.log',
     log_file: './logs/pm2-combined.log',
-    time: true
+    time: true,
+    // 日志轮转配置
+    log_type: 'json',
+    merge_logs: true,
+    // 限制日志文件大小为20MB
+    max_size: '20M',
+    // 保留最多5个日志文件
+    retain: 5,
+    // 启用日志轮转
+    log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+    // PM2日志轮转模块配置
+    pmx: false
   }]
 };
 EOF
     
+    # 安装PM2日志轮转模块
+    echo "📦 安装PM2日志轮转模块..."
+    if ! pm2 list | grep -q "pm2-logrotate"; then
+        pm2 install pm2-logrotate 2>/dev/null || {
+            echo "⚠️ PM2日志轮转模块安装失败，使用基本配置"
+        }
+
+        # 配置日志轮转参数
+        pm2 set pm2-logrotate:max_size 20M 2>/dev/null || true
+        pm2 set pm2-logrotate:retain 5 2>/dev/null || true
+        pm2 set pm2-logrotate:compress true 2>/dev/null || true
+        pm2 set pm2-logrotate:dateFormat YYYY-MM-DD_HH-mm-ss 2>/dev/null || true
+        pm2 set pm2-logrotate:rotateModule true 2>/dev/null || true
+        pm2 set pm2-logrotate:workerInterval 30 2>/dev/null || true
+        pm2 set pm2-logrotate:rotateInterval '0 0 * * *' 2>/dev/null || true
+
+        echo "✅ PM2日志轮转配置完成"
+    else
+        echo "✅ PM2日志轮转模块已安装"
+    fi
+
     echo "✅ PM2配置创建完成"
 }
 

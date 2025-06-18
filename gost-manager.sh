@@ -93,9 +93,12 @@ deploy_system() {
     
     cd GostUI
     
-    # 修复脚本格式
-    find . -name "*.sh" -type f -exec tr -d '\r' < {} \; -exec mv {} {}.tmp \; -exec mv {}.tmp {} \; 2>/dev/null || true
-    find . -name "*.sh" -type f -exec chmod +x {} \; 2>/dev/null || true
+    # 修复脚本格式和权限
+    echo "🔧 修复脚本文件格式和权限..."
+    find . -name "*.sh" -type f -print0 | while IFS= read -r -d '' file; do
+        tr -d '\r' < "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+        chmod +x "$file"
+    done 2>/dev/null || true
     
     # 执行部署
     echo "🔧 开始部署..."
@@ -242,6 +245,11 @@ manual_update() {
         echo "⚠️ 未找到package.json，跳过依赖安装"
     fi
 
+    # 确保PM2日志轮转配置
+    echo "🔧 检查PM2日志轮转配置..."
+    pm2 set pm2-logrotate:max_size 20M 2>/dev/null || true
+    pm2 set pm2-logrotate:retain 5 2>/dev/null || true
+
     echo "🚀 重启服务..."
     pm2 restart gost-management
 
@@ -342,11 +350,16 @@ apply_port_config() {
         sed -i "s/port: [0-9]*/port: $port/g" "$pm2_config"
     fi
     
+    # 确保PM2日志轮转配置
+    echo "🔧 检查PM2日志轮转配置..."
+    pm2 set pm2-logrotate:max_size 20M 2>/dev/null || true
+    pm2 set pm2-logrotate:retain 5 2>/dev/null || true
+
     # 重启服务
     echo "🔄 重启服务以应用新端口..."
     cd "$deploy_dir/backend"
     pm2 restart gost-management 2>/dev/null || pm2 start ecosystem.config.js
-    
+
     echo "✅ 端口配置已应用"
 }
 

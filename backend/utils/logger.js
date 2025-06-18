@@ -34,7 +34,7 @@ const DEFAULT_CONFIG = {
   logDir: path.join(__dirname, '../logs'),
   logFile: 'application.log',
   errorFile: 'error.log',
-  maxFileSize: 10 * 1024 * 1024, // 10MB
+  maxFileSize: 20 * 1024 * 1024, // 20MB
   maxFiles: 5,
   dateFormat: true,        // 是否在日志中包含日期
   colorize: true,          // 控制台输出是否着色

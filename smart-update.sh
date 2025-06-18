@@ -223,8 +223,10 @@ cp -r "$TEMP_DIR/GostUI/"* .
 
 # 🔧 修复所有脚本文件的格式问题
 echo "🔧 修复脚本文件格式..."
-find . -name "*.sh" -type f -exec tr -d '\r' < {} \; -exec mv {} {}.tmp \; -exec mv {}.tmp {} \; 2>/dev/null || true
-find . -name "*.sh" -type f -exec chmod +x {} \; 2>/dev/null || true
+find . -name "*.sh" -type f -print0 | while IFS= read -r -d '' file; do
+    tr -d '\r' < "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+    chmod +x "$file"
+done 2>/dev/null || true
 
 # 保护用户数据目录
 mkdir -p backend/database backend/logs backend/backups backend/cache

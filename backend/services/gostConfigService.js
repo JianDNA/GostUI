@@ -940,7 +940,6 @@ class GostConfigService {
         serviceCount,
         chainCount,
         userCount: totalUserCount,           // 系统总用户数
-        activeUserCount: activeUsers.size,   // 有活跃规则的用户数
         portCount: ports.size,
         protocols: Array.from(protocols),
         lastUpdated: new Date().toISOString()

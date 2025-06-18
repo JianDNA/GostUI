@@ -11,10 +11,14 @@ class LoggerService {
     this.logDir = path.join(__dirname, '../logs');
     this.trafficLogFile = path.join(this.logDir, 'traffic-debug.log');
     this.testLogFile = path.join(this.logDir, 'test-analysis.log');
-    
+
+    // 日志文件大小限制配置
+    this.maxFileSize = 20 * 1024 * 1024; // 20MB
+    this.maxFiles = 5; // 保留5个文件
+
     // 确保日志目录存在
     this.ensureLogDirectory();
-    
+
     // 清理旧日志（保留最近3个文件）
     this.cleanupOldLogs();
   }
@@ -65,9 +69,63 @@ class LoggerService {
   }
 
   /**
+   * 检查并轮转日志文件
+   */
+  checkAndRotateLogFile(filePath) {
+    try {
+      if (fs.existsSync(filePath)) {
+        const stats = fs.statSync(filePath);
+        if (stats.size >= this.maxFileSize) {
+          const dirname = path.dirname(filePath);
+          const basename = path.basename(filePath);
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+          const newPath = path.join(dirname, `${basename}.${timestamp}`);
+
+          fs.renameSync(filePath, newPath);
+
+          // 清理旧文件
+          this.cleanupOldLogFilesByPattern(dirname, basename);
+        }
+      }
+    } catch (error) {
+      console.error('轮转日志文件失败:', error);
+    }
+  }
+
+  /**
+   * 清理旧的日志文件（按模式）
+   */
+  cleanupOldLogFilesByPattern(dirname, basename) {
+    try {
+      const files = fs.readdirSync(dirname)
+        .filter(file => file.startsWith(`${basename}.`))
+        .map(file => ({
+          name: file,
+          path: path.join(dirname, file),
+          time: fs.statSync(path.join(dirname, file)).mtime.getTime()
+        }))
+        .sort((a, b) => b.time - a.time);
+
+      // 保留最新的maxFiles个文件，删除其余的
+      if (files.length > this.maxFiles) {
+        files.slice(this.maxFiles).forEach(file => {
+          fs.unlinkSync(file.path);
+        });
+      }
+    } catch (error) {
+      console.error('清理旧日志文件失败:', error);
+    }
+  }
+
+  /**
    * 写入流量调试日志
    */
   logTrafficDebug(level, message, data = null) {
+    // 检查文件大小并轮转（10%概率检查，避免每次都检查）
+    if (Math.random() < 0.1) {
+      this.checkAndRotateLogFile(this.trafficLogFile);
+    }
+
     const timestamp = new Date().toISOString();
     const logEntry = {
       timestamp,
@@ -76,9 +134,9 @@ class LoggerService {
       data,
       pid: process.pid
     };
-    
+
     const logLine = JSON.stringify(logEntry) + '\n';
-    
+
     try {
       fs.appendFileSync(this.trafficLogFile, logLine);
     } catch (error) {
@@ -90,6 +148,11 @@ class LoggerService {
    * 写入测试分析日志
    */
   logTestAnalysis(phase, data) {
+    // 检查文件大小并轮转（10%概率检查）
+    if (Math.random() < 0.1) {
+      this.checkAndRotateLogFile(this.testLogFile);
+    }
+
     const timestamp = new Date().toISOString();
     const logEntry = {
       timestamp,
@@ -97,9 +160,9 @@ class LoggerService {
       data,
       pid: process.pid
     };
-    
+
     const logLine = JSON.stringify(logEntry) + '\n';
-    
+
     try {
       fs.appendFileSync(this.testLogFile, logLine);
     } catch (error) {

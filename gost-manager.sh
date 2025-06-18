@@ -420,57 +420,18 @@ change_admin_password() {
 
     echo "🔧 更新密码..."
 
-    # 方法1: 尝试使用后端目录的bcrypt模块
+    # 方法1: 使用后端的bcryptjs模块（与系统完全一致）
     local password_hash=""
     local backend_dir="$deploy_dir/backend"
 
     if [ -d "$backend_dir" ] && [ -f "$backend_dir/package.json" ]; then
         cd "$backend_dir"
 
-        # 检查bcrypt模块是否存在
-        if [ ! -d "node_modules/bcrypt" ]; then
-            echo "🔧 安装bcrypt模块..."
-            npm install bcrypt --no-bin-links --silent 2>/dev/null
-        fi
+        echo "🔧 使用后端bcryptjs模块生成密码哈希..."
 
-        # 尝试使用bcrypt生成哈希
-        if [ -d "node_modules/bcrypt" ]; then
-            password_hash=$(node -e "
-                try {
-                    const bcrypt = require('bcrypt');
-                    const password = process.argv[1];
-                    const hash = bcrypt.hashSync(password, 10);
-                    console.log(hash);
-                } catch (error) {
-                    process.exit(1);
-                }
-            " "$new_password" 2>/dev/null)
-        fi
-    fi
-
-    # 方法2: 如果bcrypt失败，尝试使用简化的bcrypt实现
-    if [ -z "$password_hash" ]; then
-        echo "💡 使用备用密码哈希方法..."
-
-        # 创建简化的bcrypt兼容哈希脚本
-        cat > /tmp/hash_password.js << 'EOF'
-const crypto = require('crypto');
-
-function createSimpleBcryptHash(password) {
-    // 生成简单的bcrypt兼容哈希
-    // 使用固定的盐值和简化的哈希算法
-    const saltRounds = 10;
-    const salt = '$2b$' + saltRounds.toString().padStart(2, '0') + '$';
-
-    // 使用PBKDF2模拟bcrypt
-    const hash = crypto.pbkdf2Sync(password, salt, 1000, 23, 'sha256');
-    const base64Hash = hash.toString('base64').replace(/\+/g, '.').replace(/=/g, '').substring(0, 31);
-
-    // 生成随机盐部分
-    const randomSalt = crypto.randomBytes(16).toString('base64').replace(/[+/=]/g, '.').substring(0, 22);
-
-    return salt + randomSalt + base64Hash;
-}
+        # 创建使用后端bcryptjs的密码哈希脚本
+        cat > /tmp/backend_bcrypt_hash.js << 'EOF'
+const bcrypt = require('bcryptjs');
 
 const password = process.argv[2];
 if (!password) {
@@ -479,76 +440,121 @@ if (!password) {
 }
 
 try {
-    console.log(createSimpleBcryptHash(password));
+    // 使用与后端完全相同的逻辑
+    const salt = bcrypt.genSaltSync(10);
+    const hash = bcrypt.hashSync(password, salt);
+    console.log(hash);
 } catch (error) {
-    console.error('Hash generation failed');
+    console.error('Hash generation failed:', error.message);
     process.exit(1);
 }
 EOF
 
-        password_hash=$(node /tmp/hash_password.js "$new_password" 2>/dev/null)
-        rm -f /tmp/hash_password.js
+        # 在后端目录中运行，确保使用正确的bcryptjs版本
+        password_hash=$(node /tmp/backend_bcrypt_hash.js "$new_password" 2>/dev/null)
+        rm -f /tmp/backend_bcrypt_hash.js
 
         if [ -n "$password_hash" ]; then
-            echo "✅ 使用备用bcrypt兼容哈希"
+            echo "✅ 使用后端bcryptjs生成密码哈希成功"
+        else
+            echo "⚠️ 后端bcryptjs哈希生成失败，尝试备用方法"
         fi
     fi
 
-    # 方法3: 使用后端的密码哈希逻辑
+    # 方法2: 如果后端bcryptjs失败，尝试安装bcryptjs
     if [ -z "$password_hash" ]; then
-        echo "💡 使用后端密码哈希逻辑..."
+        echo "💡 尝试安装bcryptjs模块..."
 
-        # 创建使用后端逻辑的密码哈希脚本
-        cat > /tmp/backend_hash.js << 'EOF'
+        cd "$backend_dir"
+        if npm list bcryptjs >/dev/null 2>&1; then
+            echo "✅ bcryptjs模块已存在"
+        else
+            echo "🔧 安装bcryptjs模块..."
+            npm install bcryptjs --no-bin-links --silent 2>/dev/null
+        fi
+
+        # 再次尝试使用bcryptjs
+        cat > /tmp/bcryptjs_hash.js << 'EOF'
+const bcrypt = require('bcryptjs');
+
+const password = process.argv[2];
+if (!password) {
+    console.error('Password required');
+    process.exit(1);
+}
+
+try {
+    const salt = bcrypt.genSaltSync(10);
+    const hash = bcrypt.hashSync(password, salt);
+    console.log(hash);
+} catch (error) {
+    console.error('bcryptjs hash failed:', error.message);
+    process.exit(1);
+}
+EOF
+
+        password_hash=$(node /tmp/bcryptjs_hash.js "$new_password" 2>/dev/null)
+        rm -f /tmp/bcryptjs_hash.js
+
+        if [ -n "$password_hash" ]; then
+            echo "✅ bcryptjs模块安装并生成哈希成功"
+        fi
+    fi
+
+    # 方法3: 直接使用后端User模型设置密码（最可靠）
+    if [ -z "$password_hash" ]; then
+        echo "💡 使用后端User模型直接设置密码..."
+
+        cd "$backend_dir"
+
+        # 创建直接使用User模型的脚本
+        cat > /tmp/user_model_hash.js << 'EOF'
+// 直接使用后端的User模型来生成密码哈希
 const path = require('path');
 
-// 尝试使用后端的密码哈希逻辑
-try {
-    // 模拟bcrypt.hashSync的行为
-    const crypto = require('crypto');
+async function hashPasswordWithUserModel(password) {
+    try {
+        // 加载后端的数据库配置和模型
+        const { sequelize, models } = require('./services/dbService');
+        const { User } = models;
 
-    function hashPassword(password) {
-        // 生成bcrypt格式的哈希
-        const saltRounds = 10;
-        const salt = crypto.randomBytes(16);
+        // 创建一个临时用户实例来生成密码哈希
+        const tempUser = User.build({ username: 'temp', password: password });
 
-        // 使用scrypt作为bcrypt的替代
-        const hash = crypto.scryptSync(password, salt, 32);
+        // 获取生成的密码哈希
+        const hashedPassword = tempUser.password;
 
-        // 格式化为bcrypt兼容格式
-        const saltBase64 = salt.toString('base64').replace(/[+/=]/g, '.').substring(0, 22);
-        const hashBase64 = hash.toString('base64').replace(/[+/=]/g, '.').substring(0, 31);
+        console.log(hashedPassword);
+        process.exit(0);
 
-        return `$2b$${saltRounds.toString().padStart(2, '0')}$${saltBase64}${hashBase64}`;
-    }
-
-    const password = process.argv[2];
-    if (!password) {
-        console.error('Password required');
+    } catch (error) {
+        console.error('User model hash failed:', error.message);
         process.exit(1);
     }
+}
 
-    console.log(hashPassword(password));
-
-} catch (error) {
-    console.error('Backend hash failed:', error.message);
+const password = process.argv[2];
+if (!password) {
+    console.error('Password required');
     process.exit(1);
 }
+
+hashPasswordWithUserModel(password);
 EOF
 
-        password_hash=$(node /tmp/backend_hash.js "$new_password" 2>/dev/null)
-        rm -f /tmp/backend_hash.js
+        password_hash=$(node /tmp/user_model_hash.js "$new_password" 2>/dev/null)
+        rm -f /tmp/user_model_hash.js
 
         if [ -n "$password_hash" ]; then
-            echo "✅ 使用后端兼容哈希"
+            echo "✅ 使用User模型生成密码哈希成功"
         fi
     fi
 
-    # 方法4: 最后的备用方法 - 重置为明文（临时）
+    # 方法4: 最后的备用方法
     if [ -z "$password_hash" ]; then
-        echo "⚠️ 所有哈希方法失败，使用临时明文密码"
-        echo "💡 请登录后立即在系统中修改密码"
-        password_hash="$new_password"
+        echo "❌ 所有密码哈希方法都失败了"
+        echo "💡 建议直接在Web界面中修改密码"
+        return 1
     fi
 
     # 更新数据库

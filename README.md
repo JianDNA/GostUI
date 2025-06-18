@@ -53,6 +53,7 @@ chmod +x gost-manager.sh
 - 🔐 **修改密码** - 修改管理员密码
 - 💾 **数据备份** - 备份数据库和配置文件
 - 🔄 **数据还原** - 还原备份的数据
+- 🧹 **日志管理** - 自动日志轮转和清理（20MB限制）
 
 ### 环境要求
 - **操作系统**: Linux (Ubuntu/CentOS/Debian)
@@ -255,6 +256,13 @@ cd ~/GostUI
 - **还原保护**: 还原前会检查部署目录，需要手动确认
 - **安全提示**: 还原操作会覆盖现有数据，需要输入'yes'确认
 
+#### 🧹 日志管理
+- **自动轮转**: PM2日志文件自动轮转，最大20MB
+- **文件保留**: 保留最近5个日志文件，自动压缩
+- **应用日志**: 应用程序日志限制20MB，自动轮转
+- **手动清理**: 提供cleanup-logs.sh脚本手动清理
+- **智能备份**: 清理时保留最后1000行重要日志
+
 ## 🔄 传统更新方式
 
 ### 智能更新
@@ -336,7 +344,84 @@ pm2 status                   # 查看状态
 # 系统管理
 ./gost-manager.sh            # 集成管理脚本 (推荐)
 ./smart-update.sh            # 智能更新
+./cleanup-logs.sh            # 日志清理
 ```
+
+## 🧹 日志管理
+
+### 📊 日志系统特性
+
+系统内置了完善的日志管理机制，确保长期稳定运行：
+
+#### 🔄 自动日志轮转
+- **PM2日志**: 自动轮转，最大20MB，保留5个文件
+- **应用日志**: 应用程序日志限制20MB，自动轮转
+- **压缩存储**: 旧日志文件自动压缩，节省磁盘空间
+- **定时清理**: 每日自动检查和清理过大的日志文件
+
+#### 📁 日志文件位置
+```bash
+/root/gost-management/backend/logs/
+├── pm2-error.log           # PM2错误日志
+├── pm2-out.log            # PM2输出日志
+├── pm2-combined.log       # PM2合并日志
+├── application.log        # 应用程序日志
+├── error.log              # 错误日志
+└── *.backup.*             # 备份日志文件
+```
+
+#### 🛠️ 日志管理命令
+
+```bash
+# 查看实时日志
+pm2 logs gost-management
+
+# 查看日志文件大小
+cd ~/gost-management/backend/logs
+du -sh *
+
+# 手动清理日志
+cd ~/GostUI
+./cleanup-logs.sh
+
+# 查看最近的错误日志
+tail -50 ~/gost-management/backend/logs/error.log
+
+# 查看PM2日志状态
+pm2 show gost-management
+```
+
+#### ⚙️ 日志配置
+
+系统会自动配置以下日志参数：
+- **最大文件大小**: 20MB
+- **保留文件数**: 5个
+- **轮转策略**: 按大小和时间轮转
+- **压缩选项**: 启用gzip压缩
+- **日志格式**: 包含时间戳和级别
+
+#### 🔧 自定义日志配置
+
+如需调整日志配置，可以修改以下设置：
+
+```bash
+# 调整PM2日志轮转设置
+pm2 set pm2-logrotate:max_size 30M      # 最大文件大小
+pm2 set pm2-logrotate:retain 10         # 保留文件数
+pm2 set pm2-logrotate:compress true     # 启用压缩
+pm2 set pm2-logrotate:dateFormat YYYY-MM-DD_HH-mm-ss
+
+# 查看当前配置
+pm2 conf pm2-logrotate
+```
+
+#### 📋 日志监控建议
+
+1. **定期检查**: 每周检查一次日志文件大小
+2. **错误监控**: 关注error.log中的错误信息
+3. **性能分析**: 通过日志分析系统性能
+4. **磁盘空间**: 确保日志目录有足够空间
+5. **备份策略**: 重要日志可以定期备份到其他位置
 
 ## 📁 项目结构
 
@@ -345,6 +430,7 @@ GostUI/
 ├── gost-manager.sh         # 集成管理脚本 (推荐)
 ├── deploy.sh               # 主部署脚本
 ├── smart-update.sh         # 智能更新脚本
+├── cleanup-logs.sh         # 日志清理脚本
 ├── commit-with-build.sh    # 构建提交脚本
 ├── backend/                # 后端代码
 │   ├── routes/            # API路由
@@ -492,6 +578,72 @@ GostUI/
    pm2 reload gost-management
    ```
 
+#### 🧹 日志相关问题
+
+9. **日志文件过大**
+   ```bash
+   # 检查日志文件大小
+   du -sh ~/gost-management/backend/logs/*
+
+   # 手动清理日志
+   cd ~/GostUI
+   ./cleanup-logs.sh
+
+   # 检查磁盘空间
+   df -h
+
+   # 强制清理PM2日志
+   pm2 flush gost-management
+   ```
+
+10. **日志轮转不工作**
+    ```bash
+    # 检查pm2-logrotate模块
+    pm2 list | grep logrotate
+
+    # 重新安装日志轮转模块
+    pm2 uninstall pm2-logrotate
+    pm2 install pm2-logrotate
+
+    # 重新配置日志轮转
+    pm2 set pm2-logrotate:max_size 20M
+    pm2 set pm2-logrotate:retain 5
+    pm2 set pm2-logrotate:compress true
+    ```
+
+11. **磁盘空间不足**
+    ```bash
+    # 检查磁盘使用情况
+    df -h
+    du -sh ~/gost-management/backend/logs
+
+    # 紧急清理日志
+    find ~/gost-management/backend/logs -name "*.log" -size +50M -delete
+
+    # 清理PM2日志
+    pm2 flush
+
+    # 清理系统日志
+    sudo journalctl --vacuum-size=100M
+    ```
+
+12. **脚本权限问题**
+    ```bash
+    # 修复所有脚本权限
+    cd ~/GostUI
+    find . -name "*.sh" -type f -exec chmod +x {} \;
+
+    # 修复脚本格式（清除Windows换行符）
+    find . -name "*.sh" -type f -exec dos2unix {} \; 2>/dev/null || true
+
+    # 重新克隆项目（如果权限问题严重）
+    cd ~
+    rm -rf GostUI
+    git clone https://github.com/JianDNA/GostUI.git
+    cd GostUI
+    chmod +x *.sh
+    ```
+
 #### 🌐 网络相关问题
 
 9. **无法访问GitHub**
@@ -528,97 +680,45 @@ cp /tmp/gost-backup-*/database.sqlite ~/gost-management/backend/database/
 pm2 restart gost-management
 ```
 
-### 已知问题修复
 
-系统已自动修复以下问题：
 
-#### ✅ 管理员流量限额显示问题
-- **问题**: 管理员用户界面显示1GB流量限额
-- **修复**: 管理员用户现在正确显示"无限制"
-- **自动修复**: `smart-update.sh` 和 `deploy.sh` 会自动处理
 
-#### ✅ 系统配置API 404错误
-- **问题**: `/api/system-config/allowUserExternalAccess` 返回404
-- **修复**: 自动添加缺失的系统配置
-- **自动修复**: 部署和更新脚本会自动检查并修复配置
 
-> **注意**: 所有修复都已集成到现有的部署和更新脚本中，无需执行额外的修复脚本。
 
-## 📊 性能优化
 
-### 服务器配置建议
-- **最低配置**: 1GB RAM, 1 CPU核心
-- **推荐配置**: 2GB RAM, 2 CPU核心
-- **高负载**: 4GB RAM, 4 CPU核心
 
-### 优化建议
-1. 使用预构建模式减少服务器资源消耗
-2. 定期清理日志避免磁盘空间不足
-3. 监控内存使用设置PM2内存限制
-4. 定期备份数据库
 
-## 🔐 安全建议
+## 📞 获取帮助
 
-### 🛡️ 自动安全保护
-**系统已内置自动安全保护机制！**
-
-✅ **部署时自动保护**: 每次运行 `./deploy.sh` 都会自动配置GOST WebAPI安全设置
-✅ **更新时自动修复**: 每次运行 `./smart-update.sh` 都会自动检查并修复安全配置
-✅ **无需手动操作**: 系统会自动确保GOST WebAPI仅监听本地接口
-
-### 🔒 安全特性
-1. **GOST WebAPI保护** - 自动配置为仅本地访问 (127.0.0.1:18080)
-2. **外部访问阻止** - 外部用户无法访问 `http://您的IP:18080/api/config`
-3. **配置自动修复** - 部署和更新时自动检查并修复安全配置
-4. **安全验证** - 部署完成后自动进行安全验证
-
-### 🛡️ 安全检查清单
-1. **✅ GOST WebAPI保护** - 系统自动配置（仅本地访问）
-2. **✅ 观察器服务保护** - 端口18081仅本地访问
-3. **✅ 限制器服务保护** - 通过主服务3000端口访问
-4. **🔐 修改默认密码** - 首次登录后立即修改
-5. **🛡️ 防火墙配置** - 建议配置系统防火墙
-6. **💾 定期备份** - 设置自动备份策略
-7. **🔄 更新系统** - 定期运行 `./smart-update.sh`
-8. **📊 监控日志** - 检查异常访问
-9. **🔍 端口安全检查** - 定期运行 `./check-port-security.sh`
-
-### 🔍 端口安全检查
+### 🔧 常用命令
 ```bash
-# 检查所有端口的安全状态
-./check-port-security.sh
+# 查看服务状态
+pm2 status
 
-# 查看详细的端口监听情况
-netstat -tln | grep -E ":3000|:18080|:18081"
+# 查看实时日志
+pm2 logs gost-management
+
+# 重启服务
+pm2 restart gost-management
+
+# 清理日志
+cd ~/GostUI && ./cleanup-logs.sh
+
+# 检查端口安全
+./check-port-security.sh
 ```
 
-## 🤝 贡献指南
+### 🐛 问题反馈
+- **GitHub Issues**: [提交问题](https://github.com/JianDNA/GostUI/issues)
+- **日志查看**: `~/gost-management/backend/logs/`
+- **配置文件**: `~/gost-management/backend/.env`
 
-1. Fork 项目
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 打开 Pull Request
-
-### 提交规范
-- `feat:` 新功能
-- `fix:` 修复bug
-- `docs:` 文档更新
-- `style:` 代码格式调整
-- `refactor:` 代码重构
-- `build:` 构建产物更新
+---
 
 ## 📄 许可证
 
 本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。
 
-## 📞 获取帮助
-
-- 📋 查看日志: `pm2 logs gost-management`
-- 🔍 安全检查: `./check-port-security.sh`
-- 📚 查看文档: `DEPLOYMENT.md`
-- 🐛 提交问题: [GitHub Issues](https://github.com/JianDNA/GostUI/issues)
-
 ---
 
-**💡 提示**: 首次部署建议使用一键部署脚本，它会自动处理所有复杂的配置和依赖问题。
+**💡 提示**: 推荐使用集成管理脚本 `./gost-manager.sh` 进行所有操作，它提供了完整的菜单式管理界面。

@@ -895,39 +895,52 @@ class GostConfigService {
    */
   getConfigStats = safeAsync(async () => {
       const config = await this.getCurrentPersistedConfig();
-      
+
       // 统计服务和链
       const serviceCount = config.services ? config.services.length : 0;
       const chainCount = config.chains ? config.chains.length : 0;
-      
-      // 统计用户和端口
-      const users = new Set();
+
+      // 统计活跃用户和端口（从GOST配置中）
+      const activeUsers = new Set();
       const ports = new Set();
       const protocols = new Set();
-      
+
       if (config.services) {
         config.services.forEach(service => {
           if (service.metadata && service.metadata.username) {
-            users.add(service.metadata.username);
+            activeUsers.add(service.metadata.username);
           }
-          
+
           // 从地址中提取端口
           const portMatch = service.addr ? service.addr.match(/:(\d+)$/) : null;
           if (portMatch && portMatch[1]) {
             ports.add(parseInt(portMatch[1]));
           }
-          
+
           // 收集协议
           if (service.handler && service.handler.type) {
             protocols.add(service.handler.type);
           }
         });
       }
-      
+
+      // 获取系统总用户数（从数据库）
+      let totalUserCount = 0;
+      try {
+        const { models } = require('./dbService');
+        const { User } = models;
+        totalUserCount = await User.count();
+      } catch (error) {
+        console.error('获取用户总数失败:', error);
+        // 如果数据库查询失败，使用活跃用户数作为备选
+        totalUserCount = activeUsers.size;
+      }
+
       return {
         serviceCount,
         chainCount,
-        userCount: users.size,
+        userCount: totalUserCount,           // 系统总用户数
+        activeUserCount: activeUsers.size,   // 有活跃规则的用户数
         portCount: ports.size,
         protocols: Array.from(protocols),
         lastUpdated: new Date().toISOString()
@@ -937,6 +950,7 @@ class GostConfigService {
       serviceCount: 0,
       chainCount: 0,
       userCount: 0,
+      activeUserCount: 0,
       portCount: 0,
       protocols: [],
         lastUpdated: new Date().toISOString()

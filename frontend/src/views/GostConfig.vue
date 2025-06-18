@@ -47,7 +47,12 @@
           <div class="stat-content">
             <div class="stat-number">{{ stats.userCount || 0 }}</div>
             <div class="stat-label">用户数量</div>
-            <div class="stat-description">系统用户总数</div>
+            <div class="stat-description">
+              系统总用户
+              <span v-if="stats.activeUserCount !== undefined" class="active-users">
+                (活跃: {{ stats.activeUserCount }})
+              </span>
+            </div>
           </div>
         </el-card>
       </el-col>
@@ -194,6 +199,7 @@ export default {
       serviceCount: 0,
       portCount: 0,
       userCount: 0,
+      activeUserCount: 0,
       protocols: []
     })
     
@@ -490,6 +496,11 @@ export default {
 
 .stat-description.disabled {
   color: #F56C6C;
+}
+
+.active-users {
+  color: #67C23A;
+  font-weight: 500;
 }
 
 .config-compare,

@@ -383,20 +383,50 @@ apply_port_config() {
     # 更新PM2配置文件
     local pm2_config="$deploy_dir/backend/ecosystem.config.js"
     if [ -f "$pm2_config" ]; then
-        # 使用sed更新端口配置
-        sed -i "s/PORT: [0-9]*/PORT: $port/g" "$pm2_config"
-        sed -i "s/port: [0-9]*/port: $port/g" "$pm2_config"
+        echo "🔧 更新PM2配置文件..."
+        # 更精确的sed替换，处理各种可能的格式
+        sed -i "s/PORT: ['\"]?[0-9]*['\"]?/PORT: $port/g" "$pm2_config"
+        sed -i "s/port: ['\"]?[0-9]*['\"]?/port: $port/g" "$pm2_config"
+        sed -i "s/'PORT': ['\"]?[0-9]*['\"]?/'PORT': $port/g" "$pm2_config"
+        sed -i "s/\"PORT\": ['\"]?[0-9]*['\"]?/\"PORT\": $port/g" "$pm2_config"
+        echo "✅ PM2配置文件已更新"
     fi
-    
+
     # 确保PM2日志轮转配置
     echo "🔧 检查PM2日志轮转配置..."
     pm2 set pm2-logrotate:max_size 20M 2>/dev/null || true
     pm2 set pm2-logrotate:retain 5 2>/dev/null || true
 
-    # 重启服务
-    echo "🔄 重启服务以应用新端口..."
+    # 完全停止并重新启动服务以确保新端口生效
+    echo "🛑 停止当前服务..."
     cd "$deploy_dir/backend"
-    pm2 restart gost-management 2>/dev/null || pm2 start ecosystem.config.js
+    pm2 stop gost-management 2>/dev/null || true
+    pm2 delete gost-management 2>/dev/null || true
+
+    echo "🚀 使用新端口启动服务..."
+    # 使用环境变量确保端口正确传递
+    PORT=$port pm2 start ecosystem.config.js 2>/dev/null || PORT=$port pm2 start app.js --name gost-management
+
+    # 等待服务启动
+    sleep 3
+
+    # 验证服务状态
+    if pm2 list 2>/dev/null | grep -q "gost-management.*online"; then
+        echo "✅ 服务已在新端口启动"
+
+        # 验证端口是否真的在监听
+        if command -v netstat >/dev/null 2>&1; then
+            if netstat -tlnp 2>/dev/null | grep -q ":$port "; then
+                echo "✅ 端口 $port 正在监听"
+            else
+                echo "⚠️ 端口 $port 可能未正确监听，请检查服务日志"
+                pm2 logs gost-management --lines 5
+            fi
+        fi
+    else
+        echo "❌ 服务启动失败，请检查日志"
+        pm2 logs gost-management --lines 10
+    fi
 
     echo "✅ 端口配置已应用"
 

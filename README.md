@@ -41,8 +41,7 @@ git clone https://github.com/JianDNA/GostUI.git
 cd GostUI
 
 # 2. 运行管理脚本
-chmod +x gost-manager.sh
-./gost-manager.sh
+./gost-manager
 ```
 
 管理脚本功能：
@@ -180,8 +179,7 @@ git clone https://github.com/JianDNA/GostUI.git
 cd GostUI
 
 # 运行部署脚本
-chmod +x deploy.sh
-./deploy.sh
+./deploy
 ```
 
 #### 🔍 部署前环境检查
@@ -230,7 +228,7 @@ df -h          # 检查磁盘空间 (需要 >= 1GB)
 
 ```bash
 cd ~/GostUI
-./gost-manager.sh
+./gost-manager
 ```
 
 管理脚本提供以下功能：
@@ -269,8 +267,7 @@ cd ~/GostUI
 ```bash
 # 一键智能更新 - 完全傻瓜式操作
 cd ~/GostUI
-chmod +x smart-update.sh
-./smart-update.sh
+./smart-update
 ```
 
 ### 手动更新
@@ -283,8 +280,7 @@ rm -rf GostUI
 git clone https://github.com/JianDNA/GostUI.git
 # 3. 运行智能更新脚本
 cd ~/GostUI
-chmod +x smart-update.sh
-./smart-update.sh
+./smart-update
 ```
 
 智能更新特点：
@@ -298,7 +294,7 @@ chmod +x smart-update.sh
 ```bash
 # 完全重新部署 (会清除所有数据)
 rm -rf ~/gost-management
-./deploy.sh
+./deploy
 ```
 
 ## 📝 开发工作流
@@ -325,8 +321,7 @@ git commit -m "feat: 添加新功能"
 git push
 
 # 方式二：使用便捷脚本
-chmod +x commit-with-build.sh
-./commit-with-build.sh
+./scripts/dev/commit-with-build.sh
 ```
 
 ## 🔧 管理命令
@@ -342,9 +337,9 @@ pm2 logs gost-management     # 查看日志
 pm2 status                   # 查看状态
 
 # 系统管理
-./gost-manager.sh            # 集成管理脚本 (推荐)
-./smart-update.sh            # 智能更新
-./cleanup-logs.sh            # 日志清理
+./gost-manager               # 集成管理脚本 (推荐)
+./smart-update               # 智能更新
+./scripts/tools/cleanup-logs.sh  # 日志清理
 ```
 
 ## 🧹 日志管理
@@ -382,7 +377,7 @@ du -sh *
 
 # 手动清理日志
 cd ~/GostUI
-./cleanup-logs.sh
+./scripts/tools/cleanup-logs.sh
 
 # 查看最近的错误日志
 tail -50 ~/gost-management/backend/logs/error.log
@@ -427,11 +422,25 @@ pm2 conf pm2-logrotate
 
 ```
 GostUI/
-├── gost-manager.sh         # 集成管理脚本 (推荐)
-├── deploy.sh               # 主部署脚本
-├── smart-update.sh         # 智能更新脚本
-├── cleanup-logs.sh         # 日志清理脚本
-├── commit-with-build.sh    # 构建提交脚本
+├── gost-manager            # 主管理脚本快捷方式 (推荐)
+├── smart-update            # 智能更新快捷方式
+├── deploy                  # 部署脚本快捷方式
+├── scripts/                # 脚本目录
+│   ├── core/              # 核心管理脚本
+│   │   ├── gost-manager.sh    # 主管理脚本
+│   │   ├── smart-update.sh    # 智能更新脚本
+│   │   └── deploy.sh          # 部署脚本
+│   ├── tools/             # 工具脚本
+│   │   ├── cleanup-logs.sh    # 日志清理
+│   │   ├── check-port-security.sh  # 端口安全检查
+│   │   ├── fix-script-permissions.sh  # 权限修复
+│   │   └── force-port-restart.sh     # 强制端口重启
+│   └── dev/               # 开发工具
+│       └── commit-with-build.sh      # 构建提交脚本
+├── docs/                   # 文档目录
+│   ├── DEPLOYMENT.md      # 部署文档
+│   ├── OPTIMIZATION_SUMMARY.md  # 优化总结
+│   └── *.md               # 其他文档
 ├── backend/                # 后端代码
 │   ├── routes/            # API路由
 │   ├── models/            # 数据模型

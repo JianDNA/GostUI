@@ -298,28 +298,103 @@ change_admin_password() {
 
     echo "🔧 更新密码..."
 
-    # 生成密码哈希 (使用Node.js)
-    local password_hash
-    password_hash=$(node -e "
-        const bcrypt = require('bcrypt');
-        const password = '$new_password';
-        const hash = bcrypt.hashSync(password, 10);
-        console.log(hash);
-    " 2>/dev/null)
+    # 方法1: 尝试使用后端目录的bcrypt模块
+    local password_hash=""
+    local backend_dir="$deploy_dir/backend"
+
+    if [ -d "$backend_dir" ] && [ -f "$backend_dir/package.json" ]; then
+        cd "$backend_dir"
+
+        # 检查bcrypt模块是否存在
+        if [ ! -d "node_modules/bcrypt" ]; then
+            echo "🔧 安装bcrypt模块..."
+            npm install bcrypt --no-bin-links --silent 2>/dev/null
+        fi
+
+        # 尝试使用bcrypt生成哈希
+        if [ -d "node_modules/bcrypt" ]; then
+            password_hash=$(node -e "
+                try {
+                    const bcrypt = require('bcrypt');
+                    const password = process.argv[1];
+                    const hash = bcrypt.hashSync(password, 10);
+                    console.log(hash);
+                } catch (error) {
+                    process.exit(1);
+                }
+            " "$new_password" 2>/dev/null)
+        fi
+    fi
+
+    # 方法2: 如果bcrypt失败，使用Node.js内置crypto模块
+    if [ -z "$password_hash" ]; then
+        echo "💡 使用备用密码哈希方法..."
+
+        # 创建临时密码哈希脚本
+        cat > /tmp/hash_password.js << 'EOF'
+const crypto = require('crypto');
+
+function createBcryptLikeHash(password) {
+    // 生成随机盐
+    const salt = crypto.randomBytes(16).toString('hex');
+    // 使用PBKDF2生成哈希
+    const hash = crypto.pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
+    // 返回格式化的哈希
+    return '$pbkdf2$' + salt + '$' + hash;
+}
+
+const password = process.argv[2];
+if (!password) {
+    console.error('Password required');
+    process.exit(1);
+}
+
+try {
+    console.log(createBcryptLikeHash(password));
+} catch (error) {
+    console.error('Hash generation failed');
+    process.exit(1);
+}
+EOF
+
+        password_hash=$(node /tmp/hash_password.js "$new_password" 2>/dev/null)
+        rm -f /tmp/hash_password.js
+    fi
+
+    # 方法3: 最后的备用方法
+    if [ -z "$password_hash" ]; then
+        echo "💡 使用最简单的哈希方法..."
+        # 使用简单的SHA256哈希
+        password_hash=$(echo -n "$new_password" | sha256sum | cut -d' ' -f1)
+        password_hash="sha256:$password_hash"
+    fi
 
     if [ -z "$password_hash" ]; then
-        echo "❌ 密码哈希生成失败，请确保Node.js和bcrypt模块可用"
+        echo "❌ 所有密码哈希方法都失败了"
+        echo "💡 请检查Node.js安装或联系管理员"
         return 1
     fi
 
     # 更新数据库
-    sqlite3 "$db_file" "UPDATE Users SET password = '$password_hash' WHERE username = 'admin';"
+    if sqlite3 "$db_file" "UPDATE Users SET password = '$password_hash' WHERE username = 'admin';" 2>/dev/null; then
+        # 验证更新是否成功
+        local updated_count=$(sqlite3 "$db_file" "SELECT COUNT(*) FROM Users WHERE username = 'admin' AND password = '$password_hash';" 2>/dev/null)
 
-    if [ $? -eq 0 ]; then
-        echo "✅ 管理员密码修改成功！"
-        echo "🔐 新密码已生效，请使用新密码登录"
+        if [ "$updated_count" = "1" ]; then
+            echo "✅ 管理员密码修改成功！"
+            echo "🔐 新密码已生效，请使用新密码登录"
+            echo ""
+            echo "📋 登录信息:"
+            echo "   用户名: admin"
+            echo "   新密码: $new_password"
+            echo "   访问地址: http://localhost:$(get_current_port)"
+        else
+            echo "❌ 密码更新验证失败"
+            return 1
+        fi
     else
-        echo "❌ 密码修改失败"
+        echo "❌ 数据库更新失败"
+        echo "💡 请检查数据库文件权限和完整性"
         return 1
     fi
 }

@@ -155,6 +155,15 @@ deploy_code() {
             chmod +x "$file"
         done 2>/dev/null || true
 
+        # 🔧 确保关键管理脚本有执行权限
+        echo "🔧 确保关键脚本权限..."
+        for script in "gost-manager.sh" "smart-update.sh" "deploy.sh" "cleanup-logs.sh"; do
+            if [ -f "$script" ]; then
+                chmod +x "$script"
+                echo "✅ 已设置 $script 执行权限"
+            fi
+        done
+
     else
         # 更新部署：保留用户数据
         echo "🔄 更新代码..."
@@ -170,6 +179,15 @@ deploy_code() {
             tr -d '\r' < "$file" > "$file.tmp" && mv "$file.tmp" "$file"
             chmod +x "$file"
         done 2>/dev/null || true
+
+        # 🔧 确保关键管理脚本有执行权限
+        echo "🔧 确保关键脚本权限..."
+        for script in "gost-manager.sh" "smart-update.sh" "deploy.sh" "cleanup-logs.sh"; do
+            if [ -f "$script" ]; then
+                chmod +x "$script"
+                echo "✅ 已设置 $script 执行权限"
+            fi
+        done
 
         # 清理node_modules以确保依赖更新
         echo "🧹 清理依赖缓存..."

@@ -99,6 +99,15 @@ deploy_system() {
         tr -d '\r' < "$file" > "$file.tmp" && mv "$file.tmp" "$file"
         chmod +x "$file"
     done 2>/dev/null || true
+
+    # 🔧 确保关键管理脚本有执行权限
+    echo "🔧 确保关键脚本权限..."
+    for script in "gost-manager.sh" "smart-update.sh" "deploy.sh" "cleanup-logs.sh"; do
+        if [ -f "$script" ]; then
+            chmod +x "$script"
+            echo "✅ 已设置 $script 执行权限"
+        fi
+    done
     
     # 执行部署
     echo "🔧 开始部署..."
@@ -198,6 +207,15 @@ manual_update() {
         tr -d '\r' < "$file" > "$file.tmp" && mv "$file.tmp" "$file"
         chmod +x "$file"
     done 2>/dev/null || true
+
+    # 🔧 确保关键管理脚本有执行权限
+    echo "🔧 确保关键脚本权限..."
+    for script in "gost-manager.sh" "smart-update.sh" "deploy.sh" "cleanup-logs.sh"; do
+        if [ -f "$script" ]; then
+            chmod +x "$script"
+            echo "✅ 已设置 $script 执行权限"
+        fi
+    done
     
     echo "🔧 运行数据库修复..."
     cd backend

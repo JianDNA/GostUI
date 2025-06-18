@@ -102,6 +102,14 @@ if [ "$CHECK_SCRIPT_UPDATE" = true ]; then
                             mv "smart-update.sh.tmp" "smart-update.sh"
                             chmod +x "smart-update.sh"
 
+                            # 🔧 确保其他关键脚本权限
+                            for script in "gost-manager.sh" "deploy.sh" "cleanup-logs.sh"; do
+                                if [ -f "$script" ]; then
+                                    tr -d '\r' < "$script" > "$script.tmp" && mv "$script.tmp" "$script"
+                                    chmod +x "$script"
+                                fi
+                            done
+
                             echo "✅ 智能更新脚本已更新，重新启动更新流程..."
                             echo ""
 
@@ -227,6 +235,15 @@ find . -name "*.sh" -type f -print0 | while IFS= read -r -d '' file; do
     tr -d '\r' < "$file" > "$file.tmp" && mv "$file.tmp" "$file"
     chmod +x "$file"
 done 2>/dev/null || true
+
+# 🔧 确保关键管理脚本有执行权限
+echo "🔧 确保关键脚本权限..."
+for script in "gost-manager.sh" "smart-update.sh" "deploy.sh" "cleanup-logs.sh"; do
+    if [ -f "$script" ]; then
+        chmod +x "$script"
+        echo "✅ 已设置 $script 执行权限"
+    fi
+done
 
 # 保护用户数据目录
 mkdir -p backend/database backend/logs backend/backups backend/cache

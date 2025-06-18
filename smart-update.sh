@@ -497,22 +497,40 @@ fi
 echo ""
 echo "🔧 步骤13: 确保源码目录脚本权限..."
 
-# 返回源码目录
-SOURCE_DIR=$(dirname "$(readlink -f "$0")")
-cd "$SOURCE_DIR"
+# 检测可能的源码目录
+POSSIBLE_DIRS=(
+    "/root/GostUI"
+    "$HOME/GostUI"
+    "$(pwd | grep -o '.*/GostUI')"
+)
 
-echo "📁 源码目录: $SOURCE_DIR"
-
-# 确保源码目录中的关键脚本有执行权限
-for script in "gost-manager.sh" "smart-update.sh" "deploy.sh" "cleanup-logs.sh" "fix-script-permissions.sh"; do
-    if [ -f "$script" ]; then
-        # 修复格式
-        tr -d '\r' < "$script" > "$script.tmp" && mv "$script.tmp" "$script"
-        # 设置权限
-        chmod +x "$script"
-        echo "✅ 已设置源码目录 $script 执行权限"
+SOURCE_DIR=""
+for dir in "${POSSIBLE_DIRS[@]}"; do
+    if [ -d "$dir" ] && [ -f "$dir/gost-manager.sh" ]; then
+        SOURCE_DIR="$dir"
+        break
     fi
 done
+
+if [ -z "$SOURCE_DIR" ]; then
+    echo "⚠️ 未找到源码目录，跳过源码脚本权限设置"
+else
+    echo "📁 源码目录: $SOURCE_DIR"
+    cd "$SOURCE_DIR"
+
+    # 确保源码目录中的关键脚本有执行权限
+    for script in "gost-manager.sh" "smart-update.sh" "deploy.sh" "cleanup-logs.sh" "fix-script-permissions.sh" "temp-fix-permissions.sh"; do
+        if [ -f "$script" ]; then
+            # 修复格式
+            tr -d '\r' < "$script" > "$script.tmp" && mv "$script.tmp" "$script"
+            # 设置权限
+            chmod +x "$script"
+            echo "✅ 已设置源码目录 $script 执行权限"
+        fi
+    done
+
+    echo "✅ 源码目录脚本权限修复完成"
+fi
 
 echo ""
 echo "🎉 智能更新完成！"
@@ -530,7 +548,14 @@ echo ""
 echo "📁 备份位置: $BACKUP_DIR"
 echo "💡 如有问题，可使用备份恢复数据"
 echo ""
-echo "🚀 现在可以在源码目录运行:"
-echo "   cd $(dirname "$(readlink -f "$0")")"
-echo "   ./gost-manager.sh"
+if [ -n "$SOURCE_DIR" ]; then
+    echo "🚀 现在可以在源码目录运行:"
+    echo "   cd $SOURCE_DIR"
+    echo "   ./gost-manager.sh"
+else
+    echo "🚀 手动修复源码目录脚本权限:"
+    echo "   cd ~/GostUI"
+    echo "   chmod +x *.sh"
+    echo "   ./gost-manager.sh"
+fi
 echo ""

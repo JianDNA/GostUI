@@ -420,147 +420,100 @@ change_admin_password() {
 
     echo "🔧 更新密码..."
 
-    # 方法1: 使用后端的bcryptjs模块（与系统完全一致）
-    local password_hash=""
+    # 使用直接的数据库更新方法，绕过User模型的自动哈希
     local backend_dir="$deploy_dir/backend"
 
     if [ -d "$backend_dir" ] && [ -f "$backend_dir/package.json" ]; then
         cd "$backend_dir"
 
-        echo "🔧 使用后端bcryptjs模块生成密码哈希..."
+        echo "🔧 使用直接数据库更新方法..."
 
-        # 创建使用后端bcryptjs的密码哈希脚本
-        cat > /tmp/backend_bcrypt_hash.js << 'EOF'
+        # 创建直接更新数据库的脚本，绕过User模型
+        cat > /tmp/direct_password_update.js << 'EOF'
+const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
-
-const password = process.argv[2];
-if (!password) {
-    console.error('Password required');
-    process.exit(1);
-}
-
-try {
-    // 使用与后端完全相同的逻辑
-    const salt = bcrypt.genSaltSync(10);
-    const hash = bcrypt.hashSync(password, salt);
-    console.log(hash);
-} catch (error) {
-    console.error('Hash generation failed:', error.message);
-    process.exit(1);
-}
-EOF
-
-        # 在后端目录中运行，确保使用正确的bcryptjs版本
-        password_hash=$(node /tmp/backend_bcrypt_hash.js "$new_password" 2>/dev/null)
-        rm -f /tmp/backend_bcrypt_hash.js
-
-        if [ -n "$password_hash" ]; then
-            echo "✅ 使用后端bcryptjs生成密码哈希成功"
-        else
-            echo "⚠️ 后端bcryptjs哈希生成失败，尝试备用方法"
-        fi
-    fi
-
-    # 方法2: 如果后端bcryptjs失败，尝试安装bcryptjs
-    if [ -z "$password_hash" ]; then
-        echo "💡 尝试安装bcryptjs模块..."
-
-        cd "$backend_dir"
-        if npm list bcryptjs >/dev/null 2>&1; then
-            echo "✅ bcryptjs模块已存在"
-        else
-            echo "🔧 安装bcryptjs模块..."
-            npm install bcryptjs --no-bin-links --silent 2>/dev/null
-        fi
-
-        # 再次尝试使用bcryptjs
-        cat > /tmp/bcryptjs_hash.js << 'EOF'
-const bcrypt = require('bcryptjs');
-
-const password = process.argv[2];
-if (!password) {
-    console.error('Password required');
-    process.exit(1);
-}
-
-try {
-    const salt = bcrypt.genSaltSync(10);
-    const hash = bcrypt.hashSync(password, salt);
-    console.log(hash);
-} catch (error) {
-    console.error('bcryptjs hash failed:', error.message);
-    process.exit(1);
-}
-EOF
-
-        password_hash=$(node /tmp/bcryptjs_hash.js "$new_password" 2>/dev/null)
-        rm -f /tmp/bcryptjs_hash.js
-
-        if [ -n "$password_hash" ]; then
-            echo "✅ bcryptjs模块安装并生成哈希成功"
-        fi
-    fi
-
-    # 方法3: 直接使用后端User模型设置密码（最可靠）
-    if [ -z "$password_hash" ]; then
-        echo "💡 使用后端User模型直接设置密码..."
-
-        cd "$backend_dir"
-
-        # 创建直接使用User模型的脚本
-        cat > /tmp/user_model_hash.js << 'EOF'
-// 直接使用后端的User模型来生成密码哈希
 const path = require('path');
 
-async function hashPasswordWithUserModel(password) {
-    try {
-        // 加载后端的数据库配置和模型
-        const { sequelize, models } = require('./services/dbService');
-        const { User } = models;
-
-        // 创建一个临时用户实例来生成密码哈希
-        const tempUser = User.build({ username: 'temp', password: password });
-
-        // 获取生成的密码哈希
-        const hashedPassword = tempUser.password;
-
-        console.log(hashedPassword);
-        process.exit(0);
-
-    } catch (error) {
-        console.error('User model hash failed:', error.message);
-        process.exit(1);
-    }
-}
-
 const password = process.argv[2];
 if (!password) {
     console.error('Password required');
     process.exit(1);
 }
 
-hashPasswordWithUserModel(password);
+try {
+    // 生成密码哈希
+    const salt = bcrypt.genSaltSync(10);
+    const hash = bcrypt.hashSync(password, salt);
+
+    // 直接连接数据库
+    const dbPath = path.join(__dirname, 'database', 'database.sqlite');
+    const db = new Database(dbPath);
+
+    // 直接更新数据库，绕过Sequelize模型
+    const updateStmt = db.prepare('UPDATE Users SET password = ?, updatedAt = ? WHERE username = ?');
+    const result = updateStmt.run(hash, new Date().toISOString(), 'admin');
+
+    db.close();
+
+    if (result.changes > 0) {
+        console.log('SUCCESS');
+    } else {
+        console.log('NO_USER_FOUND');
+    }
+
+} catch (error) {
+    console.error('Database update failed:', error.message);
+    process.exit(1);
+}
 EOF
 
-        password_hash=$(node /tmp/user_model_hash.js "$new_password" 2>/dev/null)
-        rm -f /tmp/user_model_hash.js
+        # 在后端目录中运行
+        local update_result=$(node /tmp/direct_password_update.js "$new_password" 2>/dev/null)
+        rm -f /tmp/direct_password_update.js
 
-        if [ -n "$password_hash" ]; then
-            echo "✅ 使用User模型生成密码哈希成功"
+        if [ "$update_result" = "SUCCESS" ]; then
+            echo "✅ 管理员密码修改成功！"
+            echo "🔐 新密码已生效，请使用新密码登录"
+            echo ""
+            echo "📋 登录信息:"
+            echo "   用户名: admin"
+            echo "   新密码: $new_password"
+            echo "   访问地址: http://localhost:$(get_current_port)"
+            echo ""
+            echo "💡 密码已使用与系统相同的bcryptjs加密方式存储"
+            return 0
+        elif [ "$update_result" = "NO_USER_FOUND" ]; then
+            echo "❌ 未找到admin用户"
+            return 1
+        else
+            echo "❌ 密码更新失败"
+            echo "💡 尝试备用方法..."
         fi
     fi
 
-    # 方法4: 最后的备用方法
+    # 备用方法：使用sqlite3命令行工具
+    echo "💡 使用备用方法更新密码..."
+
+    # 生成密码哈希
+    local password_hash=""
+    if [ -d "$backend_dir" ]; then
+        cd "$backend_dir"
+        password_hash=$(node -e "
+            const bcrypt = require('bcryptjs');
+            const hash = bcrypt.hashSync('$new_password', 10);
+            console.log(hash);
+        " 2>/dev/null)
+    fi
+
     if [ -z "$password_hash" ]; then
-        echo "❌ 所有密码哈希方法都失败了"
+        echo "❌ 无法生成密码哈希"
         echo "💡 建议直接在Web界面中修改密码"
         return 1
     fi
 
-    # 更新数据库
+    # 直接更新数据库
     echo "🔄 更新数据库中的密码..."
-    if sqlite3 "$db_file" "UPDATE Users SET password = '$password_hash' WHERE username = 'admin';" 2>/dev/null; then
-        # 验证更新是否成功（检查是否有admin用户被更新）
+    if sqlite3 "$db_file" "UPDATE Users SET password = '$password_hash', updatedAt = datetime('now') WHERE username = 'admin';" 2>/dev/null; then
         local admin_exists=$(sqlite3 "$db_file" "SELECT COUNT(*) FROM Users WHERE username = 'admin';" 2>/dev/null)
 
         if [ "$admin_exists" = "1" ]; then
@@ -571,15 +524,6 @@ EOF
             echo "   用户名: admin"
             echo "   新密码: $new_password"
             echo "   访问地址: http://localhost:$(get_current_port)"
-            echo ""
-
-            # 如果使用了明文密码，给出特别提示
-            if [ "$password_hash" = "$new_password" ]; then
-                echo "⚠️ 重要提示:"
-                echo "   由于哈希生成失败，密码暂时以兼容格式存储"
-                echo "   建议登录后在系统设置中重新修改密码"
-                echo "   这样可以确保密码使用最安全的加密方式"
-            fi
         else
             echo "❌ 未找到admin用户"
             return 1

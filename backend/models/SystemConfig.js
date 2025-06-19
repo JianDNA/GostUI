@@ -57,12 +57,32 @@ module.exports = (sequelize) => {
 
   // 获取配置值（自动解析JSON）
   SystemConfig.getValue = async function(key, defaultValue = null) {
+    console.log(`🔧 [SystemConfig] 获取配置 ${key}...`);
+
     const config = await this.findByPk(key);
-    if (!config) return defaultValue;
-    
+    if (!config) {
+      console.log(`⚠️ [SystemConfig] 配置 ${key} 不存在，返回默认值:`, defaultValue);
+      return defaultValue;
+    }
+
+    console.log(`🔧 [SystemConfig] 找到配置 ${key}:`, {
+      rawValue: config.value,
+      type: typeof config.value
+    });
+
     try {
-      return JSON.parse(config.value);
+      const parsedValue = JSON.parse(config.value);
+      console.log(`✅ [SystemConfig] 配置 ${key} 解析成功:`, {
+        rawValue: config.value,
+        parsedValue,
+        parsedType: typeof parsedValue
+      });
+      return parsedValue;
     } catch (error) {
+      console.log(`⚠️ [SystemConfig] 配置 ${key} JSON解析失败，返回原始值:`, {
+        rawValue: config.value,
+        error: error.message
+      });
       return config.value;
     }
   };
@@ -70,10 +90,17 @@ module.exports = (sequelize) => {
   // 设置配置值（自动转换为JSON）
   SystemConfig.setValue = async function(key, value, options = {}) {
     const { description, category, updatedBy } = options;
-    
+
     const stringValue = typeof value === 'object' ? JSON.stringify(value) : String(value);
-    
-    const [config] = await this.findOrCreate({
+
+    console.log(`🔧 [SystemConfig] 设置配置 ${key}:`, {
+      originalValue: value,
+      originalType: typeof value,
+      stringValue,
+      options
+    });
+
+    const [config, created] = await this.findOrCreate({
       where: { key },
       defaults: {
         value: stringValue,
@@ -82,20 +109,34 @@ module.exports = (sequelize) => {
         updatedBy
       }
     });
-    
-    if (config.value !== stringValue || 
-        (description && config.description !== description) || 
+
+    console.log(`🔧 [SystemConfig] ${created ? '创建' : '找到'}配置记录:`, {
+      key,
+      currentValue: config.value,
+      newValue: stringValue,
+      needsUpdate: config.value !== stringValue
+    });
+
+    if (config.value !== stringValue ||
+        (description && config.description !== description) ||
         (category && config.category !== category) ||
         (updatedBy && config.updatedBy !== updatedBy)) {
-      
+
       await config.update({
         value: stringValue,
         ...(description ? { description } : {}),
         ...(category ? { category } : {}),
         ...(updatedBy ? { updatedBy } : {})
       });
+
+      console.log(`✅ [SystemConfig] 配置 ${key} 更新完成:`, {
+        oldValue: config.value,
+        newValue: stringValue
+      });
+    } else {
+      console.log(`ℹ️ [SystemConfig] 配置 ${key} 无需更新`);
     }
-    
+
     return config;
   };
 

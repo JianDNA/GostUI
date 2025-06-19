@@ -27,6 +27,8 @@ cd GostUI
 ```
 
 ### 📦 手动部署
+
+#### 首次部署
 ```bash
 # 下载最新代码
 curl -L -o GostUI.zip https://github.com/JianDNA/GostUI/archive/refs/heads/main.zip
@@ -41,7 +43,25 @@ bash scripts/tools/fix-script-permissions.sh
 ./gost-manager.sh
 ```
 
-> **⚠️ 重要提示**: ZIP下载的文件没有执行权限，必须先运行权限修复脚本！
+#### 重复部署/更新
+```bash
+# 方式一：使用智能更新（推荐）
+cd ~/GostUI
+./smart-update.sh
+
+# 方式二：手动安全更新
+rm -rf ~/GostUI  # 删除旧目录避免冲突
+curl -L -o GostUI.zip https://github.com/JianDNA/GostUI/archive/refs/heads/main.zip
+unzip GostUI.zip
+mv GostUI-main GostUI
+cd GostUI
+bash scripts/tools/fix-script-permissions.sh
+./smart-update.sh  # 恢复数据和配置
+```
+
+> **⚠️ 重要提示**: 
+> - ZIP下载的文件没有执行权限，必须先运行权限修复脚本！
+> - 重复下载前建议删除旧目录，避免文件冲突
 
 ### 🎯 管理脚本功能
 - 🚀 **一键部署** - 全自动部署，清理旧环境

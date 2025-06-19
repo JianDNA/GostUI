@@ -137,40 +137,22 @@ class PlatformUtils {
   }
 
   /**
-   * 获取 Gost 可执行文件路径 (动态平台检测)
+   * 获取 Gost 可执行文件路径 (简化版本)
    */
   getGostExecutablePath(baseDir = path.join(__dirname, '../assets/gost')) {
     const executableName = this.getGostExecutableName();
+    const platformDir = this.getGostPlatformDir();
 
-    // 🔧 动态平台检测逻辑
-    let platformDir = this.getGostPlatformDir();
-
-    // 构建平台特定路径
+    // 🔧 简化：只使用平台特定路径
     const platformPath = path.join(baseDir, platformDir, executableName);
 
-    // 检查平台特定版本是否存在
     if (this.fileExists(platformPath)) {
-      console.log(`🎯 使用平台特定版本: ${platformDir}/${executableName}`);
+      console.log(`🎯 使用GOST可执行文件: ${platformDir}/${executableName}`);
       return platformPath;
     }
 
-    // 检查根目录下的通用版本
-    const fallbackPath = path.join(baseDir, executableName);
-    if (this.fileExists(fallbackPath)) {
-      console.log(`🔄 使用通用版本: ${executableName}`);
-      return fallbackPath;
-    }
-
-    // 检查旧的 bin 目录 (向后兼容)
-    const legacyPath = path.join(__dirname, '../bin', executableName);
-    if (this.fileExists(legacyPath)) {
-      console.log(`🔄 使用旧版本路径: bin/${executableName}`);
-      return legacyPath;
-    }
-
-    // 如果都不存在，返回平台特定路径 (让调用者处理错误)
-    console.log(`⚠️ 未找到 Gost 二进制文件，期望路径: ${platformPath}`);
-    return platformPath;
+    // 如果不存在，抛出明确的错误
+    throw new Error(`GOST 可执行文件不存在: ${platformPath}`);
   }
 
   /**

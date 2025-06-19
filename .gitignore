@@ -130,8 +130,6 @@ backend/assets/gost/darwin_*
 backend/assets/gost/freebsd_*
 
 # 允许必要的GOST二进制文件
-!backend/bin/gost
-!backend/assets/gost/gost
 !backend/assets/gost/linux_amd64/gost
 
 # 配置文件中的敏感信息

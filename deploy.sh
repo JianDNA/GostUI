@@ -474,22 +474,13 @@ setup_gost() {
     echo "⚙️ 配置GOST..."
     cd $DEPLOY_DIR
 
-    # 确保GOST二进制文件可执行
-    if [ -f "backend/bin/gost" ]; then
-        chmod +x backend/bin/gost
-        echo "✅ backend/bin/gost 已设置为可执行"
-    fi
-
-    if [ -f "backend/assets/gost/gost" ]; then
-        chmod +x backend/assets/gost/gost
-        echo "✅ backend/assets/gost/gost 已设置为可执行"
-    fi
-
-    # 创建必要的目录结构
-    mkdir -p backend/assets/gost/linux_amd64
-    if [ -f "backend/bin/gost" ]; then
-        cp backend/bin/gost backend/assets/gost/linux_amd64/gost
+    # 🔧 简化：只确保主要GOST文件可执行
+    if [ -f "backend/assets/gost/linux_amd64/gost" ]; then
         chmod +x backend/assets/gost/linux_amd64/gost
+        echo "✅ GOST可执行文件已设置权限"
+    else
+        echo "❌ 错误：GOST可执行文件不存在"
+        exit 1
     fi
 
     # 配置GOST安全设置

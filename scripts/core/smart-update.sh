@@ -656,12 +656,19 @@ fi
 
 echo "🚀 启动PM2服务..."
 # 检查是否有PM2配置文件
-if [ -f "ecosystem.config.js" ]; then
+if [ -f "backend/ecosystem.config.js" ]; then
+    cd backend
     pm2 start ecosystem.config.js
+    cd ..
     echo "✅ 服务已启动（使用配置文件）"
+elif [ -f "ecosystem.config.js" ]; then
+    pm2 start ecosystem.config.js
+    echo "✅ 服务已启动（使用根目录配置文件）"
 else
     echo "⚠️ 未找到PM2配置文件，使用默认启动方式..."
+    cd backend
     pm2 start app.js --name gost-management --env production
+    cd ..
     echo "✅ 服务已启动（默认方式）"
 fi
 

@@ -123,7 +123,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { systemConfig } from '@/utils/api'
 
 // 响应式数据
-const allowUserExternalAccess = ref(true)
+const allowUserExternalAccess = ref(false)  // 初始值设为false，完全依赖后端数据
 const switchLoading = ref(false)
 const isLoadingConfig = ref(false)  // 防止加载配置时触发change事件
 
@@ -185,6 +185,15 @@ const loadConfig = async () => {
 
     // 直接设置值，不检查是否改变（因为我们有isLoadingConfig保护）
     allowUserExternalAccess.value = convertedValue
+
+    // 🔧 强制触发响应式更新
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    console.log('🔧 配置加载完成，最终状态:', {
+      设置的值: convertedValue,
+      当前开关值: allowUserExternalAccess.value,
+      设置成功: allowUserExternalAccess.value === convertedValue
+    })
 
   } catch (error) {
     console.error('加载配置失败:', error)
@@ -265,6 +274,7 @@ const handleVisibilityChange = () => {
 
 // 组件挂载时加载配置
 onMounted(() => {
+  console.log('🔧 SystemSettings组件挂载，初始开关状态:', allowUserExternalAccess.value)
   loadConfig()
   // 监听页面可见性变化
   document.addEventListener('visibilitychange', handleVisibilityChange)

@@ -17,8 +17,10 @@
 git clone https://github.com/JianDNA/GostUI.git
 cd GostUI
 
+# 修复脚本权限（推荐）
+./scripts/tools/fix-script-permissions.sh
+
 # 运行部署脚本
-chmod +x deploy.sh
 ./deploy.sh
 ```
 
@@ -28,16 +30,17 @@ chmod +x deploy.sh
 ```bash
 # 一键智能更新 - 完全傻瓜式操作
 cd ~/GostUI
-chmod +x smart-update.sh
+./scripts/tools/fix-script-permissions.sh  # 确保脚本权限正确
 ./smart-update.sh
 ```
 
 **智能更新特点：**
-- ✅ **无Git冲突** - 使用临时目录克隆最新代码
+- ✅ **无Git冲突** - 使用临时目录下载最新代码
 - ✅ **数据保护** - 自动备份和恢复所有用户数据
 - ✅ **配置修复** - 自动检查并修复系统配置缺失
 - ✅ **服务管理** - 自动停止、更新、重启服务
 - ✅ **完整验证** - 自动验证更新结果
+- ✅ **智能下载** - 优先使用ZIP下载，速度更快，体积更小
 
 ### 重新部署
 ```bash
@@ -104,6 +107,17 @@ git push
 ```bash
 pm2 logs gost-management     # 查看日志
 pm2 restart gost-management # 重启服务
+```
+
+### 脚本权限问题
+```bash
+# 如果遇到 "Permission denied" 或 "No such file or directory"
+cd ~/GostUI
+./scripts/tools/fix-script-permissions.sh
+
+# 或手动修复
+find scripts -name "*.sh" -type f -exec chmod +x {} \;
+chmod +x *.sh
 ```
 
 ### 端口占用

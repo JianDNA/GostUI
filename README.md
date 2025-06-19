@@ -41,7 +41,7 @@ git clone https://github.com/JianDNA/GostUI.git
 cd GostUI
 
 # 2. 运行管理脚本
-./gost-manager
+./gost-manager.sh
 ```
 
 管理脚本功能：
@@ -94,21 +94,6 @@ sudo yum install -y nodejs npm
 node -v
 ```
 
-**方式三: 使用NVM (开发环境推荐)**
-
-```bash
-# 安装NVM
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
-source ~/.bashrc
-
-# 安装最新LTS版本
-nvm install --lts
-nvm use --lts
-
-# 验证安装
-node -v && npm -v
-```
-
 #### 2. 安装必要工具
 
 ```bash
@@ -140,24 +125,7 @@ pm2 startup
 # 按照提示执行返回的命令
 ```
 
-#### 4. 防火墙配置 (可选)
-
-```bash
-# Ubuntu/Debian (UFW)
-sudo ufw allow 3000/tcp
-sudo ufw allow ssh
-sudo ufw --force enable
-
-# CentOS/RHEL (firewalld)
-sudo firewall-cmd --permanent --add-port=3000/tcp
-sudo firewall-cmd --permanent --add-service=ssh
-sudo firewall-cmd --reload
-
-# 验证端口开放
-sudo netstat -tlnp | grep :3000
-```
-
-#### 5. 配置系统资源 (可选)
+#### 4. 配置系统资源 (可选)
 
 ```bash
 # 增加文件描述符限制
@@ -228,7 +196,7 @@ df -h          # 检查磁盘空间 (需要 >= 1GB)
 
 ```bash
 cd ~/GostUI
-./gost-manager
+./gost-manager.sh
 ```
 
 管理脚本提供以下功能：
@@ -267,7 +235,7 @@ cd ~/GostUI
 ```bash
 # 一键智能更新 - 完全傻瓜式操作
 cd ~/GostUI
-./smart-update
+./smart-update.sh
 ```
 
 ### 手动更新
@@ -280,7 +248,7 @@ rm -rf GostUI
 git clone https://github.com/JianDNA/GostUI.git
 # 3. 运行智能更新脚本
 cd ~/GostUI
-./smart-update
+./smart-update.sh
 ```
 
 智能更新特点：
@@ -294,7 +262,7 @@ cd ~/GostUI
 ```bash
 # 完全重新部署 (会清除所有数据)
 rm -rf ~/gost-management
-./deploy
+./deploy.sh
 ```
 
 ## 📝 开发工作流
@@ -337,8 +305,8 @@ pm2 logs gost-management     # 查看日志
 pm2 status                   # 查看状态
 
 # 系统管理
-./gost-manager               # 集成管理脚本 (推荐)
-./smart-update               # 智能更新
+./gost-manager.sh            # 集成管理脚本 (推荐)
+./smart-update.sh            # 智能更新
 ./scripts/tools/cleanup-logs.sh  # 日志清理
 ```
 
@@ -422,9 +390,9 @@ pm2 conf pm2-logrotate
 
 ```
 GostUI/
-├── gost-manager            # 主管理脚本快捷方式 (推荐)
-├── smart-update            # 智能更新快捷方式
-├── deploy                  # 部署脚本快捷方式
+├── gost-manager.sh         # 主管理脚本入口 (推荐)
+├── smart-update.sh         # 智能更新入口
+├── deploy.sh               # 部署脚本入口
 ├── scripts/                # 脚本目录
 │   ├── core/              # 核心管理脚本
 │   │   ├── gost-manager.sh    # 主管理脚本
@@ -596,7 +564,7 @@ GostUI/
 
    # 手动清理日志
    cd ~/GostUI
-   ./cleanup-logs.sh
+   ./scripts/tools/cleanup-logs.sh
 
    # 检查磁盘空间
    df -h
@@ -653,30 +621,6 @@ GostUI/
     chmod +x *.sh
     ```
 
-#### 🌐 网络相关问题
-
-9. **无法访问GitHub**
-   ```bash
-   # 测试网络连接
-   curl -I https://github.com
-
-   # 配置Git代理 (如果需要)
-   git config --global http.proxy http://proxy:port
-   git config --global https.proxy https://proxy:port
-   ```
-
-10. **npm下载缓慢**
-    ```bash
-    # 使用国内镜像
-    npm config set registry https://registry.npmmirror.com
-
-    # 验证配置
-    npm config get registry
-
-    # 恢复官方源
-    npm config set registry https://registry.npmjs.org
-    ```
-
 ### 数据恢复
 ```bash
 # 查找备份目录
@@ -688,12 +632,6 @@ cp /tmp/gost-backup-*/database.sqlite ~/gost-management/backend/database/
 # 重启服务
 pm2 restart gost-management
 ```
-
-
-
-
-
-
 
 
 
@@ -711,10 +649,10 @@ pm2 logs gost-management
 pm2 restart gost-management
 
 # 清理日志
-cd ~/GostUI && ./cleanup-logs.sh
+cd ~/GostUI && ./scripts/tools/cleanup-logs.sh
 
 # 检查端口安全
-./check-port-security.sh
+./scripts/tools/check-port-security.sh
 ```
 
 ### 🐛 问题反馈

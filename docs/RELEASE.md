@@ -37,22 +37,9 @@ GOST管理系统是一个基于Web的现代化代理服务器管理平台，提�
 
 ## 🛠️ 技术架构
 
-### **前端技术栈**
-- **Vue 3** + Composition API
-- **Element Plus** UI框架
-- **Vite** 构建工具
-- **ECharts** 数据可视化
-
-### **后端技术栈**
-- **Node.js** + Express
-- **SQLite** 数据库
-- **PM2** 进程管理
-- **Winston** 日志系统
-
-### **部署技术**
-- **Docker** 容器化支持
-- **PM2** 生产环境进程管理
-- **Nginx** 反向代理(可选)
+**前端**: Vue 3 + Element Plus + Vite + ECharts
+**后端**: Node.js + Express + SQLite + PM2
+**部署**: Docker支持 + 自动化脚本
 
 ## 🚀 快速开始
 
@@ -70,7 +57,7 @@ git clone https://github.com/JianDNA/GostUI.git
 cd GostUI
 
 # 2. 运行管理脚本
-./gost-manager
+./gost-manager.sh
 ```
 
 选择 **"1) 一键部署"** 即可自动完成所有配置。
@@ -80,7 +67,7 @@ cd GostUI
 部署完成后，使用管理脚本进行日常维护：
 
 ```bash
-./gost-manager
+./gost-manager.sh
 ```
 
 **管理菜单功能**：
@@ -128,13 +115,13 @@ cd GostUI
 ### **智能更新** (推荐)
 ```bash
 cd GostUI
-./smart-update
+./smart-update.sh
 ```
 
 ### **手动更新**
 ```bash
 cd GostUI
-./gost-manager
+./gost-manager.sh
 # 选择 "3) 手动更新"
 ```
 
@@ -148,7 +135,7 @@ cd GostUI
 netstat -tlnp | grep :3000
 
 # 修改端口
-./gost-manager
+./gost-manager.sh
 # 选择 "4) 修改端口"
 ```
 
@@ -167,7 +154,7 @@ tail -f ~/gost-management/backend/logs/error.log
 pm2 restart gost-management
 
 # 完全重启
-./gost-manager
+./gost-manager.sh
 # 选择相应的重启选项
 ```
 

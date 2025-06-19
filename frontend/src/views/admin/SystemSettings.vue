@@ -158,7 +158,14 @@ const addressExplanation = [
 const loadConfig = async () => {
   try {
     const response = await systemConfig.getConfig('allowUserExternalAccess')
-    allowUserExternalAccess.value = response.data.value
+    // 确保转换为布尔值
+    const value = response.data.value
+    allowUserExternalAccess.value = value === true || value === 'true'
+    console.log('🔧 加载外部访问配置:', {
+      raw: value,
+      type: typeof value,
+      converted: allowUserExternalAccess.value
+    })
   } catch (error) {
     console.error('加载配置失败:', error)
     ElMessage.error('加载配置失败')
@@ -191,16 +198,19 @@ const handleExternalAccessChange = async (value) => {
       category: 'security'
     })
 
+    // 重新加载配置确保状态同步
+    await loadConfig()
+
     ElMessage.success(`已${value ? '启用' : '禁用'}普通用户外部访问`)
   } catch (error) {
     if (error !== 'cancel') {
       console.error('更新配置失败:', error)
       ElMessage.error('更新配置失败')
-      // 恢复开关状态
-      allowUserExternalAccess.value = !value
+      // 重新加载配置以恢复正确状态
+      await loadConfig()
     } else {
-      // 用户取消，恢复开关状态
-      allowUserExternalAccess.value = !value
+      // 用户取消，重新加载配置以恢复正确状态
+      await loadConfig()
     }
   } finally {
     switchLoading.value = false

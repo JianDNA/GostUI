@@ -31,10 +31,34 @@
 
 ## 🚀 快速开始
 
+### ⚡ 超快速部署 (一键完成)
+```bash
+# 一键下载并准备部署
+curl -fsSL https://raw.githubusercontent.com/JianDNA/GostUI/main/quick-deploy.sh | bash
+cd GostUI
+./gost-manager.sh
+```
+
 ### 🎯 一键管理脚本（推荐）
 
 我们提供了集成的管理脚本，包含部署、更新、配置管理等所有功能：
 
+#### 📦 方式一：ZIP下载 (推荐，更快)
+```bash
+# 1. 下载最新代码
+curl -L -o GostUI.zip https://github.com/JianDNA/GostUI/archive/refs/heads/main.zip
+unzip GostUI.zip
+mv GostUI-main GostUI
+cd GostUI
+
+# 2. 修复脚本权限
+./scripts/tools/fix-script-permissions.sh
+
+# 3. 运行管理脚本
+./gost-manager.sh
+```
+
+#### 🔧 方式二：Git克隆 (适合开发者)
 ```bash
 # 1. 克隆项目
 git clone https://github.com/JianDNA/GostUI.git
@@ -94,6 +118,21 @@ sudo yum install -y nodejs npm
 node -v
 ```
 
+**方式三: 使用NVM (开发环境推荐)**
+
+```bash
+# 安装NVM
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+source ~/.bashrc
+
+# 安装最新LTS版本
+nvm install --lts
+nvm use --lts
+
+# 验证安装
+node -v && npm -v
+```
+
 #### 2. 安装必要工具
 
 ```bash
@@ -125,7 +164,24 @@ pm2 startup
 # 按照提示执行返回的命令
 ```
 
-#### 4. 配置系统资源 (可选)
+#### 4. 防火墙配置 (可选)
+
+```bash
+# Ubuntu/Debian (UFW)
+sudo ufw allow 3000/tcp
+sudo ufw allow ssh
+sudo ufw --force enable
+
+# CentOS/RHEL (firewalld)
+sudo firewall-cmd --permanent --add-port=3000/tcp
+sudo firewall-cmd --permanent --add-service=ssh
+sudo firewall-cmd --reload
+
+# 验证端口开放
+sudo netstat -tlnp | grep :3000
+```
+
+#### 5. 配置系统资源 (可选)
 
 ```bash
 # 增加文件描述符限制
@@ -141,13 +197,27 @@ source ~/.bashrc
 
 如果您不想使用管理脚本，也可以直接使用部署脚本：
 
+#### 📦 ZIP下载方式 (推荐)
+```bash
+# 下载项目
+curl -L -o GostUI.zip https://github.com/JianDNA/GostUI/archive/refs/heads/main.zip
+unzip GostUI.zip
+mv GostUI-main GostUI
+cd GostUI
+
+# 修复权限并运行部署脚本
+./scripts/tools/fix-script-permissions.sh
+./deploy.sh
+```
+
+#### 🔧 Git克隆方式
 ```bash
 # 克隆项目
 git clone https://github.com/JianDNA/GostUI.git
 cd GostUI
 
 # 运行部署脚本
-./deploy
+./deploy.sh
 ```
 
 #### 🔍 部署前环境检查
@@ -196,7 +266,7 @@ df -h          # 检查磁盘空间 (需要 >= 1GB)
 
 ```bash
 cd ~/GostUI
-./gost-manager.sh
+./gost-manager
 ```
 
 管理脚本提供以下功能：
@@ -235,10 +305,28 @@ cd ~/GostUI
 ```bash
 # 一键智能更新 - 完全傻瓜式操作
 cd ~/GostUI
-./smart-update.sh
+./smart-update
 ```
 
 ### 手动更新
+
+#### 📦 ZIP下载方式 (推荐)
+```bash
+# 手动更新
+cd ~
+# 1. 删除原有目录
+rm -rf GostUI
+# 2. 下载最新代码
+curl -L -o GostUI.zip https://github.com/JianDNA/GostUI/archive/refs/heads/main.zip
+unzip GostUI.zip
+mv GostUI-main GostUI
+# 3. 修复权限并运行智能更新脚本
+cd ~/GostUI
+./scripts/tools/fix-script-permissions.sh
+./smart-update.sh
+```
+
+#### 🔧 Git克隆方式
 ```bash
 # 手动更新
 cd ~
@@ -257,12 +345,29 @@ cd ~/GostUI
 - ✅ **配置修复** - 自动修复系统配置缺失
 - ✅ **Bug修复** - 自动修复管理员流量显示和系统配置问题
 - ✅ **服务管理** - 自动重启服务并验证
+- ✅ **智能下载** - 优先使用ZIP下载，速度更快，体积更小
+
+### 📦 下载优化说明
+
+我们的脚本现在支持智能下载方式：
+
+**🚀 ZIP下载 (推荐)**
+- 体积更小：只下载代码，无Git历史
+- 速度更快：网络传输量减少约70%
+- 自动回退：如果ZIP下载失败，自动切换到Git方式
+
+**📋 Git克隆 (传统方式)**
+- 包含完整Git历史
+- 支持Git操作
+- 体积较大但功能完整
+
+脚本会自动检测系统工具（curl、unzip、git）并选择最佳下载方式。
 
 ### 重新部署
 ```bash
 # 完全重新部署 (会清除所有数据)
 rm -rf ~/gost-management
-./deploy.sh
+./deploy
 ```
 
 ## 📝 开发工作流
@@ -305,8 +410,8 @@ pm2 logs gost-management     # 查看日志
 pm2 status                   # 查看状态
 
 # 系统管理
-./gost-manager.sh            # 集成管理脚本 (推荐)
-./smart-update.sh            # 智能更新
+./gost-manager               # 集成管理脚本 (推荐)
+./smart-update               # 智能更新
 ./scripts/tools/cleanup-logs.sh  # 日志清理
 ```
 
@@ -390,9 +495,9 @@ pm2 conf pm2-logrotate
 
 ```
 GostUI/
-├── gost-manager.sh         # 主管理脚本入口 (推荐)
-├── smart-update.sh         # 智能更新入口
-├── deploy.sh               # 部署脚本入口
+├── gost-manager            # 主管理脚本快捷方式 (推荐)
+├── smart-update            # 智能更新快捷方式
+├── deploy                  # 部署脚本快捷方式
 ├── scripts/                # 脚本目录
 │   ├── core/              # 核心管理脚本
 │   │   ├── gost-manager.sh    # 主管理脚本
@@ -564,7 +669,7 @@ GostUI/
 
    # 手动清理日志
    cd ~/GostUI
-   ./scripts/tools/cleanup-logs.sh
+   ./cleanup-logs.sh
 
    # 检查磁盘空间
    df -h
@@ -621,6 +726,30 @@ GostUI/
     chmod +x *.sh
     ```
 
+#### 🌐 网络相关问题
+
+9. **无法访问GitHub**
+   ```bash
+   # 测试网络连接
+   curl -I https://github.com
+
+   # 配置Git代理 (如果需要)
+   git config --global http.proxy http://proxy:port
+   git config --global https.proxy https://proxy:port
+   ```
+
+10. **npm下载缓慢**
+    ```bash
+    # 使用国内镜像
+    npm config set registry https://registry.npmmirror.com
+
+    # 验证配置
+    npm config get registry
+
+    # 恢复官方源
+    npm config set registry https://registry.npmjs.org
+    ```
+
 ### 数据恢复
 ```bash
 # 查找备份目录
@@ -632,6 +761,12 @@ cp /tmp/gost-backup-*/database.sqlite ~/gost-management/backend/database/
 # 重启服务
 pm2 restart gost-management
 ```
+
+
+
+
+
+
 
 
 
@@ -649,10 +784,10 @@ pm2 logs gost-management
 pm2 restart gost-management
 
 # 清理日志
-cd ~/GostUI && ./scripts/tools/cleanup-logs.sh
+cd ~/GostUI && ./cleanup-logs.sh
 
 # 检查端口安全
-./scripts/tools/check-port-security.sh
+./check-port-security.sh
 ```
 
 ### 🐛 问题反馈

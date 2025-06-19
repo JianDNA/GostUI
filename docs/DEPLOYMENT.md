@@ -12,6 +12,23 @@
 > **注意**: 详细的环境准备步骤请参考 [README.md](README.md#-环境准备)
 
 ### 一键部署
+
+#### 📦 ZIP下载方式 (推荐，更快)
+```bash
+# 下载项目
+curl -L -o GostUI.zip https://github.com/JianDNA/GostUI/archive/refs/heads/main.zip
+unzip GostUI.zip
+mv GostUI-main GostUI
+cd GostUI
+
+# 修复脚本权限
+./scripts/tools/fix-script-permissions.sh
+
+# 运行部署脚本
+./deploy.sh
+```
+
+#### 🔧 Git克隆方式 (适合开发者)
 ```bash
 # 克隆项目
 git clone https://github.com/JianDNA/GostUI.git

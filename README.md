@@ -34,10 +34,14 @@ unzip GostUI.zip
 mv GostUI-main GostUI
 cd GostUI
 
-# 修复脚本权限并运行管理脚本
-./scripts/tools/fix-script-permissions.sh
+# 修复脚本权限（重要！）
+bash scripts/tools/fix-script-permissions.sh
+
+# 运行管理脚本
 ./gost-manager.sh
 ```
+
+> **⚠️ 重要提示**: ZIP下载的文件没有执行权限，必须先运行权限修复脚本！
 
 ### 🎯 管理脚本功能
 - 🚀 **一键部署** - 全自动部署，清理旧环境
@@ -110,7 +114,7 @@ mv GostUI-main GostUI
 cd GostUI
 
 # 修复权限并运行智能更新
-./scripts/tools/fix-script-permissions.sh
+bash scripts/tools/fix-script-permissions.sh
 ./smart-update.sh
 ```
 
@@ -154,7 +158,7 @@ GostUI/
 ### 常见问题
 ```bash
 # 脚本权限问题
-./scripts/tools/fix-script-permissions.sh
+bash scripts/tools/fix-script-permissions.sh
 
 # 端口占用
 lsof -ti:3000 | xargs kill -9

@@ -125,6 +125,7 @@ import { systemConfig } from '@/utils/api'
 // 响应式数据
 const allowUserExternalAccess = ref(true)
 const switchLoading = ref(false)
+const isLoadingConfig = ref(false)  // 防止加载配置时触发change事件
 
 // 地址说明表格数据
 const addressExplanation = [
@@ -157,23 +158,41 @@ const addressExplanation = [
 // 加载配置
 const loadConfig = async () => {
   try {
+    isLoadingConfig.value = true  // 标记正在加载配置
     const response = await systemConfig.getConfig('allowUserExternalAccess')
     // 确保转换为布尔值
     const value = response.data.value
-    allowUserExternalAccess.value = value === true || value === 'true'
+    const convertedValue = value === true || value === 'true'
+
+    // 只有当值真正改变时才更新，避免触发不必要的change事件
+    if (allowUserExternalAccess.value !== convertedValue) {
+      allowUserExternalAccess.value = convertedValue
+    }
+
     console.log('🔧 加载外部访问配置:', {
       raw: value,
       type: typeof value,
-      converted: allowUserExternalAccess.value
+      converted: convertedValue,
+      changed: allowUserExternalAccess.value !== convertedValue
     })
   } catch (error) {
     console.error('加载配置失败:', error)
     ElMessage.error('加载配置失败')
+  } finally {
+    isLoadingConfig.value = false  // 加载完成
   }
 }
 
 // 处理外部访问开关变化
 const handleExternalAccessChange = async (value) => {
+  // 如果正在加载配置，忽略change事件
+  if (isLoadingConfig.value) {
+    console.log('🔧 忽略配置加载期间的change事件')
+    return
+  }
+
+  console.log('🔧 处理开关变化:', { value, loading: switchLoading.value })
+
   try {
     await ElMessageBox.confirm(
       `确定要${value ? '启用' : '禁用'}普通用户外部访问吗？\n\n` +
@@ -198,8 +217,8 @@ const handleExternalAccessChange = async (value) => {
       category: 'security'
     })
 
-    // 重新加载配置确保状态同步
-    await loadConfig()
+    // 配置更新成功，开关状态已经是正确的，不需要重新加载
+    console.log('🔧 配置更新成功，当前开关状态:', value)
 
     ElMessage.success(`已${value ? '启用' : '禁用'}普通用户外部访问`)
   } catch (error) {

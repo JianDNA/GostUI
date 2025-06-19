@@ -142,6 +142,7 @@ bash scripts/tools/fix-script-permissions.sh
 - ✅ 无冲突 - 自动处理代码冲突
 - ✅ 数据保护 - 自动备份和恢复用户数据
 - ✅ 智能下载 - ZIP下载，速度更快，体积更小
+- ✅ 自动修复 - 自动创建GOST可执行文件符号链接
 
 ## 🔧 常用命令
 
@@ -176,21 +177,58 @@ GostUI/
 ## 🛠️ 故障排除
 
 ### 常见问题
+
+#### 1. 下载失败问题
 ```bash
-# 脚本权限问题
+# 如果curl下载失败，回到用户主目录重试
+cd ~
+rm -rf GostUI GostUI.zip
+curl -L -o GostUI.zip https://github.com/JianDNA/GostUI/archive/refs/heads/main.zip
+
+# 或使用wget
+wget -O GostUI.zip https://github.com/JianDNA/GostUI/archive/refs/heads/main.zip
+```
+
+#### 2. 脚本权限问题
+```bash
+# ZIP下载后必须修复权限
 bash scripts/tools/fix-script-permissions.sh
 
+# 检查权限修复结果
+ls -la *.sh scripts/core/*.sh
+```
+
+#### 3. 服务启动失败
+```bash
+# 检查服务状态
+pm2 status
+
+# 查看详细错误日志
+pm2 logs gost-management --lines 20
+
+# 手动启动服务
+cd ~/gost-management/backend
+pm2 start app.js --name gost-management
+
+# 或使用生态系统配置
+cd ~/gost-management
+pm2 start ecosystem.config.js
+```
+
+#### 4. 其他常见问题
+```bash
 # 端口占用
 lsof -ti:3000 | xargs kill -9
 
-# 服务重启
-pm2 restart gost-management
+# 完全重新部署
+cd ~/GostUI
+./gost-manager.sh  # 选择 "1) 一键部署"
 
-# 查看日志
-pm2 logs gost-management
+# 查看详细日志
+pm2 logs gost-management --lines 50
 ```
 
-## 📞 获取帮助
+## �� 获取帮助
 
 - **GitHub Issues**: [提交问题](https://github.com/JianDNA/GostUI/issues)
 - **查看日志**: `pm2 logs gost-management`

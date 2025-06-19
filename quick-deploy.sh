@@ -38,6 +38,15 @@ ZIP_FILE="GostUI-main.zip"
 EXTRACT_DIR="GostUI-main"
 TARGET_DIR="GostUI"
 
+# 确保在正确的工作目录
+WORK_DIR="$HOME"
+cd "$WORK_DIR" || {
+    echo "❌ 无法进入工作目录: $WORK_DIR"
+    exit 1
+}
+
+echo "📁 工作目录: $(pwd)"
+
 # 清理旧文件
 if [ -d "$TARGET_DIR" ]; then
     echo "🧹 发现现有目录，正在清理..."

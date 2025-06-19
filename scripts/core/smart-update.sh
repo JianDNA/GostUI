@@ -578,6 +578,12 @@ else
                         cp "$GOST_BINARY" "$GOST_TARGET_PATH"
                         chmod +x "$GOST_TARGET_PATH"
                         echo "✅ GOST手动下载完成"
+
+                        # 同时创建符号链接到bin目录（兼容性）
+                        mkdir -p "backend/bin/linux_${GOST_ARCH}"
+                        ln -sf "../../assets/gost/linux_${GOST_ARCH}/gost" "backend/bin/linux_${GOST_ARCH}/gost"
+                        echo "✅ 已创建兼容性符号链接"
+
                         rm -rf "$EXTRACT_DIR"
                     else
                         echo "❌ 未找到gost可执行文件"
@@ -603,9 +609,16 @@ else
         # 执行下载
         bash install.sh --install 2>/dev/null && {
             if [ -f "gost" ]; then
+                # 确保目标目录存在
+                mkdir -p "$DEPLOY_DIR/$GOST_TARGET_DIR"
                 cp "gost" "$DEPLOY_DIR/$GOST_TARGET_PATH"
                 chmod +x "$DEPLOY_DIR/$GOST_TARGET_PATH"
                 echo "✅ GOST官方脚本下载完成"
+
+                # 同时创建符号链接到bin目录（兼容性）
+                mkdir -p "$DEPLOY_DIR/backend/bin/linux_${GOST_ARCH}"
+                ln -sf "../../assets/gost/linux_${GOST_ARCH}/gost" "$DEPLOY_DIR/backend/bin/linux_${GOST_ARCH}/gost"
+                echo "✅ 已创建兼容性符号链接"
             else
                 echo "❌ 官方脚本执行失败"
                 exit 1

@@ -680,6 +680,11 @@ setup_gost() {
     if [ -f "backend/assets/gost/linux_amd64/gost" ]; then
         chmod +x backend/assets/gost/linux_amd64/gost
         echo "✅ GOST可执行文件已设置权限"
+
+        # 创建兼容性符号链接到bin目录
+        mkdir -p backend/bin/linux_amd64
+        ln -sf ../../assets/gost/linux_amd64/gost backend/bin/linux_amd64/gost
+        echo "✅ 已创建兼容性符号链接"
     else
         echo "❌ 错误：GOST可执行文件不存在"
         exit 1

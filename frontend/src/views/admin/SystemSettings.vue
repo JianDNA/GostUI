@@ -160,9 +160,8 @@ const loadConfig = async () => {
   try {
     isLoadingConfig.value = true  // 标记正在加载配置
     const response = await systemConfig.getConfig('allowUserExternalAccess')
-
     // 🔧 强化数据类型转换逻辑
-    const rawValue = response.data.value
+    const rawValue = response.data.data.value
     let convertedValue = false  // 默认为false
 
     // 处理各种可能的数据类型
@@ -175,25 +174,11 @@ const loadConfig = async () => {
       convertedValue = Boolean(rawValue)
     }
 
-    console.log('🔧 加载外部访问配置:', {
-      raw: rawValue,
-      rawType: typeof rawValue,
-      converted: convertedValue,
-      currentValue: allowUserExternalAccess.value,
-      willChange: allowUserExternalAccess.value !== convertedValue
-    })
-
     // 直接设置值，不检查是否改变（因为我们有isLoadingConfig保护）
     allowUserExternalAccess.value = convertedValue
 
     // 🔧 强制触发响应式更新
     await new Promise(resolve => setTimeout(resolve, 0))
-
-    console.log('🔧 配置加载完成，最终状态:', {
-      设置的值: convertedValue,
-      当前开关值: allowUserExternalAccess.value,
-      设置成功: allowUserExternalAccess.value === convertedValue
-    })
 
   } catch (error) {
     console.error('加载配置失败:', error)

@@ -137,13 +137,13 @@ class PlatformUtils {
   }
 
   /**
-   * 获取 Gost 可执行文件路径 (简化版本)
+   * 获取 Gost 可执行文件路径 (支持动态下载)
    */
   getGostExecutablePath(baseDir = path.join(__dirname, '../assets/gost')) {
     const executableName = this.getGostExecutableName();
     const platformDir = this.getGostPlatformDir();
 
-    // 🔧 简化：只使用平台特定路径
+    // 🔧 使用平台特定路径
     const platformPath = path.join(baseDir, platformDir, executableName);
 
     if (this.fileExists(platformPath)) {
@@ -151,9 +151,53 @@ class PlatformUtils {
       return platformPath;
     }
 
-    // 如果不存在，抛出明确的错误
-    throw new Error(`GOST 可执行文件不存在: ${platformPath}`);
+    // 如果不存在，提示需要下载
+    console.log(`⚠️ GOST 可执行文件不存在: ${platformPath}`);
+    console.log(`💡 请运行下载脚本: backend/scripts/gost-downloader.sh`);
+    throw new Error(`GOST 可执行文件不存在，请先运行下载脚本`);
   }
+
+  /**
+   * 确保 GOST 可执行文件存在（自动下载）
+   */
+  async ensureGostExecutable() {
+    try {
+      // 尝试获取现有路径
+      return this.getGostExecutablePath();
+    } catch (error) {
+      console.log('🔄 GOST 可执行文件不存在，尝试自动下载...');
+
+      // 执行下载脚本
+      const { spawn } = require('child_process');
+      const downloaderPath = path.join(__dirname, '../scripts/gost-downloader.sh');
+
+      return new Promise((resolve, reject) => {
+        const downloadProcess = spawn('bash', [downloaderPath], {
+          stdio: 'inherit'
+        });
+
+        downloadProcess.on('close', (code) => {
+          if (code === 0) {
+            try {
+              const gostPath = this.getGostExecutablePath();
+              console.log('✅ GOST 下载完成');
+              resolve(gostPath);
+            } catch (err) {
+              reject(new Error('GOST 下载后仍无法找到可执行文件'));
+            }
+          } else {
+            reject(new Error(`GOST 下载失败，退出码: ${code}`));
+          }
+        });
+
+        downloadProcess.on('error', (err) => {
+          reject(new Error(`GOST 下载脚本执行失败: ${err.message}`));
+        });
+      });
+    }
+  }
+
+
 
   /**
    * 获取当前平台对应的 Gost 目录名

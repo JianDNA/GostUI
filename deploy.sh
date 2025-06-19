@@ -474,19 +474,183 @@ setup_gost() {
     echo "⚙️ 配置GOST..."
     cd $DEPLOY_DIR
 
-    # 🔧 简化：只确保主要GOST文件可执行
-    if [ -f "backend/assets/gost/linux_amd64/gost" ]; then
-        chmod +x backend/assets/gost/linux_amd64/gost
-        echo "✅ GOST可执行文件已设置权限"
-    else
-        echo "❌ 错误：GOST可执行文件不存在"
-        exit 1
-    fi
+    # 🔧 使用官方安装脚本下载GOST
+    download_gost_with_official_script
 
     # 配置GOST安全设置
     setup_gost_security
 
     echo "✅ GOST配置完成"
+}
+
+# 使用官方安装脚本下载GOST
+download_gost_with_official_script() {
+    echo "📥 下载GOST可执行文件..."
+
+    # 检测系统架构
+    ARCH=$(uname -m)
+    case $ARCH in
+        x86_64)
+            GOST_ARCH="amd64"
+            ;;
+        aarch64)
+            GOST_ARCH="arm64"
+            ;;
+        armv7*)
+            GOST_ARCH="armv7"
+            ;;
+        armv6*)
+            GOST_ARCH="armv6"
+            ;;
+        i686)
+            GOST_ARCH="386"
+            ;;
+        *)
+            echo "❌ 不支持的架构: $ARCH"
+            exit 1
+            ;;
+    esac
+
+    GOST_TARGET_DIR="backend/assets/gost/linux_${GOST_ARCH}"
+    GOST_TARGET_PATH="${GOST_TARGET_DIR}/gost"
+
+    echo "🎯 目标架构: linux_${GOST_ARCH}"
+
+    # 检查是否已存在
+    if [ -f "$GOST_TARGET_PATH" ] && [ -x "$GOST_TARGET_PATH" ]; then
+        echo "✅ GOST可执行文件已存在，跳过下载"
+        return 0
+    fi
+
+    # 创建目标目录
+    mkdir -p "$GOST_TARGET_DIR"
+
+    # 使用官方安装脚本下载
+    echo "🌐 使用官方安装脚本下载GOST..."
+
+    # 创建临时目录
+    TEMP_DIR="/tmp/gost_install_$$"
+    mkdir -p "$TEMP_DIR"
+    cd "$TEMP_DIR"
+
+    # 下载官方安装脚本
+    curl -fsSL https://github.com/go-gost/gost/raw/master/install.sh -o install.sh || {
+        echo "❌ 下载安装脚本失败"
+        cd "$DEPLOY_DIR"
+        rm -rf "$TEMP_DIR"
+        exit 1
+    }
+
+    # 修改脚本以适应我们的需求
+    # 1. 跳过root检查
+    sed -i 's/if \[\[ "$EUID" -ne.*$/if false; then/' install.sh
+
+    # 2. 修改安装路径，不安装到系统目录
+    sed -i 's|mv gost /usr/local/bin/gost|echo "GOST downloaded successfully"|' install.sh
+
+    # 3. 自动选择最新版本
+    echo "🔄 执行下载..."
+    bash install.sh --install 2>/dev/null || {
+        echo "❌ 官方脚本执行失败，尝试手动下载"
+        cd "$DEPLOY_DIR"
+        rm -rf "$TEMP_DIR"
+        download_gost_manual
+        return $?
+    }
+
+    # 检查下载结果
+    if [ -f "gost" ]; then
+        # 复制到目标位置
+        cp "gost" "$DEPLOY_DIR/$GOST_TARGET_PATH"
+        chmod +x "$DEPLOY_DIR/$GOST_TARGET_PATH"
+
+        # 验证安装
+        GOST_SIZE=$(du -h "$DEPLOY_DIR/$GOST_TARGET_PATH" | cut -f1)
+        echo "✅ GOST下载完成: $GOST_TARGET_PATH ($GOST_SIZE)"
+
+        # 获取版本信息
+        VERSION_INFO=$("$DEPLOY_DIR/$GOST_TARGET_PATH" --version 2>/dev/null | head -1 || echo "版本信息获取失败")
+        echo "📋 版本信息: $VERSION_INFO"
+    else
+        echo "❌ 官方脚本下载失败，尝试手动下载"
+        cd "$DEPLOY_DIR"
+        rm -rf "$TEMP_DIR"
+        download_gost_manual
+        return $?
+    fi
+
+    # 清理临时目录
+    cd "$DEPLOY_DIR"
+    rm -rf "$TEMP_DIR"
+}
+
+# 手动下载GOST（备用方案）
+download_gost_manual() {
+    echo "🔄 使用手动下载方式..."
+
+    # 使用GitHub API获取最新版本
+    GOST_API_URL="https://api.github.com/repos/go-gost/gost/releases/latest"
+
+    echo "🔍 获取最新版本信息..."
+    LATEST_INFO=$(curl -s "$GOST_API_URL" 2>/dev/null)
+
+    if [ -z "$LATEST_INFO" ]; then
+        echo "❌ 无法获取版本信息"
+        exit 1
+    fi
+
+    # 解析下载URL
+    DOWNLOAD_URL=$(echo "$LATEST_INFO" | grep -o '"browser_download_url": "[^"]*' | grep "linux.*${GOST_ARCH}" | head -1 | cut -d'"' -f4)
+
+    if [ -z "$DOWNLOAD_URL" ]; then
+        echo "❌ 未找到适合的下载链接"
+        exit 1
+    fi
+
+    FILENAME=$(basename "$DOWNLOAD_URL")
+    echo "📦 下载文件: $FILENAME"
+    echo "🌐 下载地址: $DOWNLOAD_URL"
+
+    # 下载文件
+    mkdir -p "backend/cache"
+    CACHE_FILE="backend/cache/$FILENAME"
+
+    curl -fsSL -o "$CACHE_FILE" "$DOWNLOAD_URL" || {
+        echo "❌ 下载失败"
+        exit 1
+    }
+
+    # 解压文件
+    echo "📂 解压文件..."
+    EXTRACT_DIR="backend/cache/extract_$$"
+    mkdir -p "$EXTRACT_DIR"
+
+    if [[ "$FILENAME" == *.tar.gz ]]; then
+        tar -xzf "$CACHE_FILE" -C "$EXTRACT_DIR"
+    elif [[ "$FILENAME" == *.zip ]]; then
+        unzip -q "$CACHE_FILE" -d "$EXTRACT_DIR"
+    else
+        echo "❌ 不支持的文件格式"
+        exit 1
+    fi
+
+    # 查找可执行文件
+    GOST_BINARY=$(find "$EXTRACT_DIR" -name "gost" -type f | head -1)
+
+    if [ -z "$GOST_BINARY" ]; then
+        echo "❌ 未找到gost可执行文件"
+        rm -rf "$EXTRACT_DIR"
+        exit 1
+    fi
+
+    # 复制到目标位置
+    cp "$GOST_BINARY" "$GOST_TARGET_PATH"
+    chmod +x "$GOST_TARGET_PATH"
+
+    # 清理临时文件
+    rm -rf "$EXTRACT_DIR"
+
+    echo "✅ GOST手动下载完成"
 }
 
 # 恢复用户数据

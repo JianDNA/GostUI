@@ -40,7 +40,18 @@ async function checkGostIntegration() {
   checkItem('gostService.js 存在', fs.existsSync(path.join(__dirname, '../services/gostService.js')));
   checkItem('gostConfigService.js 存在', fs.existsSync(path.join(__dirname, '../services/gostConfigService.js')));
   checkItem('gostPluginService.js 存在', fs.existsSync(path.join(__dirname, '../services/gostPluginService.js')));
-  checkItem('GOST 二进制文件存在', fs.existsSync(path.join(__dirname, '../assets/gost/linux_amd64/gost')));
+
+  // 🔧 使用动态平台检测检查GOST二进制文件
+  try {
+    const { getGostExecutablePath } = require('../utils/platform');
+    const gostPath = getGostExecutablePath();
+    checkItem('GOST 二进制文件存在', fs.existsSync(gostPath));
+    console.log(`   📁 GOST路径: ${gostPath}`);
+  } catch (error) {
+    checkItem('GOST 二进制文件存在', false);
+    console.log(`   ❌ GOST路径检测失败: ${error.message}`);
+    console.log(`   💡 请运行部署脚本下载GOST: ./deploy.sh`);
+  }
   
   // 检查配置目录
   console.log('\n📋 检查配置目录...');

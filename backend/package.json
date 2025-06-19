@@ -14,7 +14,7 @@
     "migrate:undo": "sequelize-cli db:migrate:undo",
     "migrate:undo:all": "sequelize-cli db:migrate:undo:all",
     "update": "npm install && sequelize-cli db:migrate",
-    "install-gost": "node scripts/install-gost.js",
+    "download-gost": "bash scripts/gost-downloader.sh",
     "test-gost": "node scripts/test-gost.js",
     "forward": "node scripts/port-forward-test.js",
     "debug-forward": "node scripts/debug-port-forward.js",

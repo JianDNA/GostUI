@@ -121,16 +121,17 @@ test_*/
 release/
 gost-management-*/
 
-# GOST多平台发行版（排除不需要的平台和压缩包）
-backend/assets/gost/*.tar.gz
-backend/assets/gost/*.zip
-backend/assets/gost/windows_*
-backend/assets/gost/linux_386
-backend/assets/gost/darwin_*
-backend/assets/gost/freebsd_*
+# GOST相关文件（在线下载，不纳入版本控制）
+backend/assets/gost/
+backend/cache/gost/
+backend/cache/*.tar.gz
+backend/cache/*.zip
 
-# 允许必要的GOST二进制文件
-!backend/assets/gost/linux_amd64/gost
+# 允许GOST目录结构但排除二进制文件
+!backend/assets/gost/
+!backend/assets/gost/*/
+backend/assets/gost/*/gost
+backend/assets/gost/*/gost.exe
 
 # 配置文件中的敏感信息
 config/production.js

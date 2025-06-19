@@ -438,9 +438,135 @@ else
     echo "⚠️ 未找到package.json，跳过依赖安装"
 fi
 
-# 10. 启动服务
+# 10. 下载GOST可执行文件
 echo ""
-echo "🚀 步骤10: 启动服务..."
+echo "📥 步骤10: 下载GOST可执行文件..."
+
+# 检测系统架构
+ARCH=$(uname -m)
+case $ARCH in
+    x86_64)
+        GOST_ARCH="amd64"
+        ;;
+    aarch64)
+        GOST_ARCH="arm64"
+        ;;
+    armv7*)
+        GOST_ARCH="armv7"
+        ;;
+    armv6*)
+        GOST_ARCH="armv6"
+        ;;
+    i686)
+        GOST_ARCH="386"
+        ;;
+    *)
+        echo "❌ 不支持的架构: $ARCH"
+        exit 1
+        ;;
+esac
+
+GOST_TARGET_DIR="backend/assets/gost/linux_${GOST_ARCH}"
+GOST_TARGET_PATH="${GOST_TARGET_DIR}/gost"
+
+echo "🎯 目标架构: linux_${GOST_ARCH}"
+
+# 检查是否已存在
+if [ -f "$GOST_TARGET_PATH" ] && [ -x "$GOST_TARGET_PATH" ]; then
+    echo "✅ GOST可执行文件已存在，跳过下载"
+else
+    echo "🌐 使用官方安装脚本下载GOST..."
+
+    # 创建目录
+    mkdir -p "$GOST_TARGET_DIR"
+
+    # 创建临时目录
+    TEMP_DIR="/tmp/gost_update_$$"
+    mkdir -p "$TEMP_DIR"
+    cd "$TEMP_DIR"
+
+    # 下载官方安装脚本
+    curl -fsSL https://github.com/go-gost/gost/raw/master/install.sh -o install.sh || {
+        echo "❌ 下载安装脚本失败，尝试手动下载"
+        cd "$DEPLOY_DIR"
+        rm -rf "$TEMP_DIR"
+
+        # 手动下载备用方案
+        echo "🔄 使用GitHub API下载..."
+        GOST_API_URL="https://api.github.com/repos/go-gost/gost/releases/latest"
+        LATEST_INFO=$(curl -s "$GOST_API_URL" 2>/dev/null)
+
+        if [ -n "$LATEST_INFO" ]; then
+            DOWNLOAD_URL=$(echo "$LATEST_INFO" | grep -o '"browser_download_url": "[^"]*' | grep "linux.*${GOST_ARCH}" | head -1 | cut -d'"' -f4)
+
+            if [ -n "$DOWNLOAD_URL" ]; then
+                FILENAME=$(basename "$DOWNLOAD_URL")
+                echo "📦 下载: $FILENAME"
+
+                mkdir -p "backend/cache"
+                CACHE_FILE="backend/cache/$FILENAME"
+
+                curl -fsSL -o "$CACHE_FILE" "$DOWNLOAD_URL" && {
+                    # 解压
+                    EXTRACT_DIR="backend/cache/extract_$$"
+                    mkdir -p "$EXTRACT_DIR"
+
+                    if [[ "$FILENAME" == *.tar.gz ]]; then
+                        tar -xzf "$CACHE_FILE" -C "$EXTRACT_DIR"
+                    elif [[ "$FILENAME" == *.zip ]]; then
+                        unzip -q "$CACHE_FILE" -d "$EXTRACT_DIR"
+                    fi
+
+                    GOST_BINARY=$(find "$EXTRACT_DIR" -name "gost" -type f | head -1)
+                    if [ -n "$GOST_BINARY" ]; then
+                        cp "$GOST_BINARY" "$GOST_TARGET_PATH"
+                        chmod +x "$GOST_TARGET_PATH"
+                        echo "✅ GOST手动下载完成"
+                        rm -rf "$EXTRACT_DIR"
+                    else
+                        echo "❌ 未找到gost可执行文件"
+                        exit 1
+                    fi
+                } || {
+                    echo "❌ 手动下载也失败"
+                    exit 1
+                }
+            else
+                echo "❌ 未找到下载链接"
+                exit 1
+            fi
+        else
+            echo "❌ 无法获取版本信息"
+            exit 1
+        fi
+    } && {
+        # 官方脚本下载成功，修改脚本
+        sed -i 's/if \[\[ "$EUID" -ne.*$/if false; then/' install.sh
+        sed -i 's|mv gost /usr/local/bin/gost|echo "GOST downloaded successfully"|' install.sh
+
+        # 执行下载
+        bash install.sh --install 2>/dev/null && {
+            if [ -f "gost" ]; then
+                cp "gost" "$DEPLOY_DIR/$GOST_TARGET_PATH"
+                chmod +x "$DEPLOY_DIR/$GOST_TARGET_PATH"
+                echo "✅ GOST官方脚本下载完成"
+            else
+                echo "❌ 官方脚本执行失败"
+                exit 1
+            fi
+        } || {
+            echo "❌ 官方脚本执行失败"
+            exit 1
+        }
+
+        cd "$DEPLOY_DIR"
+        rm -rf "$TEMP_DIR"
+    }
+fi
+
+# 11. 启动服务
+echo ""
+echo "🚀 步骤11: 启动服务..."
 
 # 确保PM2日志轮转配置
 echo "🔧 检查PM2日志轮转配置..."

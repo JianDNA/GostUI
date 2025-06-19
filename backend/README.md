@@ -96,8 +96,8 @@ lsof -i :3000
 rm database/database.sqlite-wal
 rm database/database.sqlite-shm
 
-# 权限问题
-chmod +x assets/gost/linux_amd64/gost
+# GOST可执行文件问题
+./deploy.sh  # 重新下载GOST
 
 # 依赖问题
 rm -rf node_modules && npm install

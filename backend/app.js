@@ -159,7 +159,7 @@ app.get('*', (req, res) => {
       process.exit(1);
     }
     if (!envCheck.gostOk) {
-      defaultLogger.warn('Gost 二进制文件不存在，请运行 npm run install-gost');
+      defaultLogger.warn('Gost 二进制文件不存在，将在启动时自动下载');
     }
     defaultLogger.info('环境检查通过');
 

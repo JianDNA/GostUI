@@ -259,9 +259,107 @@ manual_update() {
         echo "ℹ️ 外部访问控制配置已存在，跳过添加"
     fi
 
+    # 🔧 下载GOST可执行文件
+    echo ""
+    echo "📥 下载GOST可执行文件..."
+    cd "$deploy_dir"
+
+    # 检测系统架构
+    ARCH=$(uname -m)
+    case $ARCH in
+        x86_64)
+            GOST_ARCH="amd64"
+            ;;
+        aarch64)
+            GOST_ARCH="arm64"
+            ;;
+        armv7*)
+            GOST_ARCH="armv7"
+            ;;
+        armv6*)
+            GOST_ARCH="armv6"
+            ;;
+        i686)
+            GOST_ARCH="386"
+            ;;
+        *)
+            echo "❌ 不支持的架构: $ARCH"
+            cd "$original_dir"
+            return 1
+            ;;
+    esac
+
+    GOST_TARGET_DIR="backend/assets/gost/linux_${GOST_ARCH}"
+    GOST_TARGET_PATH="${GOST_TARGET_DIR}/gost"
+
+    echo "🎯 目标架构: linux_${GOST_ARCH}"
+
+    # 检查是否已存在
+    if [ -f "$GOST_TARGET_PATH" ] && [ -x "$GOST_TARGET_PATH" ]; then
+        echo "✅ GOST可执行文件已存在，跳过下载"
+    else
+        echo "🌐 使用GitHub API下载GOST..."
+
+        # 创建目录
+        mkdir -p "$GOST_TARGET_DIR"
+
+        # 获取最新版本信息
+        GOST_API_URL="https://api.github.com/repos/go-gost/gost/releases/latest"
+        LATEST_INFO=$(curl -s "$GOST_API_URL" 2>/dev/null)
+
+        if [ -n "$LATEST_INFO" ]; then
+            DOWNLOAD_URL=$(echo "$LATEST_INFO" | grep -o '"browser_download_url": "[^"]*' | grep "linux.*${GOST_ARCH}" | head -1 | cut -d'"' -f4)
+
+            if [ -n "$DOWNLOAD_URL" ]; then
+                FILENAME=$(basename "$DOWNLOAD_URL")
+                echo "📦 下载: $FILENAME"
+
+                mkdir -p "backend/cache"
+                CACHE_FILE="backend/cache/$FILENAME"
+
+                if curl -fsSL -o "$CACHE_FILE" "$DOWNLOAD_URL"; then
+                    # 解压
+                    EXTRACT_DIR="backend/cache/extract_$$"
+                    mkdir -p "$EXTRACT_DIR"
+
+                    if [[ "$FILENAME" == *.tar.gz ]]; then
+                        tar -xzf "$CACHE_FILE" -C "$EXTRACT_DIR"
+                    elif [[ "$FILENAME" == *.zip ]]; then
+                        unzip -q "$CACHE_FILE" -d "$EXTRACT_DIR"
+                    fi
+
+                    GOST_BINARY=$(find "$EXTRACT_DIR" -name "gost" -type f | head -1)
+                    if [ -n "$GOST_BINARY" ]; then
+                        cp "$GOST_BINARY" "$GOST_TARGET_PATH"
+                        chmod +x "$GOST_TARGET_PATH"
+                        echo "✅ GOST下载完成"
+                        rm -rf "$EXTRACT_DIR"
+                    else
+                        echo "❌ 未找到gost可执行文件"
+                        cd "$original_dir"
+                        return 1
+                    fi
+                else
+                    echo "❌ GOST下载失败"
+                    cd "$original_dir"
+                    return 1
+                fi
+            else
+                echo "❌ 未找到下载链接"
+                cd "$original_dir"
+                return 1
+            fi
+        else
+            echo "❌ 无法获取版本信息"
+            cd "$original_dir"
+            return 1
+        fi
+    fi
+
     # 安装后端依赖
     echo ""
     echo "📦 安装后端依赖..."
+    cd backend
     if [ -f "package.json" ]; then
         echo "🔄 安装Node.js依赖..."
         if command -v yarn >/dev/null 2>&1; then

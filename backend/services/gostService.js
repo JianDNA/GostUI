@@ -211,18 +211,26 @@ class GostService {
   async ensureExecutable() {
     try {
       console.log('Checking Go-Gost executable...');
-      const binDir = path.join(__dirname, '../bin');
-      if (!fs.existsSync(binDir)) {
-        fs.mkdirSync(binDir, { recursive: true });
-      }
 
       const config = require('../config/config');
       const executablePath = config.gost.executablePath;
+
       if (!fs.existsSync(executablePath)) {
-        console.log('Go-Gost executable not found. Installing...');
-        // 运行安装脚本
-        const installScriptPath = path.join(__dirname, '../scripts/install-gost.js');
-        await execPromise(`node "${installScriptPath}"`);
+        console.log('Go-Gost executable not found. Attempting to download...');
+
+        // 🔧 使用新的下载机制
+        const { platformUtils } = require('../utils/platform');
+        try {
+          // 尝试使用平台工具的自动下载功能
+          const downloadedPath = await platformUtils.ensureGostExecutable();
+          console.log(`✅ GOST下载完成: ${downloadedPath}`);
+          return true;
+        } catch (downloadError) {
+          console.error('❌ 自动下载失败:', downloadError.message);
+
+          // 备用方案：提示用户手动运行部署脚本
+          throw new Error(`GOST可执行文件不存在且自动下载失败。请运行部署脚本: ./deploy.sh 或 ./smart-update.sh`);
+        }
       }
 
       console.log('Go-Gost executable verified');

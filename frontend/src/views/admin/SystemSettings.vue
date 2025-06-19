@@ -118,7 +118,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { systemConfig } from '@/utils/api'
 
@@ -160,24 +160,37 @@ const loadConfig = async () => {
   try {
     isLoadingConfig.value = true  // 标记正在加载配置
     const response = await systemConfig.getConfig('allowUserExternalAccess')
-    // 确保转换为布尔值
-    const value = response.data.value
-    const convertedValue = value === true || value === 'true'
 
-    // 只有当值真正改变时才更新，避免触发不必要的change事件
-    if (allowUserExternalAccess.value !== convertedValue) {
-      allowUserExternalAccess.value = convertedValue
+    // 🔧 强化数据类型转换逻辑
+    const rawValue = response.data.value
+    let convertedValue = false  // 默认为false
+
+    // 处理各种可能的数据类型
+    if (rawValue === true || rawValue === 'true' || rawValue === 1 || rawValue === '1') {
+      convertedValue = true
+    } else if (rawValue === false || rawValue === 'false' || rawValue === 0 || rawValue === '0') {
+      convertedValue = false
+    } else {
+      // 对于其他值，尝试转换为布尔值
+      convertedValue = Boolean(rawValue)
     }
 
     console.log('🔧 加载外部访问配置:', {
-      raw: value,
-      type: typeof value,
+      raw: rawValue,
+      rawType: typeof rawValue,
       converted: convertedValue,
-      changed: allowUserExternalAccess.value !== convertedValue
+      currentValue: allowUserExternalAccess.value,
+      willChange: allowUserExternalAccess.value !== convertedValue
     })
+
+    // 直接设置值，不检查是否改变（因为我们有isLoadingConfig保护）
+    allowUserExternalAccess.value = convertedValue
+
   } catch (error) {
     console.error('加载配置失败:', error)
     ElMessage.error('加载配置失败')
+    // 出错时设置为默认值
+    allowUserExternalAccess.value = false
   } finally {
     isLoadingConfig.value = false  // 加载完成
   }
@@ -211,14 +224,20 @@ const handleExternalAccessChange = async (value) => {
 
     switchLoading.value = true
 
-    await systemConfig.updateConfig('allowUserExternalAccess', {
+    const updateResponse = await systemConfig.updateConfig('allowUserExternalAccess', {
       value: value,
       description: '允许普通用户的转发规则被外部访问',
       category: 'security'
     })
 
-    // 配置更新成功，开关状态已经是正确的，不需要重新加载
-    console.log('🔧 配置更新成功，当前开关状态:', value)
+    console.log('🔧 配置更新API响应:', {
+      request: value,
+      response: updateResponse.data,
+      currentSwitchValue: allowUserExternalAccess.value
+    })
+
+    // 🔧 确保前端状态与请求值一致
+    allowUserExternalAccess.value = value
 
     ElMessage.success(`已${value ? '启用' : '禁用'}普通用户外部访问`)
   } catch (error) {
@@ -236,9 +255,24 @@ const handleExternalAccessChange = async (value) => {
   }
 }
 
+// 页面可见性变化处理
+const handleVisibilityChange = () => {
+  if (!document.hidden && !isLoadingConfig.value && !switchLoading.value) {
+    console.log('🔧 页面重新可见，重新加载配置')
+    loadConfig()
+  }
+}
+
 // 组件挂载时加载配置
 onMounted(() => {
   loadConfig()
+  // 监听页面可见性变化
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+})
+
+// 组件卸载时清理事件监听
+onUnmounted(() => {
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 </script>
 
